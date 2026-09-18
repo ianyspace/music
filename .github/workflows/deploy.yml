@@ -54,15 +54,21 @@ jobs:
       # A missing `out/` or a missing service worker would ship a half-dead site:
       # the app would load but never gain an offline shell. Fail the build here so
       # it is caught in CI instead of being discovered on the live site.
+      #
+      # Note the route shape: with `trailingSlash: true` Next emits `/h5` as
+      # `out/h5/index.html` (a folder per route), NOT `out/h5.html`. GitHub Pages
+      # then resolves `/music/h5/` to that file, and redirects bare `/music/h5`
+      # to the trailing-slash form.
       - name: Verify build output
         run: |
           set -e
-          test -f out/index.html    || { echo "::error::out/index.html missing"; exit 1; }
-          test -f out/h5.html       || { echo "::error::out/h5.html missing"; exit 1; }
-          test -f out/desktop.html  || { echo "::error::out/desktop.html missing"; exit 1; }
-          test -f out/sw.js         || { echo "::error::out/sw.js missing"; exit 1; }
-          test -f out/.nojekyll     || { echo "::error::out/.nojekyll missing"; exit 1; }
-          test -d out/_next/static  || { echo "::error::out/_next/static missing"; exit 1; }
+          test -f out/index.html      || { echo "::error::out/index.html missing"; exit 1; }
+          test -f out/h5/index.html   || { echo "::error::out/h5/index.html missing"; exit 1; }
+          test -f out/desktop/index.html || { echo "::error::out/desktop/index.html missing"; exit 1; }
+          test -f out/404.html        || { echo "::error::out/404.html missing"; exit 1; }
+          test -f out/sw.js           || { echo "::error::out/sw.js missing"; exit 1; }
+          test -f out/.nojekyll       || { echo "::error::out/.nojekyll missing"; exit 1; }
+          test -d out/_next/static    || { echo "::error::out/_next/static missing"; exit 1; }
           echo "build output verified"
 
       - name: Setup Pages

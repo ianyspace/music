@@ -63,10 +63,23 @@
 
 ## 部署
 
-推 `master` 触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` → 发布 `out/` 到 Pages。
+推 `master` 触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` → 校验产物 →
+发布 `out/` 到 Pages。
 
 `npm run build` 会把 `public/**`（含 `sw.js`）拷进 `out/`，工作流再补一个 `out/.nojekyll`
 （否则 Pages 的 Jekyll 会丢掉 `_next/` 这类下划线开头的目录）。
 
-**首次需要在 GitHub 仓库里手动开一次 Pages**：Settings → Pages → Build and deployment →
-Source 选 `GitHub Actions`（工作流里的 `configure-pages` 只读配置，建站需要仓库管理员权限）。
+**产物形状（容易记错）**：`trailingSlash: true` 时 Next 给每个路由生成一个**目录 + index.html**，
+所以是 `out/h5/index.html`、`out/desktop/index.html`，**不是** `out/h5.html`。
+来源见 `next/dist/export/index.js` 里按 `subFolders` 拼 `htmlDest` 的那几行。
+Pages 会把 `/music/h5/` 解析到该文件，并把裸 `/music/h5` 301 到带斜杠形式。
+
+工作流里的 `Verify build output` 会断言这些文件都在；改路由或改 `trailingSlash` 时记得同步它，
+否则 CI 会先于线上报错（这是有意的——少一个文件就是半个死站）。
+
+**Pages 的 Source 必须是 `GitHub Actions`**：Settings → Pages → Build and deployment →
+Source 选 `GitHub Actions`。**不要**留在「Deploy from a branch」——那样 GitHub 会额外跑一次
+Jekyll 构建（`pages build and deployment`，event=`dynamic`），它排在本工作流之后并覆盖部署，
+表现为：首页变成 Jekyll 渲染的 README（页面里有 `Jekyll SEO tag` 和 `/assets/css/style.css?v=<sha>`），
+而 `/h5/`、`/desktop/`、`/sw.js` 全部 404，`/.nojekyll` 也返回 404。
+排查时注意：`api.github.com/repos/<user>/<repo>/pages` 匿名访问返回 404 是**没权限**，不代表 Pages 没开。
