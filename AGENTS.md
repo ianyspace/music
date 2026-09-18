@@ -77,9 +77,17 @@ Pages 会把 `/music/h5/` 解析到该文件，并把裸 `/music/h5` 301 到带�
 工作流里的 `Verify build output` 会断言这些文件都在；改路由或改 `trailingSlash` 时记得同步它，
 否则 CI 会先于线上报错（这是有意的——少一个文件就是半个死站）。
 
-**Pages 的 Source 必须是 `GitHub Actions`**：Settings → Pages → Build and deployment →
-Source 选 `GitHub Actions`。**不要**留在「Deploy from a branch」——那样 GitHub 会额外跑一次
-Jekyll 构建（`pages build and deployment`，event=`dynamic`），它排在本工作流之后并覆盖部署，
-表现为：首页变成 Jekyll 渲染的 README（页面里有 `Jekyll SEO tag` 和 `/assets/css/style.css?v=<sha>`），
-而 `/h5/`、`/desktop/`、`/sw.js` 全部 404，`/.nojekyll` 也返回 404。
-排查时注意：`api.github.com/repos/<user>/<repo>/pages` 匿名访问返回 404 是**没权限**，不代表 Pages 没开。
+**每次 push 会同时触发两个工作流**：本仓库的 `Deploy to GitHub Pages`（event=`push`），
+以及 GitHub 自动的 `pages build and deployment`（event=`dynamic`，跑 Jekyll）。
+**Pages 服务的是「最后完成的那次部署」**，所以线上内容取决于本工作流是否成功：
+
+- 本工作流**成功** → 完成得更晚 → 站点就是我们的 app（正常）
+- 本工作流**失败** → Jekyll 那次成为最后一个成功部署 → 首页变成 Jekyll 渲染的 README，
+  `/h5/`、`/desktop/`、`/sw.js`、`/.nojekyll` 全部 404
+
+所以线上出现 Jekyll README 时，**先查本工作流为什么失败**，而不是先怀疑 Pages 设置
+（只要 Source 是 `GitHub Actions` 就不需要动它）。
+识别特征：首页源码里有 `Jekyll SEO tag` 或 `/assets/css/style.css?v=<sha>`。
+
+排查时注意：`api.github.com/repos/<user>/<repo>/pages` 匿名访问返回 404 是**没权限**，不代表 Pages 没开；
+判断谁生效要看两次部署的**完成先后**，不是 `created_at`（两者创建时间只差 1 秒，会误判）。
