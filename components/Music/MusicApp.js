@@ -150,7 +150,6 @@ const MusicApp = function ({ variant = 'h5' }) {
     // { id, promise } of the in-flight/finished next-track prefetch.
     const prefetchRef = useRef(null);
     const restoredTrackRef = useRef(false);
-    const tokenRefreshRef = useRef(false);
     // `loadTracks` writes the folder list into the cache; reading it through a
     // ref keeps `folders` out of the callback deps (which would re-trigger the
     // load effect every time the folder list arrives).
@@ -415,6 +414,8 @@ const MusicApp = function ({ variant = 'h5' }) {
         setToken(accessToken);
     }, []);
 
+    // Only ever called because something stopped working — never as the first
+    // step of asking Google for a replacement.
     const clearSavedToken = useCallback(function () {
         storageSet(TOKEN_KEY, '');
         setTokenExpiresAt(0);
@@ -433,6 +434,9 @@ const MusicApp = function ({ variant = 'h5' }) {
             headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (resp.status === 401) {
+            // Drive rejected the token: whatever we were holding is dead. Clear
+            // it and let the caller step aside — the app must never answer a
+            // 401 by asking Google for a fresh token on its own.
             clearSavedToken();
             setNotice('');
             throw new Error('授权已过期，请重新连接');
@@ -448,18 +452,52 @@ const MusicApp = function ({ variant = 'h5' }) {
         return resp.json();
     }, [clearSavedToken]);
 
-    const requestToken = useCallback(function (id, prompt, showError, onSuccess, onFailure) {
+    /**
+     * Asks Google for an access token.
+     *
+     * `interactive` is the whole safety rail, and it must stay explicit:
+     *
+     * - `interactive: true` — the visitor just pressed a connect button. GIS
+     *   may show account/consent UI, because a tap *is* the authorization.
+     * - `interactive: false` — a background renewal. It must be impossible for
+     *   this path to draw anything: not a consent screen, not an account
+     *   chooser, not a popup. So it passes `prompt: 'none'` (documented as
+     *   "no authentication or consent UI") *and* never runs without a stored
+     *   `clientId`, because GIS defaults `prompt` to `select_account` and a
+     *   request that reaches it with no hint is exactly what opens a chooser
+     *   on every page load.
+     *
+     * A non-interactive failure is swallowed on purpose: the caller drops back
+     * to the public library, and the visitor only ever re-authorizes by tapping
+     * connect again.
+     */
+    const requestToken = useCallback(function (options) {
+        const {
+            clientId: id,
+            interactive = false,
+            onSuccess,
+            onFailure,
+        } = options || {};
+
+        // No clientId means no *remembered* connection: an automatic request
+        // here could only ever produce Google UI nobody asked for.
+        if (!interactive && !id) return false;
+
         const google = window.google;
-        if (!google || !google.accounts || !google.accounts.oauth2) return false;
+        if (!google || !google.accounts || !google.accounts.oauth2) {
+            if (interactive) setError('Google 登录组件尚未加载完成，请稍后再试');
+            return false;
+        }
+
         try {
             google.accounts.oauth2
                 .initTokenClient({
                     client_id: id,
                     scope: DRIVE_SCOPE,
-                    prompt,
+                    prompt: interactive ? '' : 'none',
                     callback(resp) {
                         if (resp.error) {
-                            if (showError) {
+                            if (interactive) {
                                 setError(`连接失败：${resp.error}${resp.error_description ? `（${resp.error_description}）` : ''}`);
                             }
                             if (onFailure) onFailure(resp.error);
@@ -469,73 +507,86 @@ const MusicApp = function ({ variant = 'h5' }) {
                         // Connected → the visitor's own Drive library takes
                         // over from the public one.
                         setLibrarySource(DRIVE_SOURCE);
-                        setNotice('已连接 Google 云盘');
+                        if (interactive) setNotice('已连接 Google 云盘');
                         if (onSuccess) onSuccess(resp.access_token);
                     },
                 })
                 .requestAccessToken();
             return true;
         } catch (err) {
-            if (showError) setError(`无法打开 Google 登录窗口：${err.message}（请检查浏览器是否拦截了弹窗）`);
+            if (interactive) setError(`无法打开 Google 登录窗口：${err.message}（请检查浏览器是否拦截了弹窗）`);
             return false;
         }
     }, [saveToken]);
 
+    /**
+     * Drops back to the public library.
+     *
+     * Used whenever an authorization we were still holding stops working — an
+     * expired token we will not renew without a tap, or a 401 from Drive. The
+     * visitor ends up somewhere they can still play music, and nothing Google
+     * related happens again until they press connect.
+     */
+    const fallbackToPublicLibrary = useCallback(function (reason) {
+        clearSavedToken();
+        setLibrarySource(CLOUD_SOURCE);
+        if (reason) setNotice(reason);
+    }, [clearSavedToken]);
+
     // Restore the short-lived token between browser visits.
     //
-    // Authorization must only ever happen because the visitor asked for it, so
-    // this path uses GIS `prompt: 'none'` — it never renders consent UI and
-    // simply fails when Google cannot renew without interaction. It also only
-    // runs when a stored token proves a previous successful connection;
-    // otherwise the page stays on the public library without touching Google.
+    // Only ever a *read* of what the visitor already authorized: a stored token
+    // that has not expired is reused, and anything else (no token, expired,
+    // different client id) is left alone — the page simply stays on the public
+    // library. No network call, no `initTokenClient`, so a refresh can never
+    // reach Google on its own. Reconnecting is a tap on connect.
     useEffect(() => {
-        if (!gsiReady || !clientId || tokenRestoreRef.current) return;
+        if (!clientId || tokenRestoreRef.current) return;
         tokenRestoreRef.current = true;
         let saved;
         try { saved = JSON.parse(storageGet(TOKEN_KEY)); } catch (err) { saved = null; }
-        if (!saved || !saved.clientId) return;
-        if (saved.accessToken && saved.clientId === clientId && saved.expiresAt > Date.now() + 60000) {
+        if (!saved || !saved.clientId || saved.clientId !== clientId) return;
+        if (saved.accessToken && saved.expiresAt > Date.now() + 60000) {
             setTokenExpiresAt(saved.expiresAt);
             setToken(saved.accessToken);
-            // Still authorized from a previous visit — keep using Drive.
             setLibrarySource(DRIVE_SOURCE);
-            return;
         }
-        requestToken(clientId, 'none', false);
-    }, [gsiReady, clientId, requestToken]);
+    }, [clientId]);
 
-    // GIS access tokens are short-lived. Refresh before expiry and also when
-    // the tab becomes visible again after the browser suspended it. This is a
-    // background renewal and must stay invisible: `prompt: 'none'` never opens
-    // Google's consent UI, and a failure is simply ignored (the player falls
-    // back to the cached / public library until the visitor connects again).
+    /**
+     * Expiry is handled by letting the token lapse, never by renewing in the
+     * background.
+     *
+     * Google access tokens live about an hour, so something has to notice. The
+     * notice is local: once `tokenExpiresAt` passes, the token is cleared and
+     * the app returns to the public library. Asking Google for a new one is
+     * deliberately *not* the fallback — a hidden renewal is what popped auth UI
+     * on every refresh, and it is not needed either, because the public library
+     * needs no authorization at all.
+     *
+     * The check runs on mount and whenever the tab becomes visible again, which
+     * covers the common case of a laptop that slept through the expiry.
+     */
     useEffect(() => {
-        if (!gsiReady || !clientId || !token || !tokenExpiresAt) return undefined;
-        const refresh = function () {
-            if (tokenRefreshRef.current || Date.now() < tokenExpiresAt - 300000) return;
-            tokenRefreshRef.current = true;
-            requestToken(clientId, 'none', false);
-            window.setTimeout(() => { tokenRefreshRef.current = false; }, 1000);
+        if (!token || !tokenExpiresAt) return undefined;
+        const dropIfExpired = function () {
+            if (Date.now() < tokenExpiresAt) return;
+            fallbackToPublicLibrary('Google 授权已过期，已切回公共曲库');
         };
-        const timer = window.setTimeout(refresh, Math.max(0, tokenExpiresAt - Date.now() - 300000));
+        const timer = window.setTimeout(dropIfExpired, Math.max(0, tokenExpiresAt - Date.now()));
         const onVisibilityChange = function () {
-            if (document.visibilityState === 'visible') refresh();
+            if (document.visibilityState === 'visible') dropIfExpired();
         };
         document.addEventListener('visibilitychange', onVisibilityChange);
         return () => {
             window.clearTimeout(timer);
             document.removeEventListener('visibilitychange', onVisibilityChange);
         };
-    }, [gsiReady, clientId, token, tokenExpiresAt, requestToken]);
+    }, [token, tokenExpiresAt, fallbackToPublicLibrary]);
 
     const connect = useCallback(function () {
         setError('');
         setNotice('');
-        const google = window.google;
-        if (!google || !google.accounts || !google.accounts.oauth2) {
-            setError('Google 登录组件尚未加载完成，请稍后再试');
-            return;
-        }
         const id = clientIdDraft.trim();
         if (!id) {
             setError('请先填写 Google OAuth 客户端 ID');
@@ -544,7 +595,9 @@ const MusicApp = function ({ variant = 'h5' }) {
         storageSet(CLIENT_ID_KEY, id);
         setClientId(id);
         tokenRestoreRef.current = true;
-        requestToken(id, '', true);
+        // The only place authorization may start, and the only place GIS is
+        // allowed to show UI.
+        requestToken({ clientId: id, interactive: true });
     }, [clientIdDraft, requestToken]);
 
     const disconnect = useCallback(function () {
@@ -608,11 +661,11 @@ const MusicApp = function ({ variant = 'h5' }) {
             });
         } catch (err) {
             if (err.code === 'TOKEN_REQUIRED') {
-                // Google authorization died mid-session — avoid a dead end by
-                // dropping back to the public library.
-                clearSavedToken();
-                setLibrarySource(CLOUD_SOURCE);
-                setNotice('Google 授权已失效，已切回公共曲库');
+                // Google authorization died mid-session. Step aside to the
+                // public library rather than reaching for a new token — the
+                // visitor reconnects by tapping connect, and nothing pops up
+                // in the meantime.
+                fallbackToPublicLibrary('Google 授权已失效，已切回公共曲库');
                 try {
                     const fallback = await fetchCloudTracks();
                     setTracks(fallback.tracks);
@@ -633,29 +686,23 @@ const MusicApp = function ({ variant = 'h5' }) {
         } finally {
             setListLoading(false);
         }
-    }, [librarySource, driveGet, token, folderId, clientId, clearSavedToken]);
+    }, [librarySource, driveGet, token, folderId, clientId, fallbackToPublicLibrary]);
 
     const refreshTracks = useCallback(function () {
-        // Refreshing the public library must never open a Google consent
-        // screen; only the Drive source can require reauthorization.
-        if (librarySource === CLOUD_SOURCE) {
-            loadTracks(CLOUD_SOURCE, { forceRefresh: true });
+        // Refreshing must never open Google UI, whichever library is active.
+        // The public library is fetched directly; a Drive library is only
+        // fetched while a live token is in hand, and without one the visitor is
+        // told to reconnect — they are already in the panel that has the button.
+        if (librarySource === CLOUD_SOURCE || !token) {
+            if (librarySource === CLOUD_SOURCE) {
+                loadTracks(CLOUD_SOURCE, { forceRefresh: true });
+            } else {
+                setError('Google 授权已失效，请点击「连接 Google 云盘」重新授权');
+            }
             return;
         }
-        if (token) {
-            loadTracks(DRIVE_SOURCE);
-            return;
-        }
-        if (!clientId) {
-            setError('请先连接 Google 云盘后刷新歌曲列表');
-            return;
-        }
-        if (!gsiReady) {
-            setError('Google 登录组件尚未加载完成，请稍后再试');
-            return;
-        }
-        requestToken(clientId, '', true);
-    }, [librarySource, token, loadTracks, clientId, gsiReady, requestToken]);
+        loadTracks(DRIVE_SOURCE);
+    }, [librarySource, token, loadTracks]);
 
     useEffect(() => {
         if (librarySource === DRIVE_SOURCE && !token) return;
@@ -746,19 +793,21 @@ const MusicApp = function ({ variant = 'h5' }) {
             setProgress({ time: startTime, duration: 0 });
             setCurrent({ track, url, startTime, shouldPlay });
         } catch (err) {
-            if (seq === playSeqRef.current && err.code === 'TOKEN_REQUIRED' && clientId && gsiReady) {
-                // Renew silently first: tapping a song must never be the reason a
-                // Google consent window appears. Only a real failure surfaces.
-                requestToken(clientId, 'none', false, (newToken) => play(track, startTime, shouldPlay, newToken), () => {
-                    setError('Google 授权已失效，请在「我的」页面重新连接');
-                });
+            if (seq === playSeqRef.current && err.code === 'TOKEN_REQUIRED') {
+                // A Drive song cannot be played without authorization, and the
+                // authorization we had has stopped working. Do not silently ask
+                // Google for a new one — that is the auth UI the visitor never
+                // requested. Say so and step aside to the public library; the
+                // next tap on connect is what re-authorizes.
+                fallbackToPublicLibrary('Google 授权已失效，已切回公共曲库');
+                setError('Google 授权已失效，已切回公共曲库，可在「我的」页面重新连接');
                 return;
             }
             if (seq === playSeqRef.current) setError(`播放「${track.name}」失败：${err.message}`);
         } finally {
             if (seq === playSeqRef.current) setLoadingId('');
         }
-    }, [token, fetchTrackUrl, claimPrefetch, clientId, gsiReady, requestToken]);
+    }, [token, fetchTrackUrl, claimPrefetch, fallbackToPublicLibrary]);
 
     useEffect(() => {
         if (restoredTrackRef.current || tracks.length === 0 || (!token && !listCacheAvailable)) return;
