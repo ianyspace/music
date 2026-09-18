@@ -15,13 +15,14 @@
 | `components/Music/` | 全部播放器代码 |
 | `lib/cache/indexedDb.js` | IndexedDB 薄封装（缓存存储层） |
 | `utils/retireServiceWorker.js` | 注销旧 Service Worker 的过渡代码，可删 |
+| `public/` | 站点图标（favicon.ico + PNG 一套），构建时原样拷进 `out/` |
 | `cloudflare-worker/` | Cloudflare Worker，把 R2 桶暴露成曲库清单 |
 | `scripts/check-css-modules.js` | CI 校验：每个 `styles.x` 查找都有对应 `.scss` 定义 |
 | `styles/index.scss` | 唯一全局样式入口，只由 `pages/_app.js` 导入 |
 
-> **`public/` 和 `utils/basePath.js` 都已删除**，别再照着旧印象去找。
-> 服务工人（Service Worker）已彻底移除，见下方。`withBasePath()` 的唯一调用者是原
-> `_app.js` 里的 SW 注册，SW 一走它就没有使用者了 —— 需要再拼 basePath 时记得自己写回来。
+> **`public/` 里只放图标，没有 `sw.js`** —— 服务工人已彻底移除，见下方。
+> **`utils/basePath.js` 已删除**：`withBasePath()` 的唯一调用者是原 `_app.js` 里的 SW 注册，
+> SW 一走它就没有使用者了。但**图标的 basePath 得自己拼**（见下一条）。
 
 ## 关键约定
 
@@ -35,7 +36,7 @@
   会让 `transform` 保留终态，而带 `transform` 的祖先会成为 `position: fixed` 后代的包含块，
   于是 `inset: 0` 撑成整个滚动高度、面板被推到最底部（表现为"只有遮罩没有抽屉"）。
   抽屉 / 缓存管理这类全屏浮层一律挂在 `MusicApp` 最外层渲染。
-- **没有 Service Worker，这是有意的，不要加回来**（`public/` 目录已整个删掉）。
+- **没有 Service Worker，这是有意的，不要加回来**。
   它曾负责预缓存页面外壳，但带来两个无法接受的代价：部署后旧外壳继续吐旧 JS；
   以及「我现在看到的是不是最新版」没法靠刷新回答 —— 排查线上问题时这个不确定性
   反复误导过判断。页面外壳由 Pages 自己提供，已经很稳，不需要中间层。
@@ -43,6 +44,14 @@
   `music-shell-*` / `music-runtime-*` 缓存；**它只注销、永不注册**。
   旧外壳自然淘汰完（几个月）这个文件就可以删。注意：光删 `public/sw.js` 是没用的，
   已安装的 SW 不会因此消失，它只会在 fetch `sw.js` 时拿到 404 然后继续用旧缓存。
+- **图标**：源文件是 `1000x1000` 透明底 PNG（圆形色层渐变），已导出成 `public/` 下四个文件。
+  `favicon.ico` 是**真的多尺寸 ICO**（16/32/48 三档，PNG 载荷），不是改名的 PNG ——
+  有些工具产出的「ico」其实只是把 PNG 改了扩展名，Windows 上会显示不出来。
+  重做时用 `sharp` 出各尺寸 PNG，再手拼 ICO 容器（见提交 `167dae8` 之后那次的处理方式）。
+- **图标的 basePath 必须自己拼**（踩过坑）：`public/**` 是原样拷进 `out/` 的，
+  Next **不会**像 `next/link` / `_next/*` 那样替你加前缀。写成 `/favicon.ico` 在项目页
+  （`/music/`）上会指向用户站点根目录然后 404 —— 本站在补上这个之前，favicon 一直是坏的。
+  `pages/_document.js` 里用 `site.pathPrefix` 拼，CI 也断言这三个图标文件存在。
 - **缓存**：音频 blob 存 IndexedDB（`lib/cache/indexedDb.js`），key 是 `<source>:<track id>`；
   曲库清单存 localStorage。**两者都是永久缓存**（`NEVER_EXPIRES = 0` 表示不过期），
   不手动清除就不清除，所以 `audioCache.js` / `librarySource.js` 里没有 TTL 逻辑，
@@ -75,9 +84,9 @@
 推 `master` 触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` → 校验产物 →
 发布 `out/` 到 Pages。
 
-`npm run build` 产出 `out/`，工作流再补一个 `out/.nojekyll`
+`npm run build` 产出 `out/`，并把 `public/**`（现在的全部内容就是那几个图标文件）
+原样拷进去；工作流再补一个 `out/.nojekyll`
 （否则 Pages 的 Jekyll 会丢掉 `_next/` 这类下划线开头的目录）。
-仓库里已经没有 `public/` 了，所以不再有静态文件被拷进 `out/`。
 
 **产物形状（容易记错）**：`trailingSlash: true` 时 Next 给每个路由生成一个**目录 + index.html**，
 所以是 `out/h5/index.html`、`out/desktop/index.html`，**不是** `out/h5.html`。

@@ -36,6 +36,10 @@ jobs:
 
       # `output: 'export'` (see next.config.js) makes `next build` emit the whole
       # static site into `out/`, which is what GitHub Pages serves.
+      #
+      # `public/**` is copied verbatim into `out/`, which is where the site icons
+      # come from (favicon.ico + the PNG set). Next does not rewrite those paths
+      # for basePath, so `pages/_document.js` builds them itself.
       - name: Build static site
         run: npm run build
         env:
@@ -67,6 +71,12 @@ jobs:
           test -f out/404.html        || { echo "::error::out/404.html missing"; exit 1; }
           test -f out/.nojekyll       || { echo "::error::out/.nojekyll missing"; exit 1; }
           test -d out/_next/static    || { echo "::error::out/_next/static missing"; exit 1; }
+          # Icons are copied from public/ and, unlike _next/*, Next does NOT
+          # prefix them with basePath for us — a missing file is a silent 404 in
+          # the browser tab. Assert them here instead.
+          test -f out/favicon.ico        || { echo "::error::out/favicon.ico missing"; exit 1; }
+          test -f out/apple-touch-icon.png || { echo "::error::out/apple-touch-icon.png missing"; exit 1; }
+          test -f out/icon-512.png       || { echo "::error::out/icon-512.png missing"; exit 1; }
           # The service worker was removed on purpose; its reappearance would mean
           # a stale shell is being shipped again.
           test ! -e out/sw.js         || { echo "::error::out/sw.js exists — the service worker was removed on purpose"; exit 1; }
