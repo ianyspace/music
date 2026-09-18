@@ -1,0 +1,22 @@
+{
+    "name": "music",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Music Space — a standalone Next.js music player with a public R2 library, optional Google Drive and offline caching",
+    "scripts": {
+        "dev": "next dev --turbopack",
+        "build": "next build",
+        "start": "next start"
+    },
+    "dependencies": {
+        "@ybouane/liquidglass": "^1.0.3",
+        "next": "^15.5.4",
+        "prop-types": "^15.8.1",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1"
+    },
+    "devDependencies": {
+        "patch-package": "^8.0.1",
+        "sass": "^1.104.0"
+    }
+}

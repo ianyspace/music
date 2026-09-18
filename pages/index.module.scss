@@ -1,0 +1,32 @@
+// Shown only while `/` decides between the h5 and desktop routes.
+
+.splash {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+    justify-content: center;
+    background: #eef0f7;
+    color: rgba(60, 60, 67, 0.62);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+        'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.splash-link {
+    color: #fa233b;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    .splash {
+        background: #08080d;
+        color: rgba(235, 235, 245, 0.62);
+    }
+}

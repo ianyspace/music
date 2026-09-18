@@ -1,0 +1,27 @@
+{
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "components/*": [
+                "components/*"
+            ],
+            "config": [
+                "config/index.js"
+            ],
+            "utils/*": [
+                "utils/*"
+            ],
+            "lib/*": [
+                "lib/*"
+            ],
+            "styles/*": [
+                "styles/*"
+            ]
+        }
+    },
+    "exclude": [
+        "node_modules",
+        ".next",
+        "public"
+    ]
+}

@@ -1,0 +1,74 @@
+// Shared marquee: one line of text that scrolls when it overflows, with a
+// light fade at both ends while text is cut off. The host owns the width
+// (flex slot or absolute box) and the typography; this owns the mechanics.
+
+.text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+/* Short-enough label centred in its slot (the player sheet's top line). */
+.center {
+    text-align: center;
+
+    .item {
+        /* mirrors the wrap gap on the right, so the glyphs — not the padded
+           box — sit in the middle */
+        padding-left: 40px;
+    }
+
+    /* While scrolling the run must start flush left, or the loop would begin
+       off-centre. */
+    &.text-marquee {
+        text-align: left;
+
+        .item {
+            padding-left: 0;
+        }
+    }
+}
+
+/* End fades only while scrolling — they hint at the cut-off text. */
+.text-marquee {
+    -webkit-mask-image: linear-gradient(90deg,
+            transparent 0,
+            #000 16px,
+            #000 calc(100% - 16px),
+            transparent 100%);
+    mask-image: linear-gradient(90deg,
+            transparent 0,
+            #000 16px,
+            #000 calc(100% - 16px),
+            transparent 100%);
+
+    .run {
+        animation: marquee-slide linear infinite;
+    }
+}
+
+.run {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+}
+
+@keyframes marquee-slide {
+    to {
+        transform: translateX(-50%);
+    }
+}
+
+/* Two copies of the text sit side by side; the gap is the wrap point. */
+.item {
+    display: inline-flex;
+    align-items: center;
+    padding-right: 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .text-marquee .run {
+        animation: none;
+    }
+}

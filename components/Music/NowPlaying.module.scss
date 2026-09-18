@@ -1,0 +1,810 @@
+// Now-playing page — a phone-width dark sheet (same column as the song list)
+// over a dimmed viewport. The stage holds a spinning record with its tonearm;
+// tapping the record swaps in the lyrics and tapping the lyrics swaps back.
+// Slide-up entrance; no volume controls.
+
+.veil {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    justify-content: center;
+    background: rgba(8, 9, 16, 0.55);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    animation: veil-in 0.28s ease-out;
+}
+
+.veil-out {
+    animation: veil-out 0.3s ease-in forwards;
+}
+
+@keyframes veil-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes veil-out {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+.page {
+    --np-text: #f2f3f7;
+    --np-text-2: rgba(228, 230, 240, 0.6);
+    --np-track: rgba(255, 255, 255, 0.22);
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: min(480px, 100%);
+    height: 100%;
+    box-sizing: border-box;
+    /* Ambient backdrop: the track's own gradient pushed far back under a dark
+       wash (--np-grad comes from the component) so white text stays readable. */
+    background:
+        radial-gradient(120% 76% at 50% -6%, rgba(24, 26, 40, 0.4) 0%, rgba(15, 16, 27, 0.8) 48%, rgba(9, 10, 18, 0.94) 100%),
+        var(--np-grad, linear-gradient(135deg, #363a52, #191b2a));
+    box-shadow: 0 0 80px rgba(0, 0, 0, 0.5);
+    color: var(--np-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+        'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    animation: np-in 0.42s cubic-bezier(0.32, 0.72, 0.2, 1) both;
+    will-change: transform, opacity;
+    overflow: hidden;
+}
+
+/* Exit: slide back down toward the mini bar, then the shell unmounts. */
+.page-out {
+    animation: np-out 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes np-in {
+    from {
+        transform: translateY(34%) scale(0.94);
+        opacity: 0.35;
+    }
+
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes np-out {
+    from {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+
+    to {
+        transform: translateY(34%) scale(0.94);
+        opacity: 0.3;
+    }
+}
+
+/* --- top bar: collapse button + (lyrics mode) the song line + the
+   placeholder three-dots action on the right --- */
+
+.topbar {
+    position: relative;
+    z-index: 4;
+    width: min(480px, 100%);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    /* The song line is the middle item; the equal-width buttons on either
+       side keep it centred. */
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 18px 0;
+}
+
+.top-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--np-text);
+    cursor: pointer;
+    transition: transform 0.15s, background-color 0.2s;
+
+    @media (hover: hover) {
+        &:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+    }
+
+    &:active {
+        transform: scale(0.92);
+    }
+}
+
+.np-marquee {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 40px; /* match the button height so the bar keeps its size */
+    color: var(--np-text);
+}
+
+.np-line-title {
+    font-weight: 700;
+    color: var(--np-text);
+}
+
+.np-line-artist {
+    font-weight: 500;
+    color: var(--np-text-2);
+}
+
+/* --- body --- */
+
+.body {
+    width: min(480px, 100%);
+    box-sizing: border-box;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 4px 24px calc(12px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+}
+
+/* --- record stage: vinyl + tonearm, or the lyrics --- */
+
+/* Takes every pixel the fixed rows below don't need, so the record ends up
+   centred in the space above them instead of hugging the title. */
+.stage {
+    position: relative;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 40vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Record + tonearm scale as one box. Height-driven (aspect-ratio + auto width,
+   clamped by max-width) so a short stage shrinks the record and the arm
+   together; the arm SVG letterboxes instead of distorting. */
+.rig {
+    position: relative;
+    height: 100%;
+    width: auto;
+    /* Never let the flex algorithm squeeze it, and never let a browser that
+       can't transfer the aspect ratio into a width collapse it to nothing. */
+    flex: 0 0 auto;
+    min-width: min(40vh, 100%);
+    max-width: 100%;
+    /* 100 × 122 is also the tonearm's SVG coordinate space. */
+    aspect-ratio: 100 / 122;
+}
+
+.arm {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    /* Above the record: the stylus lands on it while playing, and an arm
+       painted under the disc would disappear exactly then. */
+    z-index: 2;
+    pointer-events: none;
+    transition: opacity 0.32s ease;
+}
+
+/* The whole arm rotates around its pivot (52.5, 4.6 in the viewBox). */
+.arm-swing {
+    transform-box: view-box;
+    transform-origin: 52.5% 3.77%;
+    transition: transform 0.6s cubic-bezier(0.32, 0.72, 0.2, 1);
+}
+
+.arm-playing .arm-swing {
+    transform: rotate(15deg);
+}
+
+.disc {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 86%;
+    aspect-ratio: 1;
+    z-index: 1;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.32s ease, transform 0.15s;
+
+    &:active:not(:disabled) {
+        transform: translate(-50%, -50%) scale(0.985);
+    }
+
+    &:disabled {
+        cursor: default;
+    }
+
+    &:focus-visible {
+        outline: 2px solid rgba(255, 255, 255, 0.65);
+        outline-offset: 8px;
+    }
+
+    /* The reference's halo: a light translucent white track the record sits
+       in — a filled band (not a stroked line), part of the record itself, so
+       it turns with the vinyl and keeps its angle while paused. The rotor
+       paints over its inner side, leaving the ring band visible. */
+    &::after {
+        content: '';
+        position: absolute;
+        inset: -5%;
+        z-index: -1;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.11);
+        animation: disc-spin 18s linear infinite;
+        animation-play-state: paused;
+        pointer-events: none;
+    }
+}
+
+.disc-playing::after {
+    animation-play-state: running;
+}
+
+.rotor {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, #202127 0%, #131418 44%, #0a0b0e 80%, #15161b 100%);
+    box-shadow: 0 34px 64px -20px rgba(0, 0, 0, 0.85),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+    animation: disc-spin 18s linear infinite;
+    animation-play-state: paused;
+    overflow: hidden;
+}
+
+.disc-grooves {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: repeating-radial-gradient(circle at 50% 50%,
+            rgba(255, 255, 255, 0.045) 0 0.5px,
+            rgba(0, 0, 0, 0) 0.5px 2.5px);
+    opacity: 0.95;
+}
+
+/* Label = the track's gradient (same one tinting the page backdrop). The
+   reference cover sits large in the disc, so the band of grooves around it
+   stays thin. */
+.disc-label {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 56%;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+        inset 0 -6px 18px rgba(0, 0, 0, 0.22);
+
+    svg {
+        width: 40%;
+        height: 40%;
+    }
+}
+
+/* Ripples leaving the record: each ring starts at the halo track's outer
+   edge and expands outwards, so they read as waves pushed out by the music.
+   They sit under the record, and the whole travel stays well inside the
+   page's padding. */
+.ripples {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.ripple {
+    position: absolute;
+    /* matches the ::after halo ring, so waves emerge from its outer edge */
+    inset: -5%;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    opacity: 0;
+    transform: scale(1);
+    animation: disc-ripple 3.6s ease-out infinite;
+    animation-play-state: paused;
+
+    &:nth-child(2) {
+        animation-delay: 1.2s;
+    }
+
+    &:nth-child(3) {
+        animation-delay: 2.4s;
+    }
+}
+
+@keyframes disc-ripple {
+    0% {
+        opacity: 0;
+        transform: scale(1);
+    }
+
+    14% {
+        opacity: 0.55;
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(1.26);
+    }
+}
+
+/* The highlight sweep is what makes the rotation visible: two opposing
+   specular streaks plus a broad wash, blurred so they read as light on
+   plastic rather than painted wedges. */
+.disc-sheen {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg,
+            rgba(255, 255, 255, 0) 0deg,
+            rgba(255, 255, 255, 0.15) 16deg,
+            rgba(255, 255, 255, 0.03) 44deg,
+            rgba(255, 255, 255, 0) 82deg,
+            rgba(255, 255, 255, 0) 176deg,
+            rgba(255, 255, 255, 0.11) 196deg,
+            rgba(255, 255, 255, 0.02) 224deg,
+            rgba(255, 255, 255, 0) 260deg),
+        conic-gradient(from 0deg,
+            rgba(255, 255, 255, 0) 300deg,
+            rgba(255, 255, 255, 0.05) 336deg,
+            rgba(255, 255, 255, 0.05) 24deg,
+            rgba(255, 255, 255, 0) 60deg);
+    filter: blur(1.5px);
+    mix-blend-mode: screen;
+    pointer-events: none;
+}
+
+/* Paused whenever the transport is: the record keeps its angle instead of
+   snapping back to the top, and the ripples wait with it. */
+.disc-playing .rotor,
+.disc-playing .ripple {
+    animation-play-state: running;
+}
+
+/* Lyrics view: the record and its arm fade out behind the words. */
+.stage-lyrics .arm,
+.stage-lyrics .disc {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.stage-lyrics .rotor,
+.stage-lyrics .ripple {
+    animation-play-state: paused;
+}
+
+@keyframes disc-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Mode switch hint: floats dead centre of the stage (above the record and
+   the lyrics alike), fades itself out from the component's timer. */
+.mode-toast {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 5;
+    transform: translate(-50%, -50%);
+    padding: 10px 22px;
+    border-radius: 999px;
+    background: rgba(10, 11, 18, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.6);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    color: var(--np-text);
+    font-size: 14.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: mode-toast-in 0.22s cubic-bezier(0.32, 0.72, 0.2, 1) both;
+}
+
+@keyframes mode-toast-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.86);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+/* --- lyrics --- */
+
+.lyrics {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    box-sizing: border-box;
+    padding: 10px 6px;
+    overflow-y: auto;
+    text-align: center;
+    cursor: pointer;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    overscroll-behavior: contain;
+    scroll-padding-block: 38%;
+    mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+    animation: lyrics-in 0.32s ease-out both;
+}
+
+.lyrics::-webkit-scrollbar {
+    display: none;
+}
+
+@keyframes lyrics-in {
+    from {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.lyric,
+.lyric-active {
+    margin: 0;
+    padding: 8px 0;
+    color: var(--np-text-2);
+    font-size: 16px;
+    line-height: 1.6;
+    opacity: 0.52;
+    scroll-margin: 18vh;
+    transition: color 0.35s, transform 0.35s, opacity 0.35s;
+}
+
+.lyric-active {
+    color: var(--np-text);
+    font-size: 18px;
+    font-weight: 700;
+    opacity: 1;
+    transform: scale(1.04);
+}
+
+.lyrics-empty {
+    margin: 38% 0 0;
+    color: var(--np-text-2);
+    font-size: 14px;
+}
+
+/* --- title row --- */
+
+.np-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 2px 0;
+    min-width: 0;
+    transition: opacity 0.32s ease;
+}
+
+/* Lyrics mode moves the song line to the top bar; fold the row away so the
+   stage (flex:1) takes the freed height and the lyrics get more room. */
+.stage-lyrics ~ .np-head {
+    display: none;
+}
+
+.np-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.np-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.np-artist {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--np-text-2);
+}
+
+/* --- progress --- */
+
+.np-progress {
+    padding: 12px 2px 0;
+}
+
+.slider {
+    appearance: none;
+    -webkit-appearance: none;
+    display: block;
+    width: 100%;
+    height: 20px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+
+    &::-webkit-slider-runnable-track {
+        height: 3px;
+        border-radius: 2px;
+        background: linear-gradient(to right, var(--np-text) var(--fill, 0%), var(--np-track) var(--fill, 0%));
+        transition: height 0.16s ease;
+    }
+
+    /* Pressing / dragging fattens the bar in place — the input keeps its
+       20px box, so nothing around it moves. */
+    &:active::-webkit-slider-runnable-track {
+        height: 6px;
+        border-radius: 3px;
+    }
+
+    &::-webkit-slider-thumb {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 13px;
+        height: 13px;
+        margin-top: -5px;
+        border-radius: 50%;
+        background: #fff;
+        border: 0;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+        transition: transform 0.16s ease, margin-top 0.16s ease;
+    }
+
+    @media (hover: hover) {
+        &:hover::-webkit-slider-thumb {
+            transform: scale(1.12);
+        }
+    }
+
+    /* -3.5px keeps the thumb centred on the thicker track. */
+    &:active::-webkit-slider-thumb {
+        margin-top: -3.5px;
+        transform: scale(1.25);
+    }
+
+    &::-moz-range-track {
+        height: 3px;
+        border-radius: 2px;
+        background: var(--np-track);
+        transition: height 0.16s ease;
+    }
+
+    &::-moz-range-progress {
+        height: 3px;
+        border-radius: 2px;
+        background: var(--np-text);
+        transition: height 0.16s ease;
+    }
+
+    &:active::-moz-range-track,
+    &:active::-moz-range-progress {
+        height: 6px;
+        border-radius: 3px;
+    }
+
+    &::-moz-range-thumb {
+        width: 13px;
+        height: 13px;
+        border: 0;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+        transition: transform 0.16s ease;
+    }
+
+    &:active::-moz-range-thumb {
+        transform: scale(1.25);
+    }
+
+    &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+
+    &:focus {
+        outline: none;
+    }
+}
+
+.time-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 2px 0;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--np-text-2);
+}
+
+/* --- transport --- */
+
+.np-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 14px 2px 0;
+}
+
+.mode-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--np-text-2);
+    cursor: pointer;
+    transition: color 0.2s, transform 0.15s;
+
+    @media (hover: hover) {
+        &:hover {
+            color: var(--np-text);
+            transform: scale(1.08);
+        }
+    }
+
+    &:active {
+        transform: scale(0.94);
+    }
+}
+
+.mode-btn-on {
+    color: #fff;
+
+    &:hover {
+        color: #fff;
+    }
+}
+
+.skip-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--np-text);
+    cursor: pointer;
+    transition: transform 0.15s;
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.1);
+        }
+    }
+
+    &:active {
+        transform: scale(0.94);
+    }
+}
+
+.play-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 74px;
+    height: 74px;
+    padding: 0 0 0 4px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--np-text);
+    cursor: pointer;
+    transition: transform 0.15s;
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.08);
+        }
+    }
+
+    &:active {
+        transform: scale(0.94);
+    }
+
+    svg {
+        width: 46px;
+        height: 46px;
+    }
+}
+
+/* The record is ~75% of the phone's width (~86% of the stage) — the rest of
+   the page keeps its own rows. Short phones only need the tightened rhythm
+   below; the stage's max-width already shrinks the record. */
+@media (max-height: 700px) {
+    .np-progress {
+        padding-top: 8px;
+    }
+
+    .np-controls {
+        padding-top: 8px;
+    }
+
+    .play-btn {
+        width: 64px;
+        height: 64px;
+
+        svg {
+            width: 40px;
+            height: 40px;
+        }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .page,
+    .lyrics,
+    .mode-toast {
+        animation: none;
+    }
+
+    .rotor,
+    .ripple {
+        animation: none;
+    }
+
+    .disc::after {
+        animation: none;
+    }
+
+    .arm-swing {
+        transition: none;
+    }
+}

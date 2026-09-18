@@ -1,0 +1,26 @@
+name = "space-music"
+main = "src/index.js"
+# Kept conservative on purpose: this project deploys with wrangler 3 on Node 20
+# (wrangler 4 requires Node >= 22). The Worker only uses standard APIs
+# (fetch/Response/caches + the R2 binding), so an older date is fine.
+compatibility_date = "2024-11-06"
+
+# The R2 bucket that holds the public music library. Create it once with:
+#   npx wrangler r2 bucket create space
+[[r2_buckets]]
+binding = "MUSIC_BUCKET"
+bucket_name = "space"
+
+[vars]
+# Public R2 domain (r2.dev subdomain or your own custom domain). Used to build
+# the direct audio URLs returned in the track index — no trailing slash.
+R2_PUBLIC_BASE = "https://pub-5fd69e65dbb64faca6f6a164b495d7ba.r2.dev"
+# Optional: only expose objects under this key prefix ("" = whole bucket).
+MUSIC_PREFIX = ""
+# Comma separated list of origins allowed to read the index and audio.
+ALLOWED_ORIGINS = "https://ianyspace.github.io,http://localhost:3000"
+
+# Optional: serve the Worker on your own hostname instead of *.workers.dev.
+# [[routes]]
+# pattern = "music-api.example.com"
+# custom_domain = true

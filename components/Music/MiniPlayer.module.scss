@@ -1,0 +1,226 @@
+// Mini play bar docked at the bottom edge (both tab pages).
+// Layout mirrors the reference: a spinning vinyl whose inner 60% shows the
+// cover, a "title · artist" label that scrolls horizontally (with a fade at
+// both ends while text is cut off) when it does not fit, a play/pause button
+// wearing the seek progress as a ring, and a next button at the far end.
+// Tapping the bar itself opens the now-playing sheet.
+
+.wrap {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 20;
+    width: min(464px, calc(100vw - 24px));
+    animation: mini-in 0.36s cubic-bezier(0.32, 0.72, 0.2, 1) both;
+}
+
+/* Rises into place when it appears — after the player sheet slides away
+   or when a first track loads. */
+@keyframes mini-in {
+    from {
+        transform: translateX(-50%) translateY(18px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+.mini {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    height: 58px;
+    padding: 3px 8px 3px 3px;
+    border-radius: 29px; /* pill */
+    background: var(--glass-strong);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-card);
+    -webkit-backdrop-filter: blur(28px) saturate(1.8);
+    backdrop-filter: blur(28px) saturate(1.8);
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform 0.15s;
+
+    &:active {
+        transform: scale(0.985);
+    }
+}
+
+/* --- spinning vinyl (cover in its inner 60%) --- */
+
+.disc {
+    position: relative;
+    width: 50px;
+    height: 50px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background:
+        repeating-radial-gradient(circle at 50% 50%,
+            rgba(255, 255, 255, 0.06) 0 1px,
+            rgba(0, 0, 0, 0) 1px 3.5px),
+        radial-gradient(circle at 50% 50%, #26272d 0%, #141519 45%, #0a0b0e 80%, #17181d 100%);
+    box-shadow:
+        0 6px 14px -6px rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    animation: disc-spin 12s linear infinite;
+    animation-play-state: running;
+}
+
+.disc-paused {
+    animation-play-state: paused;
+}
+
+@keyframes disc-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.disc-cover {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 60%;
+    height: 60%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255, 255, 255, 0.92);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+        inset 0 -4px 10px rgba(0, 0, 0, 0.25);
+
+    svg {
+        width: 44%;
+        height: 44%;
+    }
+}
+
+/* --- scrolling "title · artist" label (mechanics live in Marquee) --- */
+
+.mini-label {
+    font-size: 14.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text);
+}
+
+.label-artist {
+    font-weight: 500;
+    color: var(--text-2);
+}
+
+/* --- play/pause with the seek progress as its ring --- */
+
+.play-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+}
+
+/* SVG stroke ring: antialiased by default, round caps at both ends, and the
+   fill starts at 12 o'clock (the -90deg rotation puts dash offset 0 on top). */
+.ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    pointer-events: none;
+
+    circle {
+        fill: none;
+        stroke-width: 2.4;
+    }
+}
+
+.ring-track {
+    stroke: color-mix(in srgb, var(--text-2) 30%, transparent);
+}
+
+.ring-fill {
+    stroke: var(--text);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.25s linear, opacity 0.2s;
+}
+
+.play-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: transform 0.15s;
+
+    svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.08);
+        }
+    }
+
+    &:active {
+        transform: scale(0.92);
+    }
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: transform 0.15s, background-color 0.2s;
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--row-hover);
+            transform: scale(1.06);
+        }
+    }
+
+    &:active {
+        transform: scale(0.92);
+    }
+
+    svg {
+        width: 20px;
+        height: 20px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wrap {
+        animation: none;
+    }
+
+    .disc {
+        animation: none;
+    }
+}

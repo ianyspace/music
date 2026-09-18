@@ -1,0 +1,12 @@
+{
+    "name": "space-music-worker",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Cloudflare Worker exposing the R2 music bucket as a JSON track index for the /music/ page",
+    "type": "module",
+    "scripts": {
+        "dev": "npx wrangler dev",
+        "deploy": "npx wrangler deploy",
+        "tail": "npx wrangler tail"
+    }
+}

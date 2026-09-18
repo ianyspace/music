@@ -1,0 +1,38 @@
+/**
+ * Global stylesheet. Next's pages router only allows global CSS from
+ * `pages/_app.js`, so this is the single entry point and imports everything
+ * global the music app needs.
+ *
+ * Everything visual lives in the components' own `Foo.module.scss` next to
+ * them; these rules are only the resets the modules assume.
+ */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    background: #f6f6f7;
+    /* The music app owns the whole viewport; let it breathe on iOS. */
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+        'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+    overscroll-behavior-y: none;
+}
+
+a {
+    color: inherit;
+}
+
+button {
+    font: inherit;
+    color: inherit;
+}
