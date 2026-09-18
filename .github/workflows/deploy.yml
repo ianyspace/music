@@ -91,6 +91,12 @@ jobs:
           # on mount in a different file, and has to gate the ripples in both
           # layouts. A key typo or a half-gated switch also fails silently.
           node scripts/check-ripples-setting.js
+          # The list preferences (不喜欢 + 置顶) are read on mount, written on
+          # every change, and applied to the one list every downstream count
+          # reads. A key typo, a half-gated filter, or a nested button would all
+          # fail silently — the list looks fine, the totals are wrong, or the
+          # three-dots button is silently torn out of the accessibility tree.
+          node scripts/check-dislike-pin.js
           echo "build output verified"
 
       - name: Setup Pages

@@ -214,6 +214,39 @@ export const IconHeart = () => (
     </SvgStroke>
 );
 
+// "Move into disliked" — a thumb turned down, not a cross.
+//
+// The X was the obvious pick and it is the wrong one: `IconClose` already
+// wears it, and in this app an X means *delete* (it is the cache manager's
+// remove button). Disliking keeps the song around — it just stops showing it —
+// and the thumb is the one glyph that says "I don't want this" without saying
+// "destroy it", which is also why the row action reads 移入 (move into) rather
+// than 删除 (delete).
+//
+// Drawn at the same weight as `IconHeart` so the pair can sit together in the
+// drawer: a 4px-thick cuff on the left, the plate folding away to the right.
+export const IconDislike = ({ size = 20 }) => (
+    <SvgStroke size={size}>
+        <path d="M8.6 10.2H5.9a1.6 1.6 0 0 0-1.6 1.6v7.6a1.6 1.6 0 0 0 1.6 1.6h2.7z" />
+        <path d="M8.6 21h8.2a2.4 2.4 0 0 0 2.34-1.86l1.4-6.2A2.4 2.4 0 0 0 18.2 9.8h-4.3l.94-4.2a2.3 2.3 0 0 0-4.2-1.9L8.6 10.2z" />
+    </SvgStroke>
+);
+
+// "Pin to the top" — a pin, pushed in at an angle.
+//
+// An up-arrow was the other candidate; the pin wins because the action moves a
+// row to the *first position in this list*, and an arrow would read as
+// "previous track" next to the transport icons on the player screen.
+//
+// Head is the diamond at the top, the flange bars sit under it, and the needle
+// runs to the lower-left corner so the glyph still reads as a pin at 18px.
+export const IconPin = ({ size = 20 }) => (
+    <SvgStroke size={size}>
+        <path d="M14.4 9.6 20.4 3.6" />
+        <path d="M9.1 5.4 18.6 14.9a.9.9 0 0 1-.5 1.5l-3.3.7-3.9 3.9-6.9-6.9 3.9-3.9.7-3.3a.9.9 0 0 1 1.5-.5z" />
+    </SvgStroke>
+);
+
 export const IconCloud = () => (
     <SvgStroke size={20}>
         <path d="M7 18a4.6 4.6 0 0 1-.6-9.15A6 6 0 0 1 17.8 9.5 4.2 4.2 0 0 1 17 18z" />

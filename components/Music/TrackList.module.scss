@@ -284,9 +284,19 @@
     list-style: none;
 }
 
+/* A row is the play target plus the three-dots button, side by side. The list
+   keeps the spacing: the row itself is a bare flex line whose only job is to
+   hold the two together, so the hover wash can cover both. */
+.row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
 .track,
 .track-active {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -301,19 +311,32 @@
     font-family: inherit;
     text-align: left;
     cursor: pointer;
+    /* Not a <button> any more — a div with the button role, so the row and its
+       three-dots button can be siblings. Everything the browser gave that for
+       free has to be said here instead. */
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
     transition: background-color 0.18s, transform 0.12s;
 
     @media (hover: hover) {
-        &:hover:not(:disabled) {
+        &:hover {
             background: var(--row-hover);
         }
     }
 
-    &:active:not(:disabled) {
+    &:active {
         transform: scale(0.985);
     }
 
-    &:disabled {
+    &:focus-visible {
+        outline: 2px solid var(--accent-2);
+        outline-offset: -2px;
+    }
+
+    /* The loading row stays inert: `pointer-events` rather than `disabled`,
+       which a div does not have. */
+    &[aria-disabled='true'] {
+        pointer-events: none;
         cursor: wait;
         opacity: 0.65;
     }
@@ -395,6 +418,65 @@
     display: inline-flex;
     color: var(--text-2);
     flex-shrink: 0;
+}
+
+/* --- per-row three-dots button --- */
+
+/* Deliberately quiet. `color: var(--text-2)` at 0.55 opacity is roughly a
+   third of the title's contrast, so a column of them reads as a texture
+   instead of a row of buttons — the row's own play target stays the primary
+   action. Hover and the open state are the two moments it earns attention. */
+.row-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-2);
+    opacity: 0.55;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.18s, background-color 0.2s, transform 0.15s;
+
+    svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            opacity: 1;
+            background: var(--row-active);
+        }
+
+        /* The dots light up with the row they belong to, so aim is obvious
+           before the button itself is hit. */
+        .row:hover & {
+            opacity: 1;
+        }
+    }
+
+    &:active {
+        transform: scale(0.9);
+    }
+
+    &:focus-visible {
+        opacity: 1;
+        outline: 2px solid var(--accent-2);
+        outline-offset: -2px;
+    }
+}
+
+/* Its drawer is open: the button stays lit for as long as the sheet is up. */
+.row-more-on {
+    opacity: 1;
+    background: var(--row-active);
+    color: var(--accent);
 }
 
 /* equalizer bars on the active row */

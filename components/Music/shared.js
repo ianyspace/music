@@ -16,6 +16,15 @@ export const TRACK_LIST_CACHE_KEY = 'music:trackListCache';
 // app-wide one, and apart from the playback keys because it is a preference
 // the visitor chose rather than state the app restored.
 export const RIPPLES_KEY = 'music:setting:ripples';
+// The two list preferences. Both are *sets/orders of track keys* — the same
+// `<source>:<id>` form `audioCacheKey` builds — held as a JSON array in
+// localStorage rather than in IndexedDB: they are small, they are read on
+// every render of the list, and `storageGet`/`storageSet` already cover them.
+// Keeping them next to the theme/ripples keys also means "clear site data"
+// wipes the visitor's taste along with the rest of their settings, which is
+// what you want — an orphaned dislike list would silently hide songs.
+export const DISLIKED_KEY = 'music:setting:disliked';
+export const ORDER_KEY = 'music:setting:order';
 // Drive returns at most `pageSize` files per response; follow nextPageToken
 // so libraries bigger than one page still show up (capped to stay sane).
 export const LIST_HARD_CAP = 1000;
@@ -56,6 +65,78 @@ export const storageSet = function (key, value) {
     try {
         window.localStorage.setItem(key, value);
     } catch (err) { /* private mode etc. — keep working without persistence */ }
+};
+
+/**
+ * Reads a stored array of track keys (`<source>:<id>`).
+ *
+ * Anything that is not an array of non-empty strings reads as empty rather than
+ * throwing: a half-written value (or one from a future shape) must degrade to
+ * "no preference", never to a broken list. Order is preserved because the
+ * caller may be the pinned-order list, where order *is* the payload.
+ */
+export const readKeyList = function (key) {
+    let parsed;
+    try { parsed = JSON.parse(storageGet(key)); } catch (err) { parsed = null; }
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set();
+    const keys = [];
+    parsed.forEach((entry) => {
+        if (typeof entry !== 'string' || !entry) return;
+        if (seen.has(entry)) return;
+        seen.add(entry);
+        keys.push(entry);
+    });
+    return keys;
+};
+
+export const writeKeyList = function (key, keys) {
+    try {
+        storageSet(key, JSON.stringify(keys || []));
+    } catch (err) { /* see storageSet */ }
+};
+
+/**
+ * Applies the visitor's list preferences to a raw track list.
+ *
+ * Two things happen, in this order:
+ *
+ * 1. Tracks whose key is in `disliked` are dropped. This is what makes "移入
+ *    不喜欢" remove a song from the list *and* from every count derived from
+ *    the result — there is exactly one filtered list downstream, so the row,
+ *    the total on the brand badge and the cache-manager totals agree.
+ * 2. The survivors are reordered so that the keys in `order` come first, in
+ *    that order, with everything else keeping its source order behind them.
+ *
+ * The reorder is a *stable partial* sort rather than "sort by index in
+ * `order`": `order` only ever holds keys the visitor pinned, and a song that
+ * has never been pinned has no position in it. Sorting by a lookup would push
+ * every unpinned track to one arbitrary end (a `-1` index sorts first, an
+ * `Infinity` last), so the list would reshuffle itself the moment one song was
+ * pinned. Ranking by presence instead leaves the untouched library exactly as
+ * it was, which is what the visitor expects.
+ *
+ * Fresh library loads keep their positions too, so a refresh does not throw
+ * away what the visitor arranged.
+ */
+export const applyListPrefs = function (tracks, disliked, order) {
+    const hidden = new Set(disliked || []);
+    const kept = (tracks || []).filter((track) => !hidden.has(`${track.source || ''}:${track.id}`));
+    const ranking = new Map();
+    (order || []).forEach((key, index) => { ranking.set(key, index); });
+    if (ranking.size === 0) return kept;
+    const pinned = [];
+    const rest = [];
+    kept.forEach((track) => {
+        const key = `${track.source || ''}:${track.id}`;
+        if (ranking.has(key)) pinned.push([ranking.get(key), track]);
+        else rest.push(track);
+    });
+    // One pinned song still moves to the head — only an *empty* pin list is a
+    // no-op, and that is caught above.
+    if (pinned.length === 0) return kept;
+    pinned.sort((a, b) => a[0] - b[0]);
+    return pinned.map((entry) => entry[1]).concat(rest);
 };
 
 // iOS (and iOS-only browsers like Alook — they are all WKWebView) needs the

@@ -142,6 +142,10 @@ const DesktopMusic = function ({
     listLoading,
     tracks,
     visibleTracks,
+    // Count the badge and the folder row show. `visibleTracks` is the list
+    // after the visitor's preferences, so this is what agrees with what they
+    // can actually see — a hidden song must not stay in the total.
+    trackCount,
     search,
     onSearch,
     current,
@@ -331,7 +335,7 @@ const DesktopMusic = function ({
                                 {source === DRIVE_SOURCE ? 'Google Drive' : 'Music Space'}
                             </span>
                             <span className={styles['brand-sub']}>
-                                {listLoading ? '同步中…' : `${tracks.length} 首`}
+                                {listLoading ? '同步中…' : `${trackCount} 首`}
                                 {folderName ? ` · ${folderName}` : ''}
                             </span>
                         </span>
@@ -748,7 +752,7 @@ const DesktopMusic = function ({
                                         {connected ? '我的 Google 云盘' : sourceName}
                                     </span>
                                     <span className={styles['account-sub']}>
-                                        {folderName || '整个云盘'} · {listLoading ? '加载中…' : `${tracks.length} 首歌曲`}
+                                        {folderName || '整个云盘'} · {listLoading ? '加载中…' : `${trackCount} 首歌曲`}
                                     </span>
                                 </span>
                             </div>

@@ -16,8 +16,13 @@ import {
     LAST_TRACK_KEY,
     LAST_PROGRESS_KEY,
     RIPPLES_KEY,
+    DISLIKED_KEY,
+    ORDER_KEY,
     storageGet,
     storageSet,
+    readKeyList,
+    writeKeyList,
+    applyListPrefs,
     safePlay,
     isIOSLike,
     SILENT_WAV,
@@ -25,11 +30,13 @@ import {
     makeArtwork,
     listAllFiles,
     parseLyrics,
+    trackGradient,
 } from 'components/Music/shared';
 import {
     getCachedAudio,
     cacheAudio,
     listCachedAudio,
+    deleteCachedAudio,
     deleteCachedAudioMany,
 } from 'components/Music/audioCache';
 import {
@@ -49,14 +56,18 @@ import {
 import TrackList from 'components/Music/TrackList';
 import NowPlaying from 'components/Music/NowPlaying';
 import CacheManager from 'components/Music/CacheManager';
+import DislikedSheet from 'components/Music/DislikedSheet';
 import DriveSheet from 'components/Music/DriveSheet';
 import Profile from 'components/Music/Profile';
 import MiniPlayer from 'components/Music/MiniPlayer';
 import DesktopMusic from 'components/Music/DesktopMusic';
 import {
     IconArchive,
+    IconDislike,
     IconGoogleDrive,
     IconMoon,
+    IconNote,
+    IconPin,
     IconSun,
 } from 'components/Music/icons';
 
@@ -96,6 +107,22 @@ const MusicApp = function ({ variant = 'h5' }) {
     // effect that has to be switched *on* would be an odd default. Restored
     // and persisted below, next to the theme, since both are display settings.
     const [ripples, setRipples] = useState(true);
+    // The two list preferences, both sets of `<source>:<id>` keys.
+    //
+    // `disliked` is a *keep-out list*: matching tracks never reach the rendered
+    // list and never count towards any total. `order` records only the songs
+    // the visitor pinned, in the order they were pinned — it is a ranking, not
+    // a full permutation of the library, so a library refresh does not throw
+    // away positions the visitor never set. Both live in localStorage next to
+    // the theme and the ripples switch; see the note on `DISLIKED_KEY`.
+    const [disliked, setDisliked] = useState([]);
+    const [order, setOrder] = useState([]);
+    // The row drawer (cover + 置顶 / 移入不喜欢), opened from a row's own
+    // three-dots button. The *track* is held rather than an id so the drawer
+    // can render the cover and both labels with no lookup — and so it keeps
+    // rendering them while it plays its exit animation.
+    const [rowMenu, setRowMenu] = useState(null);
+    const [rowMenuClosing, setRowMenuClosing] = useState(false);
     // 'list' | 'profile' — which tab page is showing; the full-screen
     // now-playing page floats above it while `playerOpen` is true.
     const [tab, setTab] = useState('list');
@@ -152,6 +179,10 @@ const MusicApp = function ({ variant = 'h5' }) {
     // screen over. It is the only place that can raise Google's account picker.
     const [driveOpen, setDriveOpen] = useState(false);
     const [driveClosing, setDriveClosing] = useState(false);
+    // 不喜欢歌曲 manager: the same sheet mechanics once more, listing what the
+    // keep-out list holds so a song can be let back in.
+    const [dislikedOpen, setDislikedOpen] = useState(false);
+    const [dislikedClosing, setDislikedClosing] = useState(false);
 
     const audioRef = useRef(null);
     const tokenRestoreRef = useRef(false);
@@ -278,6 +309,104 @@ const MusicApp = function ({ variant = 'h5' }) {
         });
     }, []);
 
+    /* --- list preferences: hidden songs + pinned order --- */
+
+    useEffect(() => {
+        setDisliked(readKeyList(DISLIKED_KEY));
+        setOrder(readKeyList(ORDER_KEY));
+    }, []);
+
+    // 移入不喜欢 — the row action behind the list's three-dots button.
+    //
+    // Three things happen together and they are deliberately one action:
+    //   · the song joins the keep-out list, so it leaves the list and every
+    //     total derived from it on the next render,
+    //   · its cached audio is dropped — the visitor said they do not want it,
+    //     so holding a blob of it would be the one thing they'd least expect
+    //     to still be on disk,
+    //   · its pinned position is forgotten.
+    // Nothing is destructive beyond the cache: the file is untouched at its
+    // source, so 移出 in the manager brings it straight back.
+    const dislikeTrack = useCallback(function (track) {
+        if (!track) return;
+        const key = audioCacheKey(track);
+        setDisliked((keys) => {
+            if (keys.includes(key)) return keys;
+            const next = keys.concat(key);
+            writeKeyList(DISLIKED_KEY, next);
+            return next;
+        });
+        setOrder((keys) => {
+            if (!keys.includes(key)) return keys;
+            const next = keys.filter((entry) => entry !== key);
+            writeKeyList(ORDER_KEY, next);
+            return next;
+        });
+        // Cached audio goes. `deleteCachedAudio` resolves even when the key was
+        // never stored, and a failure here must not block the hide — the
+        // visitor's intent is the list, the cleanup is housekeeping.
+        deleteCachedAudio(key).catch(() => { });
+        setNotice(`已移入不喜欢：${parseTrackName(track.name).title}`);
+    }, []);
+
+    // 移出（不喜欢歌曲 manager）— the reverse: back into the list, and
+    // cacheable again the next time it plays.
+    const restoreTrack = useCallback(function (key) {
+        const id = String(key || '');
+        if (!id) return;
+        setDisliked((keys) => {
+            const next = keys.filter((entry) => entry !== id);
+            writeKeyList(DISLIKED_KEY, next);
+            return next;
+        });
+    }, []);
+
+    // 置顶 — move the song to the head of the list.
+    //
+    // The stored `order` is a ranking of pinned keys, and "top" is expressed by
+    // *unshifting* the key: whatever was pinned before keeps its relative order
+    // behind it. Re-pinning a song that is already pinned therefore re-promotes
+    // it, which is what a second tap on 置顶 should do.
+    const pinTrack = useCallback(function (track) {
+        if (!track) return;
+        const key = audioCacheKey(track);
+        setOrder((keys) => {
+            const next = [key].concat(keys.filter((entry) => entry !== key));
+            writeKeyList(ORDER_KEY, next);
+            return next;
+        });
+        setNotice(`已置顶：${parseTrackName(track.name).title}`);
+    }, []);
+
+    const clearPinnedOrder = useCallback(function () {
+        setOrder([]);
+        writeKeyList(ORDER_KEY, []);
+        setNotice('已恢复默认顺序');
+    }, []);
+
+    /* --- row drawer (cover + 置顶 / 移入不喜欢) --- */
+
+    const openRowMenu = useCallback(function (track) {
+        setRowMenuClosing(false);
+        setRowMenu(track);
+    }, []);
+
+    const closeRowMenu = useCallback(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setRowMenu(null);
+            setRowMenuClosing(false);
+            return;
+        }
+        setRowMenuClosing(true);
+    }, []);
+
+    useEffect(() => {
+        if (!rowMenu) return undefined;
+        const onKeyDown = (event) => { if (event.key === 'Escape') closeRowMenu(); };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [rowMenu, closeRowMenu]);
+
     /* --- three-dots drawer --- */
 
     const closeMenu = useCallback(function () {
@@ -365,6 +494,33 @@ const MusicApp = function ({ variant = 'h5' }) {
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [cacheOpen, closeCacheManager]);
+
+    /* --- 不喜欢歌曲 manager --- */
+
+    // Opened from the list's own drawer, one screen below 缓存管理. It reads
+    // `disliked` straight off state — that list *is* the store, so there is
+    // nothing to re-read on open the way the cache manager has to.
+    const openDislikedManager = useCallback(function () {
+        closeMenu();
+        setDislikedClosing(false);
+        setDislikedOpen(true);
+    }, [closeMenu]);
+
+    const closeDislikedManager = useCallback(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setDislikedOpen(false);
+            setDislikedClosing(false);
+            return;
+        }
+        setDislikedClosing(true);
+    }, []);
+
+    useEffect(() => {
+        if (!dislikedOpen) return undefined;
+        const onKeyDown = (event) => { if (event.key === 'Escape') closeDislikedManager(); };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [dislikedOpen, closeDislikedManager]);
 
     // 全部缓存: download every track that is not stored yet, `CACHE_ALL_CONCURRENCY`
     // at a time. A small pool rather than one at a time — a serial pass over a
@@ -913,10 +1069,19 @@ const MusicApp = function ({ variant = 'h5' }) {
         else audio.pause();
     }, [current]);
 
+    // The one list everything downstream reads: the rows, the total on the
+    // brand badge, the cache manager's counts, the shuffle and repeat walks.
+    //
+    // Preferences are applied to the *raw* library first — filter out what the
+    // visitor disliked, then put what they pinned at the top — and the search
+    // runs on the result. The order matters: a disliked song must not come back
+    // through a search that happens to match it, and searching must not disturb
+    // the pinned positions.
     const visibleTracks = useMemo(function () {
+        const filtered = applyListPrefs(tracks, disliked, order);
         const keyword = search.trim().toLowerCase();
-        if (!keyword) return tracks;
-        return tracks.filter((track) => {
+        if (!keyword) return filtered;
+        return filtered.filter((track) => {
             const { artist, title } = parseTrackName(track.name);
             return (
                 track.name.toLowerCase().includes(keyword)
@@ -924,7 +1089,7 @@ const MusicApp = function ({ variant = 'h5' }) {
                 || artist.toLowerCase().includes(keyword)
             );
         });
-    }, [tracks, search]);
+    }, [tracks, disliked, order, search]);
 
     const stepTrack = useCallback(function (delta) {
         if (!current || visibleTracks.length < 2) return;
@@ -1201,6 +1366,8 @@ const MusicApp = function ({ variant = 'h5' }) {
                     listLoading={listLoading}
                     tracks={tracks}
                     visibleTracks={visibleTracks}
+                    disliked={disliked}
+                    trackCount={visibleTracks.length}
                     search={search}
                     onSearch={setSearch}
                     current={current}
@@ -1228,6 +1395,8 @@ const MusicApp = function ({ variant = 'h5' }) {
                     onToggleLyrics={() => setLyricsVisible((visible) => !visible)}
                     ripples={ripples}
                     onToggleRipples={toggleRipples}
+                    onDislikeTrack={dislikeTrack}
+                    onPinTrack={pinTrack}
                 />
             ) : (
                 <>
@@ -1252,6 +1421,8 @@ const MusicApp = function ({ variant = 'h5' }) {
                                 onGoProfile={() => setTab('profile')}
                                 menuOpen={menuOpen && !menuClosing}
                                 onOpenMenu={openMenu}
+                                rowMenuId={rowMenu ? rowMenu.id : ''}
+                                onOpenRowMenu={openRowMenu}
                             />
                         </div>
                         <div
@@ -1378,6 +1549,29 @@ const MusicApp = function ({ variant = 'h5' }) {
                                 <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
                             </span>
                         </button>
+                        {/* Sits under the cache entry because the two are the
+                            same kind of screen — a list of songs the visitor
+                            acted on, each row undoable — and above 外观, which
+                            is a display preference rather than app content. */}
+                        <button
+                            type="button"
+                            className={styles['menu-item']}
+                            role="menuitem"
+                            onClick={openDislikedManager}
+                        >
+                            <span className={styles['menu-icon']} aria-hidden="true">
+                                <IconDislike size={20} />
+                            </span>
+                            <span className={styles['menu-text']}>
+                                <span className={styles['menu-title']}>不喜欢歌曲</span>
+                                <span className={styles['menu-sub']}>
+                                    查看已隐藏的歌曲，可移出让它回到列表
+                                </span>
+                            </span>
+                            <span className={styles['menu-value']}>
+                                {disliked.length > 0 ? `${disliked.length} 首` : ''}
+                            </span>
+                        </button>
                         {/* Appearance sits below the cache entry so the drawer
                             reads as app actions first, display preference last. */}
                         <button
@@ -1403,6 +1597,96 @@ const MusicApp = function ({ variant = 'h5' }) {
                 </div>
             )}
 
+            {/* The row drawer, opened by a row's own three-dots button. It gets
+                the same treatment as the drawer above — the cover, the title
+                and the two actions — but nothing else: the song's playback
+                state is already legible from the row under the scrim. */}
+            {rowMenu && (
+                <div
+                    className={rowMenuClosing
+                        ? `${styles['menu-scrim']} ${styles['menu-scrim-out']}`
+                        : styles['menu-scrim']}
+                    role="presentation"
+                    onClick={closeRowMenu}
+                    onAnimationEnd={(event) => {
+                        if (rowMenuClosing && event.target === event.currentTarget) {
+                            setRowMenu(null);
+                            setRowMenuClosing(false);
+                        }
+                    }}
+                >
+                    <div
+                        className={rowMenuClosing
+                            ? `${styles.menu} ${styles['menu-out']}`
+                            : styles.menu}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="歌曲操作"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <span className={styles['menu-grip']} aria-hidden="true" />
+                        <div className={styles['row-head']}>
+                            <span
+                                className={styles['row-cover']}
+                                style={{ background: trackGradient(rowMenu.name) }}
+                                aria-hidden="true"
+                            >
+                                <IconNote size={22} />
+                            </span>
+                            <span className={styles['row-meta']}>
+                                <span className={styles['row-title']}>
+                                    {parseTrackName(rowMenu.name).title}
+                                </span>
+                                <span className={styles['row-artist']}>
+                                    {parseTrackName(rowMenu.name).artist}
+                                </span>
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            className={styles['menu-item']}
+                            role="menuitem"
+                            onClick={() => {
+                                pinTrack(rowMenu);
+                                closeRowMenu();
+                            }}
+                            disabled={visibleTracks[0] && visibleTracks[0].id === rowMenu.id}
+                        >
+                            <span className={styles['menu-icon']} aria-hidden="true">
+                                <IconPin size={20} />
+                            </span>
+                            <span className={styles['menu-text']}>
+                                <span className={styles['menu-title']}>置顶</span>
+                                <span className={styles['menu-sub']}>
+                                    {visibleTracks[0] && visibleTracks[0].id === rowMenu.id
+                                        ? '已经在列表第一位'
+                                        : '把这首歌移到列表第一位'}
+                                </span>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            className={`${styles['menu-item']} ${styles['menu-item-danger']}`}
+                            role="menuitem"
+                            onClick={() => {
+                                dislikeTrack(rowMenu);
+                                closeRowMenu();
+                            }}
+                        >
+                            <span className={styles['menu-icon']} aria-hidden="true">
+                                <IconDislike size={20} />
+                            </span>
+                            <span className={styles['menu-text']}>
+                                <span className={styles['menu-title']}>移入不喜欢</span>
+                                <span className={styles['menu-sub']}>
+                                    从列表隐藏并删除本地缓存，可在「不喜欢歌曲」里找回
+                                </span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {cacheOpen && (
                 <CacheManager
                     entries={cacheEntries}
@@ -1418,6 +1702,18 @@ const MusicApp = function ({ variant = 'h5' }) {
                     onRefresh={readCache}
                     onDelete={deleteCacheEntries}
                     onCacheAll={cacheAllTracks}
+                />
+            )}
+
+            {dislikedOpen && (
+                <DislikedSheet
+                    keys={disliked}
+                    tracks={tracks}
+                    closing={dislikedClosing}
+                    onClosed={() => { setDislikedOpen(false); setDislikedClosing(false); }}
+                    onCancelClose={() => setDislikedClosing(false)}
+                    onClose={closeDislikedManager}
+                    onRestore={restoreTrack}
                 />
             )}
 

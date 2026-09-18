@@ -168,8 +168,11 @@ check('the two ids match', idInList && idInMini && idInList[1] === idInMini[1],
 check('TrackList puts that id on the <ul>',
     new RegExp(`<ul className=\\{styles\\.tracks\\} id=\\{listId\\}>`).test(listJs),
     'id={listId} on <ul>');
+// The row is a flex line holding the play target and the three-dots button, so
+// the <li> now carries a class too — the check only cares that the id stays on
+// the <li> the jump scrolls to, not what else is on it.
 check('every row still carries data-track-id',
-    /<li key=\{track\.id\} data-track-id=\{track\.id\}>/.test(listJs), 'data-track-id present');
+    /<li key=\{track\.id\} data-track-id=\{track\.id\}[^>]*>/.test(listJs), 'data-track-id present');
 check('MiniPlayer looks the list up by that id',
     miniJs.includes('document.getElementById(LIST_ID)'), 'getElementById(LIST_ID)');
 check('the row lookup escapes the id',

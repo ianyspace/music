@@ -33,6 +33,12 @@ import styles from './TrackList.module.scss';
  * the row (de)marking that the jump targets is done through the DOM attributes
  * this component writes — `data-track-id` on every row, and the transient
  * `track-pulse` class.
+ *
+ * Each row's three-dots button opens a per-song drawer (置顶 / 移入不喜欢) that
+ * the shell owns, for the same reason the list's own drawer lives there: a
+ * `position: fixed` child would be trapped by this column's `transform`ed
+ * ancestor. `rowMenuId` is the track whose drawer is open, so the button can
+ * report its expanded state.
  */
 const TrackList = function ({
     connected,
@@ -48,6 +54,8 @@ const TrackList = function ({
     onGoProfile,
     menuOpen,
     onOpenMenu,
+    rowMenuId,
+    onOpenRowMenu,
 }) {
     const keyword = search.trim();
     const currentId = current ? current.track.id : '';
@@ -179,13 +187,31 @@ const TrackList = function ({
                             const active = track.id === currentId;
                             const loading = loadingId === track.id;
                             const meta = parseTrackName(track.name);
+                            const rowMenuOpen = rowMenuId === track.id;
                             return (
-                                <li key={track.id} data-track-id={track.id}>
-                                    <button
-                                        type="button"
+                                <li key={track.id} data-track-id={track.id} className={styles['row']}>
+                                    {/* A row is two sibling controls, not a
+                                        button wrapping another button — which
+                                        is invalid HTML and gets the inner one
+                                        torn out of the accessibility tree. The
+                                        play target is therefore a div carrying
+                                        the button role, with the whole row's
+                                        hit area, and the three-dots button sits
+                                        next to it as its own button. */}
+                                    <div
                                         className={active ? styles['track-active'] : styles.track}
-                                        disabled={loading}
-                                        onClick={() => onToggleTrack(track)}
+                                        role="button"
+                                        tabIndex={loading ? -1 : 0}
+                                        aria-disabled={loading || undefined}
+                                        aria-label={`播放 ${meta.title}`}
+                                        onClick={() => { if (!loading) onToggleTrack(track); }}
+                                        onKeyDown={(event) => {
+                                            if (loading) return;
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                onToggleTrack(track);
+                                            }
+                                        }}
                                     >
                                         <span
                                             className={styles['track-thumb']}
@@ -211,6 +237,25 @@ const TrackList = function ({
                                         ) : active ? (
                                             <span className={eqClass} aria-hidden="true"><i /><i /><i /></span>
                                         ) : null}
+                                    </div>
+                                    {/* Muted by default — the row's own play
+                                        target is the primary action, and a
+                                        full-contrast dots button on every row
+                                        would turn the list into a toolbar. It
+                                        comes up to full strength on hover and
+                                        while its drawer is open. */}
+                                    <button
+                                        type="button"
+                                        className={rowMenuOpen
+                                            ? `${styles['row-more']} ${styles['row-more-on']}`
+                                            : styles['row-more']}
+                                        title="更多操作"
+                                        aria-label={`${meta.title} 的更多操作`}
+                                        aria-haspopup="dialog"
+                                        aria-expanded={rowMenuOpen}
+                                        onClick={() => onOpenRowMenu(track)}
+                                    >
+                                        <IconMoreVertical />
                                     </button>
                                 </li>
                             );

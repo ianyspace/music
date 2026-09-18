@@ -324,6 +324,82 @@
     color: var(--text-2);
 }
 
+/* Destructive row — 移入不喜欢. Only the icon tile and the title carry the
+   warning colour: tinting the whole row would make the drawer read as a
+   confirmation dialog, and this action is reversible from the manager. */
+.menu-item-danger {
+    .menu-icon {
+        background: rgba(255, 59, 48, 0.14);
+        color: #ff3b30;
+    }
+
+    .menu-title {
+        color: #ff3b30;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            background: rgba(255, 59, 48, 0.1);
+        }
+    }
+}
+
+/* --- row drawer head: cover + title + artist --- */
+
+.row-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 6px 12px 14px;
+}
+
+.row-cover {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 62px;
+    height: 62px;
+    border-radius: 14px;
+    color: rgba(255, 255, 255, 0.92);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+        0 12px 26px -14px rgba(15, 18, 40, 0.6);
+
+    > svg {
+        width: 26px;
+        height: 26px;
+    }
+}
+
+.row-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    flex: 1;
+}
+
+/* Two lines of title rather than an ellipsis on one: this is the one place the
+   visitor gets to confirm *which* song they are about to hide, so a long title
+   must not be cut short. */
+.row-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 16.5px;
+    font-weight: 700;
+    line-height: 1.32;
+}
+
+.row-artist {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--text-2);
+}
+
 /* --- toast --- */
 
 .toast {
