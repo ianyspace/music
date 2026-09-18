@@ -51,9 +51,8 @@ jobs:
       - name: Disable Jekyll
         run: touch out/.nojekyll
 
-      # A missing `out/` or a missing service worker would ship a half-dead site:
-      # the app would load but never gain an offline shell. Fail the build here so
-      # it is caught in CI instead of being discovered on the live site.
+      # A missing `out/` would ship a half-dead site. Fail the build here so it
+      # is caught in CI instead of being discovered on the live site.
       #
       # Note the route shape: with `trailingSlash: true` Next emits `/h5` as
       # `out/h5/index.html` (a folder per route), NOT `out/h5.html`. GitHub Pages
@@ -66,9 +65,11 @@ jobs:
           test -f out/h5/index.html   || { echo "::error::out/h5/index.html missing"; exit 1; }
           test -f out/desktop/index.html || { echo "::error::out/desktop/index.html missing"; exit 1; }
           test -f out/404.html        || { echo "::error::out/404.html missing"; exit 1; }
-          test -f out/sw.js           || { echo "::error::out/sw.js missing"; exit 1; }
-          test -f out/.nojekyll       || { echo "::error:out/.nojekyll missing"; exit 1; }
+          test -f out/.nojekyll       || { echo "::error::out/.nojekyll missing"; exit 1; }
           test -d out/_next/static    || { echo "::error::out/_next/static missing"; exit 1; }
+          # The service worker was removed on purpose; its reappearance would mean
+          # a stale shell is being shipped again.
+          test ! -e out/sw.js         || { echo "::error::out/sw.js exists — the service worker was removed on purpose"; exit 1; }
           node scripts/check-css-modules.js
           echo "build output verified"
 

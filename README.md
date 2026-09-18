@@ -47,32 +47,24 @@ Worker 源码在 `cloudflare-worker/`，部署方式见 `cloudflare-worker/READM
 播放页「更多」抽屉 → 「谷歌云盘链接」，填入自己的 OAuth Client ID（`drive.readonly`，
 只需一次，存在 localStorage）。公共曲库不需要任何授权，所以不填也能正常播放。
 
-## 离线
+## 离线与缓存
 
-目标是「像 App 一样」：断网也能打开网站、进曲库、切歌、看歌词。分两层实现，互不重复。
+断网不能打开网站了：**没有 Service Worker**。它以前负责预缓存页面外壳，但代价太大 ——
+部署后旧外壳会继续吐旧 JS，而且「我现在看到的是不是最新版？」没法靠刷新回答。现在
+页面外壳直接由 GitHub Pages 提供，一次普通请求就够快，不需要中间层。
 
-**1. 页面外壳 —— Service Worker（`public/sw.js`）**
+留在浏览器里的只有**数据**，全部标 `NEVER_EXPIRES`，不手动清除就不清除：
 
-- 预缓存三个入口页（`/`、`/h5/`、`/desktop/`），任意路由断网都能落到已缓存的页面。
-- 策略是**先看缓存、有就立刻返回，同时把网络的最新结果写回缓存**：
-  - `_next/static/*` 这类带哈希的不可变资源走**缓存优先**（有就直接用，不用每次都等网络）。
-  - 其余同源 GET 走**stale-while-revalidate**（先返回缓存，再后台更新）。
-- **绝不会让用户打不开网站**，靠这几道保险：
-  - 只拦同源 GET；跨域（Worker / R2 / Google 接口）和 `Range` 请求（拖动进度条）一律放行。
-  - `sw.js` 自身永不被缓存，避免更新卡死。
-  - 非 2xx 响应不入缓存。
-  - 任何异常最终都回落到 `fetch(request)`；连网络都没有时，导航请求再回落到已缓存的外壳页。
-- 注册是纯增强：`lib/serviceWorker.js` 在 `load` 之后注册，浏览器不支持、非 HTTPS、
-  注册失败、`sw.js` 404 —— 全都静默忽略，在线功能完全不受影响。
+- 音频 blob 存 IndexedDB（`lib/cache/indexedDb.js` + `components/Music/audioCache.js`）。
+- 曲库清单存 localStorage（`components/Music/librarySource.js`）。
+- 早期版本写入的带 TTL 的旧记录仍然按原过期时间处理，不会被意外「永久化」。
 
-**2. 歌曲 / 曲库清单 / 配置 —— 永久缓存（不经过 SW）**
+选 IndexedDB / localStorage 而不是 Cache API，是因为这里能被「缓存管理」面板统计、
+逐条删除、一键清空 —— 你始终知道占了多少空间、能自己清掉。
 
-- 音频 blob 存 IndexedDB（`lib/cache/indexedDb.js` + `components/Music/audioCache.js`），
-  曲库清单存 localStorage（`components/Music/librarySource.js`）。
-- **都标 `NEVER_EXPIRES`，不会自己过期**：不手动清除就不清除。
-  早期版本写入的带 TTL 的旧记录仍然按原过期时间处理，不会被意外「永久化」。
-- 放在 IndexedDB / localStorage 而不是 SW 缓存，是因为这里能被「缓存管理」面板
-  统计、逐条删除、一键清空 —— 用户始终知道占了多少空间、能自己清掉。
+> 已经访问过旧版本的浏览器里还装着那个 Service Worker，而且删掉 `sw.js` 并不会让它消失。
+> `utils/retireServiceWorker.js` 会在加载时把它注销掉并清掉它留下的缓存。等旧外壳自然
+> 淘汰完，这个文件就可以删了。它只做注销，永远不会再注册任何东西。
 
 ## 部署
 
@@ -83,13 +75,14 @@ Source 选 `GitHub Actions`，别留在「Deploy from a branch」。
 
 留在分支模式的话，GitHub 会额外跑一次自己的 Jekyll 构建，并且发布的是**仓库根目录**而不是
 `out/`，两个部署互相竞争，线上会**时好时坏**：一会儿正常，一会儿首页变成 Jekyll 渲染的
-README、而 `/h5/`、`/desktop/`、`/sw.js` 全部 404。别因为刚推完看着正常就以为没事。
+README、而 `/h5/`、`/desktop/` 全部 404。别因为刚推完看着正常就以为没事。
 
 一次性确认方法：访问 `https://ianyspace.github.io/music/README.md`，如果能打开（200），
 说明发布的是仓库根、也就是这个设置还没改对。
 
-工作流在发布前会校验 `out/` 里的关键文件（三个页面、`sw.js`、`.nojekyll`、`_next/static`），
-缺任何一个都会直接让 CI 失败，避免发布出一个「能打开但永远没有离线能力」的半成品站点。
+工作流在发布前会校验 `out/` 里的关键文件（三个页面、`.nojekyll`、`_next/static`），
+缺任何一个都会直接让 CI 失败；同时会确认 `out/sw.js` **不存在** —— 因为它已经被有意移除，
+再出现就说明又在发布旧外壳了。
 
 ## 快捷键 / 交互
 

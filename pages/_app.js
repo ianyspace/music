@@ -1,8 +1,7 @@
 import React from 'react';
 import Head from 'next/head';
 
-import { registerServiceWorker } from 'lib/serviceWorker';
-import { BASE_PATH } from 'utils/basePath';
+import { retireServiceWorker } from 'utils/retireServiceWorker';
 
 import 'styles/index.scss';
 
@@ -10,14 +9,23 @@ import 'styles/index.scss';
  * The music module has no MDX, no i18n and no shared layout: both routes render
  * the same `MusicApp` and only the `variant` differs, so `_app.js` exists to
  * load the global stylesheet (Next's pages router only allows global CSS
- * imports from here), pin the viewport, and register the offline shell.
+ * imports from here) and pin the viewport.
+ *
+ * There is deliberately no service worker. One used to precache the app shell,
+ * and it caused more problems than it solved: a stale shell could keep serving
+ * old JS after a deploy, and it made "is this the live build?" impossible to
+ * answer by simply reloading. The app does not need it either — audio, the
+ * track list and settings live in IndexedDB / localStorage (see
+ * `components/Music/audioCache.js`), and Pages serves the shell itself, so a
+ * normal request is enough to stay fast.
+ *
+ * All that is left is `retireServiceWorker`, which tears the old shell down on
+ * browsers that still have it installed. It only unregisters; it never
+ * registers anything.
  */
 export default function App({ Component, pageProps }) {
     React.useEffect(() => {
-        // Progressive enhancement: registers after load and swallows every
-        // failure, so the app is fully usable online even if this does nothing.
-        // Registration is idempotent, so StrictMode's double effect is harmless.
-        registerServiceWorker(`${BASE_PATH}/sw.js`);
+        retireServiceWorker();
     }, []);
 
     return (

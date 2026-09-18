@@ -14,11 +14,14 @@
 | `pages/h5.js` / `pages/desktop.js` | 两套布局，共用 `MusicApp`（只差 `variant`） |
 | `components/Music/` | 全部播放器代码 |
 | `lib/cache/indexedDb.js` | IndexedDB 薄封装（缓存存储层） |
-| `lib/serviceWorker.js` | 注册离线外壳，全程静默失败（纯增强） |
-| `public/sw.js` | Service Worker 本体，缓存页面外壳 |
-| `utils/basePath.js` | 绝对路径拼接（`site.pathPrefix` 的唯一出口） |
+| `utils/retireServiceWorker.js` | 注销旧 Service Worker 的过渡代码，可删 |
 | `cloudflare-worker/` | Cloudflare Worker，把 R2 桶暴露成曲库清单 |
+| `scripts/check-css-modules.js` | CI 校验：每个 `styles.x` 查找都有对应 `.scss` 定义 |
 | `styles/index.scss` | 唯一全局样式入口，只由 `pages/_app.js` 导入 |
+
+> **`public/` 和 `utils/basePath.js` 都已删除**，别再照着旧印象去找。
+> 服务工人（Service Worker）已彻底移除，见下方。`withBasePath()` 的唯一调用者是原
+> `_app.js` 里的 SW 注册，SW 一走它就没有使用者了 —— 需要再拼 basePath 时记得自己写回来。
 
 ## 关键约定
 
@@ -26,24 +29,30 @@
   组件样式与组件同目录 `Foo.module.scss` + `import styles from './Foo.module.scss'`；
   kebab-case 类名必须写 `styles['foo-bar']`。
 - **basePath**：`config/index.js` 的 `site.pathPrefix = '/music'` 是唯一来源（`next.config.js` 读它）。
-  `next/link`、`next/image`、`_next/*` 之外的所有绝对路径都必须走 `utils/basePath.js` 的 `withBasePath()`。
+  `next/link`、`next/image`、`_next/*` 会自动带上，其余绝对路径目前没有需要手工拼接的地方
+  （原来的 `utils/basePath.js` 随 SW 一起删了，确实要用时得自己写回来）。
 - **全屏浮层别放进被 `transform` 的子树**（重要，踩过坑）：`.view-in` 的 tab 切换动画
   会让 `transform` 保留终态，而带 `transform` 的祖先会成为 `position: fixed` 后代的包含块，
   于是 `inset: 0` 撑成整个滚动高度、面板被推到最底部（表现为"只有遮罩没有抽屉"）。
   抽屉 / 缓存管理这类全屏浮层一律挂在 `MusicApp` 最外层渲染。
+- **没有 Service Worker，这是有意的，不要加回来**（`public/` 目录已整个删掉）。
+  它曾负责预缓存页面外壳，但带来两个无法接受的代价：部署后旧外壳继续吐旧 JS；
+  以及「我现在看到的是不是最新版」没法靠刷新回答 —— 排查线上问题时这个不确定性
+  反复误导过判断。页面外壳由 Pages 自己提供，已经很稳，不需要中间层。
+  已经装过旧 SW 的浏览器由 `utils/retireServiceWorker.js` 在加载时注销并清掉
+  `music-shell-*` / `music-runtime-*` 缓存；**它只注销、永不注册**。
+  旧外壳自然淘汰完（几个月）这个文件就可以删。注意：光删 `public/sw.js` 是没用的，
+  已安装的 SW 不会因此消失，它只会在 fetch `sw.js` 时拿到 404 然后继续用旧缓存。
 - **缓存**：音频 blob 存 IndexedDB（`lib/cache/indexedDb.js`），key 是 `<source>:<track id>`；
   曲库清单存 localStorage。**两者都是永久缓存**（`NEVER_EXPIRES = 0` 表示不过期），
   不手动清除就不清除，所以 `audioCache.js` / `librarySource.js` 里没有 TTL 逻辑，
   也不要再引入自动清理或「已过期」状态。旧版本写入的带真实 `expiresAt` 的记录仍按原时间生效。
   `audioCache.js` 上的函数全部是 best-effort，IndexedDB 不可用时自动退化成纯联网播放。
-- **Service Worker**：`public/sw.js` 只负责**页面外壳**（`/`、`/h5/`、`/desktop/` 与 `_next/static`），
-  歌曲和清单不走它，避免同一份数据存两份。修改时守住这几条，否则会把用户锁在站点外：
-  只拦同源 GET；`Range` 请求与跨域请求直接放行；`sw.js` 自身永不缓存；非 2xx 不入缓存；
-  任何异常都回落到 `fetch(request)`，导航请求最后回落到已缓存外壳页。
-  改了缓存策略记得同步升 `public/sw.js` 里的 `VERSION`，否则旧缓存不会失效。
-- **`public/` 会被原样拷进 `out/`**：所以 `sw.js` 必须放在 `public/` 下、并保证路径是
-  `/music/sw.js`（`pages/_app.js` 用 `BASE_PATH` 拼出来）。
-- `.gitignore` 只忽略 `/.next/` 和 `/out/`，**不要**忽略 `public/`。
+  这层是**唯一**的离线能力，所以它坏掉时症状是「播放列表空 / 不缓存」而不是「网站打不开」。
+- **改 IndexedDB 的 `keyPath` 或建索引，必须同时升 `DB_VERSION`**：
+  store 已存在时 `createObjectStore` 是空操作，不升版本号只有新访客能拿到修复。
+  另外 `styles.x` 写错只返回 `undefined`、类名被静默丢掉，元素照常渲染却毫无样式 ——
+  这类静默失效由 `scripts/check-css-modules.js` 在 CI 里兜住。
 
 ## 迁移时替换了什么
 
@@ -51,9 +60,9 @@
 | --- | --- |
 | `components/SEO`（依赖 i18n + 站点配置） | `MusicApp` 里直接用 `next/head` 写 title/description |
 | `config` 里的 `site` + `supportedLanguages` | 只保留 `site` + `music`，`title` 改成 `Music Space` |
-| `utils/basePath.js`（同款） | 原样保留 |
 | `shared.js` 里的 IndexedDB 代码 | 拆到 `lib/cache/indexedDb.js` + `components/Music/audioCache.js` |
 | 挂在 `pages/music/` 下 | 改成根路径 `/`、`/h5`、`/desktop` |
+| `utils/basePath.js` | **已删除** —— 唯一调用者是 SW 注册，SW 移除后无人使用 |
 
 ## 常用命令
 
@@ -66,8 +75,9 @@
 推 `master` 触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` → 校验产物 →
 发布 `out/` 到 Pages。
 
-`npm run build` 会把 `public/**`（含 `sw.js`）拷进 `out/`，工作流再补一个 `out/.nojekyll`
+`npm run build` 产出 `out/`，工作流再补一个 `out/.nojekyll`
 （否则 Pages 的 Jekyll 会丢掉 `_next/` 这类下划线开头的目录）。
+仓库里已经没有 `public/` 了，所以不再有静态文件被拷进 `out/`。
 
 **产物形状（容易记错）**：`trailingSlash: true` 时 Next 给每个路由生成一个**目录 + index.html**，
 所以是 `out/h5/index.html`、`out/desktop/index.html`，**不是** `out/h5.html`。
@@ -83,19 +93,19 @@ Source 选 `GitHub Actions`。**不要**留在「Deploy from a branch」。
 如果留在分支模式，GitHub 会额外跑一个 Jekyll 构建（`pages build and deployment`，event=`dynamic`），
 它会发布**仓库根目录**而不是我们的 `out/`，两者竞争导致线上**时好时坏**：
 有时是我们的 app，过一会儿又变回 Jekyll 渲染的 README，
-`/h5/`、`/desktop/`、`/sw.js`、`/.nojekyll` 全 404。
+`/h5/`、`/desktop/`、`/.nojekyll` 全 404。
 **不要因为「刚 push 完是好的」就以为没问题 —— 这个故障是间歇性的。**
+（这个坑真实发生过：`f7a7cc1` 推完后整站就是挂的，`/` 是 README，`/h5/` 404。）
 
 **一次性定性检查**（比看工作流状态更直接）—— 请求仓库根目录的文件：
 
 ```bash
 curl -o /dev/null -w "%{http_code}\n" https://ianyspace.github.io/music/README.md     # 200 → 实锤
 curl -o /dev/null -w "%{http_code}\n" https://ianyspace.github.io/music/package.json  # 200
-curl -o /dev/null -w "%{http_code}\n" https://ianyspace.github.io/music/public/sw.js  # 200
-curl -o /dev/null -w "%{http_code}\n" https://ianyspace.github.io/music/sw.js         # 404
+curl -o /dev/null -w "%{http_code}\n" https://ianyspace.github.io/music/h5/           # 404 → 实锤
 ```
 
-根目录文件能访问、而 `/sw.js` 是 404，就说明发布的是仓库根（经 Jekyll），不是 `out/`。
+根目录文件能访问、而 `/h5/` 是 404，就说明发布的是仓库根（经 Jekyll），不是 `out/`。
 另一个信号：首页源码里有 `Jekyll SEO tag` 或 `/assets/css/style.css?v=<sha>`。
 
 排查时注意：`api.github.com/repos/<user>/<repo>/pages` 匿名访问返回 404 是**没权限**，不代表 Pages 没开。
