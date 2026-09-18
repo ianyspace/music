@@ -195,6 +195,16 @@ export const IconLogout = () => (
     </SvgStroke>
 );
 
+// Fold-away song list: a panel with a divider rail on its left, with the
+// chevron pointing at the edge the panel actually collapses towards (left).
+export const IconPanel = ({ size = 18 }) => (
+    <SvgStroke size={size}>
+        <rect x="3" y="4.5" width="18" height="15" rx="3" />
+        <path d="M9.2 4.5v15" />
+        <path d="M5.6 10.2 7.4 12l-1.8 1.8" strokeWidth="1.6" />
+    </SvgStroke>
+);
+
 // Settings entry of the wide-screen layout (top-right glass button).
 export const IconGear = ({ size = 20 }) => (
     <SvgStroke size={size}>
