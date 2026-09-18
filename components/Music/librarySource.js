@@ -17,7 +17,7 @@
 
 import { music } from 'config';
 
-import { CACHE_TTL } from './audioCache';
+import { NEVER_EXPIRES } from './audioCache';
 import {
     DRIVE_FILES_URL,
     listAllFiles,
@@ -51,10 +51,29 @@ export const audioCacheKey = function (track) {
     return `${track.source || CLOUD_SOURCE}:${track.id}`;
 };
 
+/**
+ * Reads the cached list for a library.
+ *
+ * The list is kept forever (`expiresAt: NEVER_EXPIRES`), so a cached library is
+ * always usable — that is what makes the app open with no network. A refresh
+ * replaces it, it is never invalidated by time. `forceRefresh` in the fetch
+ * helpers is how fresh data gets in, not this.
+ *
+ * Lists written before this became permanent still carry a real `expiresAt`,
+ * and those are still honoured so an old entry cannot outlive its intent.
+ */
 export const readListCache = function (source, clientId) {
     let cached;
     try { cached = JSON.parse(storageGet(listCacheKey(source, clientId))); } catch (err) { cached = null; }
-    if (!cached || !cached.expiresAt || cached.expiresAt <= Date.now()) return null;
+    if (!cached) return null;
+
+    const trackCount = Array.isArray(cached.tracks) ? cached.tracks.length : 0;
+    const expiry = Number(cached.expiresAt) || NEVER_EXPIRES;
+    const legacyExpired = expiry !== NEVER_EXPIRES && expiry <= Date.now();
+    // An empty cloud list is treated as "nothing cached" so a failed first
+    // fetch cannot masquerade as a valid empty library.
+    if (legacyExpired || (trackCount === 0 && !cached.savedAt)) return null;
+
     return {
         tracks: Array.isArray(cached.tracks) ? cached.tracks : [],
         folders: Array.isArray(cached.folders) ? cached.folders : [],
@@ -66,7 +85,8 @@ export const readListCache = function (source, clientId) {
 export const writeListCache = function (source, clientId, { tracks, folders = [], folderId = '' }) {
     storageSet(listCacheKey(source, clientId), JSON.stringify({
         savedAt: Date.now(),
-        expiresAt: Date.now() + CACHE_TTL,
+        // Kept forever: the offline app opens straight into the library.
+        expiresAt: NEVER_EXPIRES,
         clientId: clientId || '',
         folderId,
         folders,

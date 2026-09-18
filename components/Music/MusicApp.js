@@ -28,7 +28,6 @@ import {
 import {
     getCachedAudio,
     cacheAudio,
-    pruneCachedAudio,
     listCachedAudio,
     deleteCachedAudioMany,
 } from 'components/Music/audioCache';
@@ -159,10 +158,6 @@ const MusicApp = function ({ variant = 'h5' }) {
     // Lets `loadTracks` tell "we already show a usable list" from "the list is
     // empty", so a failed refresh degrades into a quiet notice.
     const tracksRef = useRef([]);
-
-    useEffect(() => {
-        pruneCachedAudio();
-    }, []);
 
     // Cached blobs are read first and are keyed per source, so a track already
     // downloaded from either library plays back with no network and no token.

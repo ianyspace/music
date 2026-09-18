@@ -53,10 +53,11 @@ const CacheManager = function ({
         return map;
     }, [tracks]);
 
-    // Newest first is not something the store hands us, so sort by remaining
-    // lifetime — the freshest cache sits on top, matching how it gets used.
+    // Newest first is not something the store hands us, so sort by when the
+    // blob was saved — the freshest cache sits on top, matching how it gets
+    // used. Legacy rows without a `savedAt` fall back to their old expiry.
     const ordered = useMemo(
-        () => entries.slice().sort((a, b) => b.expiresAt - a.expiresAt),
+        () => entries.slice().sort((a, b) => (b.savedAt || b.expiresAt) - (a.savedAt || a.expiresAt)),
         [entries],
     );
 
@@ -196,7 +197,6 @@ const CacheManager = function ({
                     {ordered.map((entry) => {
                         const { name, track, source } = labelOf(entry);
                         const meta = parseTrackName(name);
-                        const expired = entry.expiresAt > 0 && entry.expiresAt <= Date.now();
                         const busy = busyId === entry.id;
                         return (
                             <div className={styles.item} key={entry.id}>
@@ -213,7 +213,6 @@ const CacheManager = function ({
                                         {meta.artist}
                                         {entry.size > 0 ? ` · ${formatSize(entry.size)}` : ''}
                                         {source === 'drive' ? ' · 云盘' : ''}
-                                        {expired ? ' · 已过期' : ''}
                                     </span>
                                 </span>
                                 <button
