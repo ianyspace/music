@@ -288,7 +288,10 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 3px 4px;
+    /* The 44px thumb is the tallest thing in a row, so the padding is what
+       separates rows. 3px read as cramped on a phone; 8px gives each row enough
+       air to look tappable without pushing the list off-screen. */
+    padding: 8px 4px;
     border: 0;
     border-radius: 12px;
     background: transparent;
