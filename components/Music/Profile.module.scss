@@ -250,7 +250,9 @@
     border-radius: 14px;
     background: var(--field);
     color: var(--text);
-    font-size: 13px;
+    /* 16px is the floor, not a design choice: iOS Safari zooms the whole page
+       when focusing an input whose font-size is below it. */
+    font-size: 16px;
     font-family: inherit;
 
     &:focus {
@@ -369,7 +371,8 @@
     border: 0;
     background: transparent;
     color: var(--text-2);
-    font-size: 13.5px;
+    /* 16px floor — a focused select zooms the page on iOS just like an input. */
+    font-size: 16px;
     font-family: inherit;
     text-align: right;
     text-overflow: ellipsis;

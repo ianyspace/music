@@ -154,7 +154,10 @@
         background: transparent;
         color: var(--text);
         font-family: inherit;
-        font-size: 13px;
+        /* 16px is the floor, not a design choice: iOS Safari zooms the whole page
+           when focusing an input whose font-size is below it. The desktop layout
+           is still reachable on phones in landscape and on tablets. */
+        font-size: 16px;
 
         &::placeholder {
             color: var(--text-2);
@@ -677,7 +680,8 @@
     background: transparent;
     color: var(--text-2);
     font-family: inherit;
-    font-size: 12.5px;
+    /* 16px floor — a focused select zooms the page on iOS just like an input. */
+    font-size: 16px;
     text-align: right;
     cursor: pointer;
 
@@ -704,7 +708,8 @@
     background: transparent;
     color: var(--text);
     font-family: inherit;
-    font-size: 12.5px;
+    /* 16px floor — see the note on `.search input` above. */
+    font-size: 16px;
 
     &:focus {
         outline: none;

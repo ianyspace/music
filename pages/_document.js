@@ -15,6 +15,19 @@ export default class MyDocument extends Document {
             <Html lang="zh-hans">
                 <Head>
                     <meta charSet="utf-8" />
+                    {/*
+                     * `viewport` is what makes the app lay out at device width
+                     * instead of a ~980px fallback that the browser then zooms
+                     * to fit. `maximumScale` is deliberately left unset — capping
+                     * it would block pinch-zoom, which is an accessibility
+                     * regression. The focused-input zoom on iOS is instead
+                     * prevented by keeping every text input at >=16px, since
+                     * anything smaller makes Safari zoom in on focus.
+                     */}
+                    <meta
+                        name="viewport"
+                        content="width=device-width, initial-scale=1"
+                    />
                     <meta httpEquiv="x-ua-compatible" content="ie=edge" />
                     <link rel="icon" href="/favicon.ico" />
                 </Head>
