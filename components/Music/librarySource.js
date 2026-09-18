@@ -107,11 +107,19 @@ const absoluteUrl = function (url) {
     return base ? `${base}/${String(url).replace(/^\/+/, '')}` : '';
 };
 
+// Ceiling on the library listing. Without one a half-open connection leaves
+// `fetch` pending forever, which reads in the UI as "加载中…" that never ends —
+// indistinguishable from an empty library, and impossible to retry. Failing
+// fast is strictly better: `loadTracks` already degrades to the cached list.
+const LIST_TIMEOUT_MS = 15000;
+
 export const fetchCloudTracks = async function ({ forceRefresh = false } = {}) {
     const base = String(music.workerUrl || '').replace(/\/+$/, '');
     if (!base) throw new Error('未配置公共曲库地址（config/index.js 的 music.workerUrl）');
 
-    const response = await fetch(`${base}/tracks${forceRefresh ? '?refresh=1' : ''}`);
+    const response = await fetch(`${base}/tracks${forceRefresh ? '?refresh=1' : ''}`, {
+        signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
 
@@ -193,7 +201,15 @@ export const fetchLyricsText = async function (track, { token = '' } = {}) {
 
 // Downloads the audio bytes for a track. The caller is responsible for
 // caching the blob and for turning it into an object URL.
-export const downloadTrackBlob = async function (track, { token = '' } = {}) {
+//
+// The timeout here is not decoration: `await response.blob()` has no deadline of
+// its own, so a stream that stalls mid-download (R2 throttling, a dropped mobile
+// connection) leaves the promise pending forever and playback sits on its
+// loading spinner with no error and no retry. A stalled download must fail so
+// the caller can surface it and the next attempt can start clean.
+const AUDIO_TIMEOUT_MS = 120000;
+
+export const downloadTrackBlob = async function (track, { token = '', timeoutMs = AUDIO_TIMEOUT_MS } = {}) {
     if (track.source === DRIVE_SOURCE) {
         if (!token) {
             const error = new Error('本地没有缓存音频');
@@ -202,6 +218,7 @@ export const downloadTrackBlob = async function (track, { token = '' } = {}) {
         }
         const response = await fetch(`${DRIVE_FILES_URL}/${track.id}?alt=media`, {
             headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(timeoutMs),
         });
         if (response.status === 401) {
             const error = new Error('授权已过期，请重新连接');
@@ -213,7 +230,7 @@ export const downloadTrackBlob = async function (track, { token = '' } = {}) {
     }
 
     if (!track.url) throw new Error('曲目缺少音频地址');
-    const response = await fetch(track.url);
+    const response = await fetch(track.url, { signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.blob();
 };
