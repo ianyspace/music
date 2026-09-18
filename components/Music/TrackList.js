@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import {
     IconNote,
@@ -10,7 +10,6 @@ import {
     IconSearch,
     IconMusicSpace,
     IconGoogleDrive,
-    IconLocate,
 } from './icons';
 import { parseTrackName, trackGradient } from './shared';
 import { DRIVE_SOURCE } from './librarySource';
@@ -28,12 +27,12 @@ import styles from './TrackList.module.scss';
  * Rows cover every audio file, sorted by name; the folder chosen on the
  * profile page filters the whole list.
  *
- * A "locate" button floats over the bottom-right while the playing row is off
- * screen: the list is document-scrolled and can run to hundreds of rows, so
- * finding the current song by hand is a lot of thumb work. It watches the
- * active row with an IntersectionObserver rather than measuring on every scroll
- * event, and hides itself the moment that row is visible — the button is a
- * nudge back, not a permanent fixture.
+ * Two list-scoped behaviours are handed upward rather than implemented here:
+ * the "jump to the playing track" button lives in `MiniPlayer` (it is anchored
+ * to that bar, so it must not be caught inside this column's scrolling), and
+ * the row (de)marking that the jump targets is done through the DOM attributes
+ * this component writes — `data-track-id` on every row, and the transient
+ * `track-pulse` class.
  */
 const TrackList = function ({
     connected,
@@ -57,16 +56,10 @@ const TrackList = function ({
     // reveals it and puts the caret straight inside.
     const [searchOpen, setSearchOpen] = useState(false);
     const searchInputRef = useRef(null);
-    // Scope for the row lookups below, so a same-named attribute added
-    // elsewhere (the player sheet, the cache sheet) can never be picked up.
-    const listRef = useRef(null);
-    // Whether the playing row is currently on screen. Starts true so the button
-    // does not flash before the observer's first callback lands.
-    const [activeVisible, setActiveVisible] = useState(true);
-    // Set for the duration of the "landed" pulse, so the row the list jumped to
-    // is obvious even though it was already the playing one.
-    const [pulsing, setPulsing] = useState(false);
-    const pulseTimerRef = useRef(null);
+    // The document outlives every re-render here, so the "did the row appear"
+    // test lives in `MiniPlayer` — it owns the button and reads the list back
+    // out of the DOM through this id. Nothing here has to observe anything.
+    const listId = 'ms-track-list';
 
     useEffect(() => {
         if (!searchOpen) return undefined;
@@ -74,46 +67,6 @@ const TrackList = function ({
         if (input) input.focus();
         return undefined;
     }, [searchOpen]);
-
-    // Track the playing row's visibility. Re-armed whenever the row moves
-    // (song change, search filtering, list reload) — the observed node is a
-    // different element each time, so the observer has to be rebuilt.
-    useEffect(() => {
-        const list = listRef.current;
-        const row = currentId && list
-            ? list.querySelector(`[data-track-id="${CSS.escape(currentId)}"]`)
-            : null;
-        if (!row) {
-            setActiveVisible(true);
-            return undefined;
-        }
-        // `rootMargin` trims the top strip the floating header covers and the
-        // bottom strip the mini bar sits over, so a row hidden behind either is
-        // correctly reported as "not really visible".
-        const observer = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => setActiveVisible(entry.isIntersecting));
-            },
-            { rootMargin: '-72px 0px -96px 0px', threshold: 0 },
-        );
-        observer.observe(row);
-        return () => observer.disconnect();
-    }, [currentId, visibleTracks, listLoading]);
-
-    useEffect(() => () => {
-        if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
-    }, []);
-
-    const jumpToCurrent = useCallback(function () {
-        const list = listRef.current;
-        const row = list ? list.querySelector(`[data-track-id="${CSS.escape(currentId)}"]`) : null;
-        if (!row) return;
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
-        setPulsing(true);
-        if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
-        pulseTimerRef.current = setTimeout(() => setPulsing(false), reduced ? 400 : 1100);
-    }, [currentId]);
 
     const openSearch = function () {
         setSearchOpen(true);
@@ -211,7 +164,7 @@ const TrackList = function ({
                 </section>
             ) : (
                 <>
-                    <ul className={styles.tracks} ref={listRef}>
+                    <ul className={styles.tracks} id={listId}>
                         {listLoading && (
                             <p className={styles['lib-loading']}>加载中…</p>
                         )}
@@ -230,9 +183,7 @@ const TrackList = function ({
                                 <li key={track.id} data-track-id={track.id}>
                                     <button
                                         type="button"
-                                        className={active
-                                            ? `${styles['track-active']}${pulsing ? ` ${styles['track-pulse']}` : ''}`
-                                            : styles.track}
+                                        className={active ? styles['track-active'] : styles.track}
                                         disabled={loading}
                                         onClick={() => onToggleTrack(track)}
                                     >
@@ -265,20 +216,6 @@ const TrackList = function ({
                             );
                         })}
                     </ul>
-
-                    {/* Only while the playing row is off screen — hidden means
-                        "you are already looking at it". */}
-                    {current && !activeVisible && !listLoading && (
-                        <button
-                            type="button"
-                            className={styles['locate-btn']}
-                            title="定位到正在播放"
-                            aria-label="定位到正在播放"
-                            onClick={jumpToCurrent}
-                        >
-                            <IconLocate />
-                        </button>
-                    )}
                 </>
             )}
         </div>

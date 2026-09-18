@@ -81,6 +81,12 @@ jobs:
           # a stale shell is being shipped again.
           test ! -e out/sw.js         || { echo "::error::out/sw.js exists — the service worker was removed on purpose"; exit 1; }
           node scripts/check-css-modules.js
+          # The mini bar's "jump to the playing track" button is positioned
+          # purely by CSS against the bar's box, across three files. Nothing in
+          # the build catches a disagreement between those numbers, and the
+          # failure mode is silent (button parked in the wrong place), so the
+          # handshake is asserted here.
+          node scripts/check-locate-btn.js
           echo "build output verified"
 
       - name: Setup Pages

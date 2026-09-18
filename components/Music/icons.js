@@ -127,19 +127,22 @@ export const IconNoteList = () => (
     </svg>
 );
 
-// "Jump to the playing track": a crosshair. Two concentric rings read as
-// "locate" at a glance and stay legible at 18px, unlike a list-with-note mark
-// which turns to mush once the row lines get that thin. The centre dot is what
-// makes it a target rather than a plain circle.
+// "Jump to the playing track": a downward chevron into a tray.
 //
-// No cardinal ticks on purpose: at 18px they collide with the outer ring and
-// the whole mark smears into a blob. The geometry is tuned for that size —
-// outer r=8 leaves a 3.7-unit gap to the inner ring, which renders as ~2.8px,
-// the smallest separation that still reads as two distinct circles.
-export const IconLocate = ({ size = 18 }) => (
+// A crosshair was the first attempt, but two concentric rings read as "target"
+// (focus / aim) and look like a camera mark at a glance — this button is
+// literally "scroll the list down to the row that is playing", and the chevron
+// says that with no explanation. It also survives 15px, where the crosshair's
+// rings started to blur together.
+//
+// Geometry tuned for a 24 viewBox: the chevron spans x 7.5→16.5 with its apex
+// at y=15, and the tray sits at y=18.5 — a 3.5-unit drop, so the two strokes
+// stay clearly separate at 15px. Widths stay under the frame (1.5 → 22.5) so
+// nothing clips.
+export const IconLocate = ({ size = 15 }) => (
     <SvgStroke size={size}>
-        <circle cx="12" cy="12" r="8" />
-        <circle cx="12" cy="12" r="2.4" strokeWidth="1.8" />
+        <path d="M7.5 9.5 12 14l4.5-4.5" />
+        <path d="M5.5 18.5h13" strokeWidth="1.7" />
     </SvgStroke>
 );
 

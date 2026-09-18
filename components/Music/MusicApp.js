@@ -1247,12 +1247,15 @@ const MusicApp = function ({ variant = 'h5' }) {
                     </div>
 
                     {/* Mini bar belongs to the song list only — the profile page
-                shows settings, not playback UI. */}
+                shows settings, not playback UI. It also carries the jump-to-
+                the-playing-track button, which is why it is the one place the
+                list's loading state is still needed. */}
                     {tab === 'list' && current && !playerOpen && (
                         <MiniPlayer
                             current={current}
                             isPlaying={isPlaying}
                             progress={progress}
+                            listLoading={listLoading}
                             onTogglePlay={togglePlay}
                             onNext={playNext}
                             onOpenPlayer={openPlayer}

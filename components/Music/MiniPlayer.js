@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     IconNote,
     IconPlay,
     IconPause,
     IconNext,
+    IconLocate,
 } from './icons';
 import { parseTrackName, trackGradient } from './shared';
 import Marquee from './Marquee';
@@ -16,6 +17,16 @@ import styles from './MiniPlayer.module.scss';
 const RING_R = 16;
 const RING_C = 2 * Math.PI * RING_R;
 
+// The song list's `id` (see `TrackList`) — the hook the jump button uses to
+// find the rows without a ref threaded across components.
+const LIST_ID = 'ms-track-list';
+
+// How long the landed row stays tinted after a jump, and how long the button
+// hides itself for while the scroll is still travelling (see `jumpToCurrent`).
+const PULSE_MS = 1100;
+const PULSE_MS_REDUCED = 400;
+const SETTLE_MS = 700;
+
 /**
  * The mini play bar docked above the bottom tab bar. Owned by the page
  * shell — not the list screen — so it stays visible while something is
@@ -24,6 +35,15 @@ const RING_C = 2 * Math.PI * RING_R;
  * it does not fit (both ends fade while text is cut off), and the play
  * button wears the seek progress as a ring around itself. Only the two
  * transport buttons act in place.
+ *
+ * It also carries the "jump to the playing track" button on its top-right
+ * shoulder. That button belongs to the bar, not to the list: it has to hold
+ * still while the list scrolls, and the bar is the one fixed thing in this
+ * layout, so it is also the only place where the button's glass can sit
+ * against the bar without the two boxes drifting apart. The list is reached
+ * through the DOM (`LIST_ID` + `data-track-id`), which keeps the two
+ * components independent — the button does nothing at all when there is no
+ * row to jump to, e.g. on the profile tab.
  */
 const MiniPlayer = function ({
     current,
@@ -32,11 +52,75 @@ const MiniPlayer = function ({
     onTogglePlay,
     onNext,
     onOpenPlayer,
+    listLoading,
 }) {
     const meta = parseTrackName(current.track.name);
     const percent = progress.duration > 0
         ? Math.min(100, Math.max(0, (progress.time / progress.duration) * 100))
         : 0;
+
+    const currentId = current.track.id;
+    // Hidden while the playing row is on screen: the button is a nudge back,
+    // not a permanent fixture. Starts false so it cannot flash before the
+    // first measurement lands, and is re-measured whenever the row might have
+    // moved (song change, filtering, list reload).
+    const [rowOffScreen, setRowOffScreen] = useState(false);
+    // True for the length of a jump — the scroll is already on its way and the
+    // list is about to move underneath, so the button is the wrong thing to
+    // leave under a thumb.
+    const [jumping, setJumping] = useState(false);
+    const settleRef = useRef(null);
+    const pulseRef = useRef(null);
+
+    const rowOf = useCallback(function () {
+        const list = document.getElementById(LIST_ID);
+        return list
+            ? list.querySelector(`[data-track-id="${CSS.escape(currentId)}"]`)
+            : null;
+    }, [currentId]);
+
+    // "On screen" is measured against an inset viewport: the top strip the
+    // floating header covers, and the bottom strip this very bar sits over.
+    // Without the insets a row parked behind either would count as visible and
+    // the button would stay hidden exactly when it is needed.
+    useEffect(() => {
+        const row = rowOf();
+        if (!row) {
+            setRowOffScreen(false);
+            return undefined;
+        }
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => setRowOffScreen(!entry.isIntersecting));
+            },
+            { rootMargin: '-72px 0px -96px 0px', threshold: 0 },
+        );
+        observer.observe(row);
+        return () => observer.disconnect();
+    }, [rowOf, listLoading]);
+
+    useEffect(() => () => {
+        window.clearTimeout(settleRef.current);
+        window.clearTimeout(pulseRef.current);
+    }, []);
+
+    const jumpToCurrent = useCallback(function () {
+        const row = rowOf();
+        if (!row) return;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+        // The row was already the playing one, so the flash is what answers
+        // "where did it go?" rather than the red title the row always had.
+        row.classList.add(styles['track-pulse']);
+        window.clearTimeout(pulseRef.current);
+        pulseRef.current = window.setTimeout(
+            () => row.classList.remove(styles['track-pulse']),
+            reduced ? PULSE_MS_REDUCED : PULSE_MS,
+        );
+        setJumping(true);
+        window.clearTimeout(settleRef.current);
+        settleRef.current = window.setTimeout(() => setJumping(false), SETTLE_MS);
+    }, [rowOf]);
 
     const labelNode = (
         <>
@@ -115,6 +199,24 @@ const MiniPlayer = function ({
                     <IconNext />
                 </button>
             </div>
+
+            {/* Top-right shoulder of the bar. Outside `.mini` on purpose: that
+                box is the tappable "open the player" surface with
+                `overflow: hidden`, so a button nested inside it would both be
+                clipped at the rounded corner and inherit the tap. Glass on
+                glass, sized to the transport buttons rather than to a tap
+                target of its own. */}
+            {!listLoading && rowOffScreen && !jumping && (
+                <button
+                    type="button"
+                    className={styles['locate-btn']}
+                    title="回到正在播放"
+                    aria-label="回到正在播放"
+                    onClick={jumpToCurrent}
+                >
+                    <IconLocate />
+                </button>
+            )}
         </div>
     );
 };
