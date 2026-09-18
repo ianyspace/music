@@ -2,6 +2,12 @@
 // over a dimmed viewport. The stage holds a spinning record with its tonearm;
 // tapping the record swaps in the lyrics and tapping the lyrics swaps back.
 // Slide-up entrance; no volume controls.
+//
+// The three-dots button in the top bar raises a bottom drawer of player
+// preferences (see `.sheet*` below). It is rendered inside this sheet rather
+// than by the shell, and it deliberately keeps this page's own dark palette —
+// the player is the one screen that does not follow the app theme, so a
+// theme-tokened drawer over it would read as a foreign surface.
 
 .veil {
     position: fixed;
@@ -136,6 +142,12 @@
     &:active {
         transform: scale(0.92);
     }
+}
+
+/* The drawer this button owns is open — same faint wash the hover state uses,
+   so the button reads as "pressed in" while its panel is up. */
+.top-btn-on {
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .np-marquee {
@@ -788,10 +800,211 @@
     }
 }
 
+/* --- ripples switched off ------------------------------------------------ */
+
+/* `ripplesOff` on `.rig`, so the whole ring stack is taken out of the render
+   rather than merely paused: with the preference off there is no travelling
+   wave to wait for, and leaving three animating (if invisible) elements on the
+   compositor for a decorative preference would be wasteful on a phone. */
+.rig-no-ripples .ripples {
+    display: none;
+}
+
+/* --- bottom drawer: player preferences ---------------------------------- */
+
+/* Raised by the top bar's three-dots button. Same gesture as the song list's
+   drawer (scrim fades in, panel rises from the bottom edge), but painted in
+   this page's dark palette so it reads as part of the player. */
+.sheet-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 6; /* over the sheet's own content, under nothing else */
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(4, 5, 10, 0.5);
+    animation: sheet-scrim-in 0.22s ease-out both;
+}
+
+.sheet-scrim-out {
+    animation: sheet-scrim-out 0.24s ease-in forwards;
+}
+
+@keyframes sheet-scrim-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes sheet-scrim-out {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+.sheet {
+    width: min(480px, 100%);
+    box-sizing: border-box;
+    padding: 8px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+    border-radius: 22px 22px 0 0;
+    background: rgba(28, 29, 38, 0.86);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 -18px 48px -14px rgba(0, 0, 0, 0.7);
+    -webkit-backdrop-filter: blur(28px) saturate(1.8);
+    backdrop-filter: blur(28px) saturate(1.8);
+    animation: sheet-in 0.28s cubic-bezier(0.32, 0.72, 0.2, 1) both;
+}
+
+.sheet-out {
+    animation: sheet-out 0.24s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes sheet-in {
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes sheet-out {
+    from {
+        transform: translateY(0);
+    }
+
+    to {
+        transform: translateY(100%);
+    }
+}
+
+/* Grab handle — the standard "this sheet can be dismissed" affordance. */
+.sheet-grip {
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 2px auto 10px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.sheet-title {
+    margin: 0 0 6px;
+    padding: 0 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    color: var(--np-text-2);
+}
+
+.sheet-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 10px;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--np-text);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.15s;
+
+    @media (hover: hover) {
+        &:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+    }
+
+    &:active {
+        transform: scale(0.985);
+    }
+}
+
+.sheet-row-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.09);
+}
+
+.sheet-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+}
+
+.sheet-row-title {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.sheet-row-sub {
+    font-size: 12.5px;
+    color: var(--np-text-2);
+}
+
+/* --- the switch --------------------------------------------------------- */
+
+/* Drawn rather than an <input>: it has to sit flush right inside a button row,
+   and a real checkbox would need appearance resets on every engine for a
+   result this small. The state is carried by `aria-checked` on the row, so the
+   visual and the assistive state cannot drift apart. */
+.switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 46px;
+    height: 28px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.16);
+    transition: background-color 0.22s ease;
+}
+
+.switch::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    transition: transform 0.22s cubic-bezier(0.32, 0.72, 0.2, 1);
+}
+
+.switch-on {
+    background: var(--accent);
+}
+
+.switch-on::after {
+    transform: translateX(18px);
+}
+
 @media (prefers-reduced-motion: reduce) {
     .page,
     .lyrics,
-    .mode-toast {
+    .mode-toast,
+    .sheet-scrim,
+    .sheet {
         animation: none;
     }
 
@@ -805,6 +1018,11 @@
     }
 
     .arm-swing {
+        transition: none;
+    }
+
+    .switch,
+    .switch::after {
         transition: none;
     }
 }

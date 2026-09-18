@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     IconNote,
@@ -12,6 +12,7 @@ import {
     IconQueue,
     IconChevronDown,
     IconMoreVertical,
+    IconRipple,
 } from './icons';
 import { parseTrackName, trackGradient, formatTime } from './shared';
 import Marquee from './Marquee';
@@ -76,6 +77,11 @@ const Tonearm = function ({ playing }) {
  * triggers the reverse animation; `onClosed` fires when the exit finished and
  * the shell may unmount. Fixed dark palette regardless of the app theme; no
  * volume control by design.
+ *
+ * The three-dots button raises a bottom drawer of player preferences. `ripples`
+ * / `onToggleRipples` come from the shell, which owns the localStorage read and
+ * write, so this page stays a plain view of the setting — the same shape the
+ * shell already uses for the theme.
  */
 const NowPlaying = function ({
     track,
@@ -96,6 +102,8 @@ const NowPlaying = function ({
     lyricsLoading,
     lyricsVisible,
     onToggleLyrics,
+    ripples = true,
+    onToggleRipples,
 }) {
     const meta = parseTrackName(track.name);
     const gradient = trackGradient(track.name);
@@ -121,6 +129,12 @@ const NowPlaying = function ({
     const lastModeRef = useRef(mode);
     const modeTimerRef = useRef(0);
 
+    // Bottom drawer of player preferences, toggled by the top bar's three-dots
+    // button. `sheetClosing` drives the reverse animation; the panel is
+    // unmounted once that animation reports it has finished.
+    const [sheetOpen, setSheetOpen] = useState(false);
+    const [sheetClosing, setSheetClosing] = useState(false);
+
     useEffect(() => {
         if (lastModeRef.current === mode) return undefined;
         lastModeRef.current = mode;
@@ -135,6 +149,36 @@ const NowPlaying = function ({
             activeLyricRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
     }, [activeLyric, lyricsShown]);
+
+    const closeSheet = useCallback(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setSheetOpen(false);
+            setSheetClosing(false);
+            return;
+        }
+        setSheetClosing(true);
+    }, []);
+
+    const openSheet = useCallback(function () {
+        setSheetClosing(false);
+        setSheetOpen(true);
+    }, []);
+
+    // Escape backs out of the drawer first, then the player itself — otherwise
+    // one Escape would tear the whole page down from under the open drawer.
+    useEffect(() => {
+        const onKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            if (sheetOpen) {
+                event.stopPropagation();
+                closeSheet();
+            } else {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => window.removeEventListener('keydown', onKeyDown, true);
+    }, [sheetOpen, closeSheet, onClose]);
 
     /* --- lyrics --- */
 
@@ -169,15 +213,17 @@ const NowPlaying = function ({
                             <span className={styles['np-line-artist']}> - {meta.artist}</span>
                         </Marquee>
                     )}
-                    {/* Placeholder action, kept for future use: it is the
-                        equal-width twin of the collapse button, which also
-                        keeps the song line centred when lyrics are shown.
-                        Deliberately inert for now — no menu attached yet. */}
+                    {/* Player preferences. The equal-width twin of the collapse
+                        button, which also keeps the song line centred when
+                        lyrics are shown. */}
                     <button
                         type="button"
-                        className={styles['top-btn']}
-                        title="更多"
-                        aria-label="更多"
+                        className={`${styles['top-btn']}${sheetOpen ? ` ${styles['top-btn-on']}` : ''}`}
+                        title="播放设置"
+                        aria-label="播放设置"
+                        aria-haspopup="dialog"
+                        aria-expanded={sheetOpen}
+                        onClick={openSheet}
                     >
                         <IconMoreVertical />
                     </button>
@@ -187,7 +233,7 @@ const NowPlaying = function ({
                     <div className={`${styles.stage}${lyricsShown ? ` ${styles['stage-lyrics']}` : ''}`}>
                         {/* Record + tonearm share one scaling unit so they stay
                             locked together whatever space the stage gets. */}
-                        <div className={styles.rig}>
+                        <div className={`${styles.rig}${ripples ? '' : ` ${styles['rig-no-ripples']}`}`}>
                             <Tonearm playing={isPlaying} />
 
                             <button
@@ -328,6 +374,65 @@ const NowPlaying = function ({
                         </button>
                     </div>
                 </div>
+
+                {/* Player preferences. Sits inside the page element so it shares
+                    the sheet's own stacking context — it must cover the sheet's
+                    content without escaping over the mini bar's layer, and it is
+                    torn down with the player. */}
+                {sheetOpen && (
+                    <div
+                        className={sheetClosing
+                            ? `${styles['sheet-scrim']} ${styles['sheet-scrim-out']}`
+                            : styles['sheet-scrim']}
+                        role="presentation"
+                        onClick={closeSheet}
+                        onAnimationEnd={(event) => {
+                            // Only the scrim's own fade ends the drawer; the panel
+                            // and its children animate independently.
+                            if (sheetClosing && event.target === event.currentTarget) {
+                                setSheetOpen(false);
+                                setSheetClosing(false);
+                            }
+                        }}
+                    >
+                        <div
+                            className={sheetClosing
+                                ? `${styles.sheet} ${styles['sheet-out']}`
+                                : styles.sheet}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="播放设置"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <span className={styles['sheet-grip']} aria-hidden="true" />
+                            <h2 className={styles['sheet-title']}>播放设置</h2>
+                            {/* `aria-checked` rides on the row, so the switch's
+                                visual state and what a screen reader announces
+                                are written from the same boolean. */}
+                            <button
+                                type="button"
+                                className={styles['sheet-row']}
+                                role="switch"
+                                aria-checked={ripples}
+                                onClick={onToggleRipples}
+                            >
+                                <span className={styles['sheet-row-icon']} aria-hidden="true">
+                                    <IconRipple />
+                                </span>
+                                <span className={styles['sheet-row-text']}>
+                                    <span className={styles['sheet-row-title']}>唱片波纹</span>
+                                    <span className={styles['sheet-row-sub']}>
+                                        {ripples ? '唱片周围有一圈扩散的声波' : '唱片周围保持干净'}
+                                    </span>
+                                </span>
+                                <span
+                                    className={ripples ? `${styles.switch} ${styles['switch-on']}` : styles.switch}
+                                    aria-hidden="true"
+                                />
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

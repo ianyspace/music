@@ -146,6 +146,20 @@ export const IconLocate = ({ size = 15 }) => (
     </SvgStroke>
 );
 
+// "Rings leaving the record" — the ripples-around-the-disc preference. A filled
+// centre with two broken arcs on either side reads as "waves spreading" rather
+// than as a plain target, and the gaps are what keep it from looking like the
+// crosshair that the locate button used to wear.
+export const IconRipple = ({ size = 20 }) => (
+    <SvgStroke size={size}>
+        <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
+        <path d="M16.2 7.8a6 6 0 0 1 0 8.4" />
+        <path d="M19.4 5a10.4 10.4 0 0 1 0 14" />
+        <path d="M7.8 7.8a6 6 0 0 0 0 8.4" />
+        <path d="M4.6 5a10.4 10.4 0 0 0 0 14" />
+    </SvgStroke>
+);
+
 export const IconPerson = () => (
     <SvgStroke size={22}>
         <circle cx="12" cy="8" r="4" />

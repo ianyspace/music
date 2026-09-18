@@ -22,6 +22,7 @@ import {
     IconRefresh,
     IconRepeat,
     IconRepeatOne,
+    IconRipple,
     IconSearch,
     IconShuffle,
     IconSun,
@@ -160,6 +161,8 @@ const DesktopMusic = function ({
     lyricsLoading,
     lyricsVisible,
     onToggleLyrics,
+    ripples = true,
+    onToggleRipples,
 }) {
     const rootRef = useRef(null);
     const searchInputRef = useRef(null);
@@ -545,11 +548,15 @@ const DesktopMusic = function ({
                         title={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
                         aria-label={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
                     >
-                        <span className={styles.ripples} aria-hidden="true">
-                            <span className={styles.ripple} />
-                            <span className={styles.ripple} />
-                            <span className={styles.ripple} />
-                        </span>
+                        {/* The `ripples` preference governs both layouts — it is
+                            one display setting, not one per screen. */}
+                        {ripples && (
+                            <span className={styles.ripples} aria-hidden="true">
+                                <span className={styles.ripple} />
+                                <span className={styles.ripple} />
+                                <span className={styles.ripple} />
+                            </span>
+                        )}
                         <span className={styles.rotor} aria-hidden="true">
                             <span className={styles['disc-grooves']} />
                             <span className={styles['disc-label']} style={{ background: gradient }}>
@@ -825,12 +832,25 @@ const DesktopMusic = function ({
                             </button>
                             <button
                                 type="button"
-                                className={`${styles.row} ${styles['row-btn']} ${styles['row-btn-last']}`}
+                                className={`${styles.row} ${styles['row-btn']}`}
                                 onClick={() => setListOpen((open) => !open)}
                             >
                                 <span className={styles['row-icon']}><IconPanel /></span>
                                 <span className={styles['row-label']}>左侧列表</span>
                                 <span className={styles['row-value']}>{listOpen ? '显示中' : '已隐藏'}</span>
+                            </button>
+                            {/* Same preference as the phone player's drawer, so
+                                the two layouts cannot disagree about it. */}
+                            <button
+                                type="button"
+                                className={`${styles.row} ${styles['row-btn']} ${styles['row-btn-last']}`}
+                                role="switch"
+                                aria-checked={ripples}
+                                onClick={onToggleRipples}
+                            >
+                                <span className={styles['row-icon']}><IconRipple /></span>
+                                <span className={styles['row-label']}>唱片波纹</span>
+                                <span className={styles['row-value']}>{ripples ? '开启' : '关闭'}</span>
                             </button>
                         </section>
 

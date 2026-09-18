@@ -15,6 +15,7 @@ import {
     THEME_KEY,
     LAST_TRACK_KEY,
     LAST_PROGRESS_KEY,
+    RIPPLES_KEY,
     storageGet,
     storageSet,
     safePlay,
@@ -90,6 +91,11 @@ const CACHE_ALL_CONCURRENCY = 3;
 
 const MusicApp = function ({ variant = 'h5' }) {
     const [theme, setTheme] = useState('light');
+    // Display preference of the now-playing page: the ripples travelling out
+    // from the record. On unless the visitor turned them off — a decorative
+    // effect that has to be switched *on* would be an odd default. Restored
+    // and persisted below, next to the theme, since both are display settings.
+    const [ripples, setRipples] = useState(true);
     // 'list' | 'profile' — which tab page is showing; the full-screen
     // now-playing page floats above it while `playerOpen` is true.
     const [tab, setTab] = useState('list');
@@ -250,6 +256,25 @@ const MusicApp = function ({ variant = 'h5' }) {
             const next = mode === 'dark' ? 'light' : 'dark';
             storageSet(THEME_KEY, next);
             return next;
+        });
+    }, []);
+
+    /* --- now-playing display preferences --- */
+
+    // Stored as the strings 'on' / 'off' so "no value saved yet" is a state of
+    // its own rather than something a boolean has to encode. Anything else in
+    // the key (a hand-edit, a half-written value) leaves the default in place,
+    // which is why this does not simply test for truthiness.
+    useEffect(() => {
+        const saved = storageGet(RIPPLES_KEY);
+        if (saved === 'on') setRipples(true);
+        else if (saved === 'off') setRipples(false);
+    }, []);
+
+    const toggleRipples = useCallback(function () {
+        setRipples((on) => {
+            storageSet(RIPPLES_KEY, on ? 'off' : 'on');
+            return !on;
         });
     }, []);
 
@@ -1201,6 +1226,8 @@ const MusicApp = function ({ variant = 'h5' }) {
                     lyricsLoading={lyricsLoading}
                     lyricsVisible={lyricsVisible}
                     onToggleLyrics={() => setLyricsVisible((visible) => !visible)}
+                    ripples={ripples}
+                    onToggleRipples={toggleRipples}
                 />
             ) : (
                 <>
@@ -1289,6 +1316,8 @@ const MusicApp = function ({ variant = 'h5' }) {
                             lyricsLoading={lyricsLoading}
                             lyricsVisible={lyricsVisible}
                             onToggleLyrics={() => setLyricsVisible((visible) => !visible)}
+                            ripples={ripples}
+                            onToggleRipples={toggleRipples}
                         />
                     )}
                 </>

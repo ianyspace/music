@@ -87,6 +87,10 @@ jobs:
           # failure mode is silent (button parked in the wrong place), so the
           # handshake is asserted here.
           node scripts/check-locate-btn.js
+          # The player drawer's 唱片波纹 preference is written on toggle and read
+          # on mount in a different file, and has to gate the ripples in both
+          # layouts. A key typo or a half-gated switch also fails silently.
+          node scripts/check-ripples-setting.js
           echo "build output verified"
 
       - name: Setup Pages

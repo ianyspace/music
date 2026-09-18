@@ -11,6 +11,11 @@ export const THEME_KEY = 'music:theme';
 export const LAST_TRACK_KEY = 'music:lastTrack';
 export const LAST_PROGRESS_KEY = 'music:lastProgress';
 export const TRACK_LIST_CACHE_KEY = 'music:trackListCache';
+// Display preferences of the now-playing page (the ripples around the record).
+// Kept apart from `THEME_KEY` because it is a *player* setting rather than an
+// app-wide one, and apart from the playback keys because it is a preference
+// the visitor chose rather than state the app restored.
+export const RIPPLES_KEY = 'music:setting:ripples';
 // Drive returns at most `pageSize` files per response; follow nextPageToken
 // so libraries bigger than one page still show up (capped to stay sane).
 export const LIST_HARD_CAP = 1000;
