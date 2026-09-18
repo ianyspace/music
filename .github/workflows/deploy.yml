@@ -51,10 +51,33 @@ jobs:
       - name: Disable Jekyll
         run: touch out/.nojekyll
 
+      # A missing `out/` or a missing service worker would ship a half-dead site:
+      # the app would load but never gain an offline shell. Fail the build here so
+      # it is caught in CI instead of being discovered on the live site.
+      - name: Verify build output
+        run: |
+          set -e
+          test -f out/index.html    || { echo "::error::out/index.html missing"; exit 1; }
+          test -f out/h5.html       || { echo "::error::out/h5.html missing"; exit 1; }
+          test -f out/desktop.html  || { echo "::error::out/desktop.html missing"; exit 1; }
+          test -f out/sw.js         || { echo "::error::out/sw.js missing"; exit 1; }
+          test -f out/.nojekyll     || { echo "::error::out/.nojekyll missing"; exit 1; }
+          test -d out/_next/static  || { echo "::error::out/_next/static missing"; exit 1; }
+          echo "build output verified"
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        # Pages must be switched on once by hand:
+        # Pages must be switched on once by hand, and the Source must be
+        # "GitHub Actions" — NOT "Deploy from a branch":
         #   Settings -> Pages -> Build and deployment -> Source: "GitHub Actions"
+        #
+        # With the source left on a branch, GitHub additionally runs its own
+        # Jekyll build ("pages build and deployment", event `dynamic`) on every
+        # push. That build succeeds and lands *after* this workflow's artifact,
+        # so the live site ends up serving a Jekyll-rendered README instead of
+        # `out/`, and every route except `/` 404s. Symptom to watch for: the
+        # homepage contains `Jekyll SEO tag` and `/assets/css/style.css?v=<sha>`,
+        # and `/.nojekyll` returns 404.
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
