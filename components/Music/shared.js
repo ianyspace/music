@@ -46,6 +46,28 @@ export const formatSize = function (bytes) {
     return `${(size / 1024 / 1024).toFixed(1)} MB`;
 };
 
+/**
+ * Formats a cache expiry timestamp for the cache manager list.
+ *
+ * Returns a human-friendly string like "30 天后过期" or "今天过期" so the
+ * visitor can see at a glance which cached songs are fresh and which are about
+ * to drop. The exact date is shown when the expiry is within a week, because
+ * "3 天后过期" is more useful than "2024-10-15 过期".
+ */
+export const formatExpiry = function (expiresAt) {
+    const remaining = Number(expiresAt) - Date.now();
+    if (!Number.isFinite(remaining)) return '';
+    if (remaining <= 0) return '已过期';
+    const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
+    if (days >= 30) return '30 天后过期';
+    if (days >= 7) return `${days} 天后过期`;
+    if (days >= 2) return `${days} 天后过期`;
+    if (days === 1) return '明天过期';
+    const hours = Math.floor(remaining / (60 * 60 * 1000));
+    if (hours >= 1) return `${hours} 小时后过期`;
+    return '即将过期';
+};
+
 export const formatTime = function (seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
     const mins = Math.floor(seconds / 60);

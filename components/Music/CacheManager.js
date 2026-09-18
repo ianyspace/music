@@ -7,7 +7,7 @@ import {
     IconNote,
     IconRefresh,
 } from './icons';
-import { formatSize, parseTrackName, trackGradient } from './shared';
+import { formatSize, formatExpiry, parseTrackName, trackGradient } from './shared';
 
 import styles from './CacheManager.module.scss';
 
@@ -213,6 +213,7 @@ const CacheManager = function ({
                                         {meta.artist}
                                         {entry.size > 0 ? ` · ${formatSize(entry.size)}` : ''}
                                         {source === 'drive' ? ' · 云盘' : ''}
+                                        {entry.expiresAt > 0 ? ` · ${formatExpiry(entry.expiresAt)}` : ''}
                                     </span>
                                 </span>
                                 <button
