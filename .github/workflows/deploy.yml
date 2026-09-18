@@ -67,8 +67,9 @@ jobs:
           test -f out/desktop/index.html || { echo "::error::out/desktop/index.html missing"; exit 1; }
           test -f out/404.html        || { echo "::error::out/404.html missing"; exit 1; }
           test -f out/sw.js           || { echo "::error::out/sw.js missing"; exit 1; }
-          test -f out/.nojekyll       || { echo "::error::out/.nojekyll missing"; exit 1; }
+          test -f out/.nojekyll       || { echo "::error:out/.nojekyll missing"; exit 1; }
           test -d out/_next/static    || { echo "::error::out/_next/static missing"; exit 1; }
+          node scripts/check-css-modules.js
           echo "build output verified"
 
       - name: Setup Pages

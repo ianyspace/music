@@ -315,7 +315,7 @@ const DesktopMusic = function ({
 
             {/* --- left: the song list (hideable) -------------------------- */}
 
-            <aside className={listOpen ? `${styles.panel} ${styles['panel-open']}` : styles.panel}>
+            <aside className={`${styles.panel}${listOpen ? ` ${styles['panel-open']}` : ''}`}>
                 <header className={styles['panel-head']}>
                     <div className={styles.brand}>
                         <span className={styles['brand-mark']}>
