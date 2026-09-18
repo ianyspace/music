@@ -127,6 +127,22 @@ export const IconNoteList = () => (
     </svg>
 );
 
+// "Jump to the playing track": a crosshair. Two concentric rings read as
+// "locate" at a glance and stay legible at 18px, unlike a list-with-note mark
+// which turns to mush once the row lines get that thin. The centre dot is what
+// makes it a target rather than a plain circle.
+//
+// No cardinal ticks on purpose: at 18px they collide with the outer ring and
+// the whole mark smears into a blob. The geometry is tuned for that size —
+// outer r=8 leaves a 3.7-unit gap to the inner ring, which renders as ~2.8px,
+// the smallest separation that still reads as two distinct circles.
+export const IconLocate = ({ size = 18 }) => (
+    <SvgStroke size={size}>
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="12" r="2.4" strokeWidth="1.8" />
+    </SvgStroke>
+);
+
 export const IconPerson = () => (
     <SvgStroke size={22}>
         <circle cx="12" cy="8" r="4" />
