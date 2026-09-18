@@ -78,12 +78,15 @@ Worker 源码在 `cloudflare-worker/`，部署方式见 `cloudflare-worker/READM
 
 推 `master` 会自动触发 `.github/workflows/deploy.yml`。
 
-Pages 的 Source 需要是 **`GitHub Actions`**（仓库 Settings → Pages → Build and deployment）。
-另外每次 push 时 GitHub 自己也会跑一次 Jekyll 构建，**线上取的是「最后完成的那次部署」**：
-本工作流成功就会正常覆盖它；本工作流失败的话，Jekyll 那次会接管，
-首页会变成渲染后的 README，而 `/h5/`、`/desktop/`、`/sw.js` 全部 404。
-所以线上出现 Jekyll 的 README 时，先查本工作流为什么失败。
-判断方法：首页源码里出现 `Jekyll SEO tag` 或 `/assets/css/style.css?v=...`。
+**Pages 的 Source 必须选 `GitHub Actions`**：仓库 Settings → Pages → Build and deployment →
+Source 选 `GitHub Actions`，别留在「Deploy from a branch」。
+
+留在分支模式的话，GitHub 会额外跑一次自己的 Jekyll 构建，并且发布的是**仓库根目录**而不是
+`out/`，两个部署互相竞争，线上会**时好时坏**：一会儿正常，一会儿首页变成 Jekyll 渲染的
+README、而 `/h5/`、`/desktop/`、`/sw.js` 全部 404。别因为刚推完看着正常就以为没事。
+
+一次性确认方法：访问 `https://ianyspace.github.io/music/README.md`，如果能打开（200），
+说明发布的是仓库根、也就是这个设置还没改对。
 
 工作流在发布前会校验 `out/` 里的关键文件（三个页面、`sw.js`、`.nojekyll`、`_next/static`），
 缺任何一个都会直接让 CI 失败，避免发布出一个「能打开但永远没有离线能力」的半成品站点。
