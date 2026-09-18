@@ -48,10 +48,16 @@ import {
 import TrackList from 'components/Music/TrackList';
 import NowPlaying from 'components/Music/NowPlaying';
 import CacheManager from 'components/Music/CacheManager';
+import DriveSheet from 'components/Music/DriveSheet';
 import Profile from 'components/Music/Profile';
 import MiniPlayer from 'components/Music/MiniPlayer';
 import DesktopMusic from 'components/Music/DesktopMusic';
-import { IconArchive, IconGoogleDrive } from 'components/Music/icons';
+import {
+    IconArchive,
+    IconGoogleDrive,
+    IconMoon,
+    IconSun,
+} from 'components/Music/icons';
 
 import styles from './MusicApp.module.scss';
 
@@ -136,6 +142,10 @@ const MusicApp = function ({ variant = 'h5' }) {
     const [cacheBusyId, setCacheBusyId] = useState('');
     const [cacheAllRunning, setCacheAllRunning] = useState(false);
     const [cacheProgress, setCacheProgress] = useState({ done: 0, total: 0 });
+    // Drive connection sheet: same sheet mechanics as the cache manager, one
+    // screen over. It is the only place that can raise Google's account picker.
+    const [driveOpen, setDriveOpen] = useState(false);
+    const [driveClosing, setDriveClosing] = useState(false);
 
     const audioRef = useRef(null);
     const tokenRestoreRef = useRef(false);
@@ -269,10 +279,33 @@ const MusicApp = function ({ variant = 'h5' }) {
 
     // 谷歌云盘链接 — leaves the list for 「我的」, where the Google Drive
     // connection lives.
-    const goDrive = useCallback(function () {
+    /* --- drive sheet --- */
+
+    // The drawer entry opens the Drive screen as a sheet, exactly like "缓存
+    // 管理" next to it — the settings page is no longer a destination of its
+    // own for this. Connecting stays the only action here that may raise
+    // Google's UI.
+    const openDriveSheet = useCallback(function () {
         closeMenu();
-        setTab('profile');
+        setDriveClosing(false);
+        setDriveOpen(true);
     }, [closeMenu]);
+
+    const closeDriveSheet = useCallback(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setDriveOpen(false);
+            setDriveClosing(false);
+            return;
+        }
+        setDriveClosing(true);
+    }, []);
+
+    useEffect(() => {
+        if (!driveOpen) return undefined;
+        const onKeyDown = (event) => { if (event.key === 'Escape') closeDriveSheet(); };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [driveOpen, closeDriveSheet]);
 
     /* --- cache manager --- */
 
@@ -1199,18 +1232,8 @@ const MusicApp = function ({ variant = 'h5' }) {
                             style={{ display: tab === 'profile' ? undefined : 'none' }}
                         >
                             <Profile
-                                theme={theme}
-                                onToggleTheme={toggleTheme}
-                                connected={hasLibrary}
-                                source={librarySource}
                                 sourceName={sourceLabel(librarySource)}
                                 driveConnected={!!token}
-                                gsiReady={gsiReady}
-                                clientId={clientId}
-                                clientIdDraft={clientIdDraft}
-                                onClientIdDraft={setClientIdDraft}
-                                onConnect={connect}
-                                onDisconnect={disconnect}
                                 folders={folders}
                                 folderId={folderId}
                                 folderName={folderName}
@@ -1300,7 +1323,7 @@ const MusicApp = function ({ variant = 'h5' }) {
                             type="button"
                             className={styles['menu-item']}
                             role="menuitem"
-                            onClick={goDrive}
+                            onClick={openDriveSheet}
                         >
                             <span className={styles['menu-icon']} aria-hidden="true">
                                 <IconGoogleDrive size={20} />
@@ -1323,6 +1346,27 @@ const MusicApp = function ({ variant = 'h5' }) {
                                 <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
                             </span>
                         </button>
+                        {/* Appearance sits below the cache entry so the drawer
+                            reads as app actions first, display preference last. */}
+                        <button
+                            type="button"
+                            className={styles['menu-item']}
+                            role="menuitem"
+                            onClick={toggleTheme}
+                        >
+                            <span className={styles['menu-icon']} aria-hidden="true">
+                                {theme === 'dark' ? <IconSun size={20} /> : <IconMoon size={20} />}
+                            </span>
+                            <span className={styles['menu-text']}>
+                                <span className={styles['menu-title']}>切换外观</span>
+                                <span className={styles['menu-sub']}>
+                                    {theme === 'dark' ? '当前深色模式，点击切换到浅色' : '当前浅色模式，点击切换到深色'}
+                                </span>
+                            </span>
+                            <span className={styles['menu-value']}>
+                                {theme === 'dark' ? '深色' : '浅色'}
+                            </span>
+                        </button>
                     </div>
                 </div>
             )}
@@ -1342,6 +1386,30 @@ const MusicApp = function ({ variant = 'h5' }) {
                     onRefresh={readCache}
                     onDelete={deleteCacheEntries}
                     onCacheAll={cacheAllTracks}
+                />
+            )}
+
+            {driveOpen && (
+                <DriveSheet
+                    driveConnected={!!token}
+                    sourceName={sourceLabel(librarySource)}
+                    gsiReady={gsiReady}
+                    clientId={clientId}
+                    clientIdDraft={clientIdDraft}
+                    onClientIdDraft={setClientIdDraft}
+                    onConnect={connect}
+                    onDisconnect={disconnect}
+                    folders={folders}
+                    folderId={folderId}
+                    onFolderChange={handleFolderChange}
+                    loading={listLoading}
+                    trackCount={tracks.length}
+                    closing={driveClosing}
+                    onClosed={() => { setDriveOpen(false); setDriveClosing(false); }}
+                    onCancelClose={() => setDriveClosing(false)}
+                    onClose={closeDriveSheet}
+                    onRefresh={refreshTracks}
+                    onGoList={() => { closeDriveSheet(); setTab('list'); }}
                 />
             )}
 

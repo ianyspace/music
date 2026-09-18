@@ -24,6 +24,11 @@
     --option-bg: #fff;
     --shadow-card: 0 24px 60px -24px rgba(31, 38, 79, 0.35), 0 2px 8px rgba(31, 38, 79, 0.06);
     --blob-opacity: 0;
+    /* Surface of the full-height sheets (cache manager, Drive connection).
+       They cover the whole column edge to edge, so they need an opaque
+       backdrop rather than the translucent `--card`. */
+    --sheet-bg: #f7f7f9;
+    --sheet-shadow: 0 0 80px rgba(31, 38, 79, 0.22);
 
     position: relative;
     min-height: 100vh;
@@ -65,6 +70,8 @@
         --option-bg: #2c2c30;
         --shadow-card: 0 24px 60px -20px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.3);
         --blob-opacity: 0.28;
+        --sheet-bg: #131318;
+        --sheet-shadow: 0 0 80px rgba(0, 0, 0, 0.6);
     }
 }
 
@@ -295,6 +302,8 @@
     flex-direction: column;
     gap: 3px;
     min-width: 0;
+    /* Takes the row's slack so a trailing `.menu-value` sits flush right. */
+    flex: 1;
 }
 
 .menu-title {
@@ -304,6 +313,14 @@
 
 .menu-sub {
     font-size: 12.5px;
+    color: var(--text-2);
+}
+
+/* Trailing state on a menu row (currently: the theme in use). */
+.menu-value {
+    flex-shrink: 0;
+    margin-left: 8px;
+    font-size: 13px;
     color: var(--text-2);
 }
 

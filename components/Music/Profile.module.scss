@@ -179,129 +179,6 @@
     color: var(--text-2);
 }
 
-/* --- connect steps --- */
-
-.steps {
-    margin: 0 0 14px;
-    padding: 0;
-    list-style: none;
-    counter-reset: step;
-
-    li {
-        position: relative;
-        margin: 0 0 8px;
-        padding: 10px 12px 10px 40px;
-        border-radius: 14px;
-        background: var(--field);
-        font-size: 12.5px;
-        line-height: 1.6;
-        color: var(--text);
-
-        &::before {
-            content: counter(step);
-            counter-increment: step;
-            position: absolute;
-            left: 11px;
-            top: 50%;
-            transform: translateY(-50%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--accent-2), var(--accent));
-            color: #fff;
-            font-size: 11px;
-            font-weight: 700;
-        }
-
-        code {
-            padding: 1px 5px;
-            border-radius: 5px;
-            background: rgba(120, 120, 128, 0.18);
-            font-size: 11.5px;
-        }
-
-        a {
-            color: var(--accent-2);
-            font-weight: 600;
-            text-decoration: none;
-
-            @media (hover: hover) {
-                &:hover {
-                    text-decoration: underline;
-                }
-            }
-        }
-    }
-}
-
-.field {
-    margin-bottom: 12px;
-}
-
-.input {
-    width: 100%;
-    height: 46px;
-    box-sizing: border-box;
-    padding: 0 16px;
-    border: 1px solid transparent;
-    border-radius: 14px;
-    background: var(--field);
-    color: var(--text);
-    /* 16px is the floor, not a design choice: iOS Safari zooms the whole page
-       when focusing an input whose font-size is below it. */
-    font-size: 16px;
-    font-family: inherit;
-
-    &:focus {
-        outline: none;
-        border-color: var(--accent-2);
-    }
-
-    &::placeholder {
-        color: var(--text-2);
-    }
-}
-
-.primary-btn {
-    width: 100%;
-    height: 48px;
-    padding: 0 22px;
-    border: 0;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #64d2ff, #0a84ff);
-    color: #fff;
-    font-size: 15px;
-    font-weight: 700;
-    font-family: inherit;
-    cursor: pointer;
-    box-shadow: 0 12px 26px -10px rgba(10, 132, 255, 0.6);
-    transition: transform 0.15s;
-
-    @media (hover: hover) {
-        &:hover:not(:disabled) {
-            transform: scale(1.015);
-        }
-    }
-
-    &:active:not(:disabled) {
-        transform: scale(0.98);
-    }
-
-    &:disabled {
-        opacity: 0.55;
-        cursor: not-allowed;
-    }
-}
-
-.hint {
-    margin: 12px 2px 0;
-    font-size: 12.5px;
-    color: var(--text-2);
-}
-
 /* --- settings rows --- */
 
 .row {
@@ -358,11 +235,6 @@
     font-weight: 600;
 }
 
-.row-value {
-    font-size: 13.5px;
-    color: var(--text-2);
-}
-
 .row-select {
     appearance: none;
     -webkit-appearance: none;
@@ -393,16 +265,6 @@
     flex-shrink: 0;
     color: var(--text-2);
     pointer-events: none;
-}
-
-.row-danger {
-    .row-icon {
-        background: linear-gradient(135deg, #8e8e93, #636366);
-    }
-
-    .row-label {
-        color: #ff453a;
-    }
 }
 
 .footnote {

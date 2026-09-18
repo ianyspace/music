@@ -1,0 +1,177 @@
+// Shared chrome for the app's full-height sheets — the cache manager and the
+// Google Drive connection screen.
+//
+// Both open the same way (a centred phone-width column over a blurred scrim,
+// rising and scaling in from below) and dismiss the same way (`closing` flips
+// them to the reverse animation, and the owner unmounts once it ends). Keeping
+// the surface here rather than in each module is what makes the two screens
+// read as one system: same width, same motion curve, same top bar.
+//
+// The palette is entirely theme tokens (`--text`, `--field`, `--hairline`,
+// `--sheet-bg`, …) defined by `MusicApp.module.scss`, so every sheet follows
+// the light/dark switch without knowing about it.
+//
+// Styles shared by both screens are composed into each module with
+// `composes: … from './Sheet.module.scss'`, which is why the class names here
+// are unprefixed.
+
+.veil {
+    position: fixed;
+    inset: 0;
+    z-index: 32;
+    display: flex;
+    justify-content: center;
+    background: rgba(8, 9, 16, 0.55);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    animation: veil-in 0.28s ease-out;
+}
+
+.veil-out {
+    animation: veil-out 0.3s ease-in forwards;
+}
+
+@keyframes veil-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes veil-out {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+.page {
+    display: flex;
+    flex-direction: column;
+    width: min(480px, 100%);
+    height: 100%;
+    box-sizing: border-box;
+    background: var(--sheet-bg);
+    box-shadow: var(--sheet-shadow);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+        'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    animation: sheet-in 0.42s cubic-bezier(0.32, 0.72, 0.2, 1) both;
+    will-change: transform, opacity;
+    overflow: hidden;
+}
+
+.page-out {
+    animation: sheet-out 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes sheet-in {
+    from {
+        transform: translateY(34%) scale(0.94);
+        opacity: 0.35;
+    }
+
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes sheet-out {
+    from {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+
+    to {
+        transform: translateY(34%) scale(0.94);
+        opacity: 0.3;
+    }
+}
+
+/* --- top bar: collapse + title + trailing action --- */
+
+.topbar {
+    position: relative;
+    z-index: 4;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 18px 0;
+}
+
+.top-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: transform 0.15s, background-color 0.2s, opacity 0.2s;
+
+    @media (hover: hover) {
+        &:hover:not(:disabled) {
+            background: var(--row-hover);
+        }
+    }
+
+    &:active:not(:disabled) {
+        transform: scale(0.92);
+    }
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: default;
+    }
+}
+
+.top-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+/* --- scrolling body --- */
+
+.body {
+    flex: 1;
+    min-height: 0;
+    padding: 0 20px calc(18px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.body::-webkit-scrollbar {
+    display: none;
+}
+
+.state {
+    margin: 32px 0;
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--text-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .veil,
+    .page {
+        animation: none;
+    }
+}

@@ -1,144 +1,41 @@
-// Cache manager — a phone-width dark sheet (same column as the song list and
-// the player) over a dimmed viewport. Lists every audio blob held in
-// IndexedDB with its size and freshness, and offers "全部缓存" / "全部删除".
+// Cache manager — the sheet lists every audio blob held in IndexedDB with its
+// size and freshness, and offers "全部缓存" / "全部删除".
+//
+// Its chrome (scrim, column, top bar, motion) is composed in from
+// Sheet.module.scss so it opens exactly like the Drive connection screen.
+// Everything below is specific to this screen: the three summary tiles, the
+// two bulk actions, the progress rail and the entry list.
 
 .veil {
-    position: fixed;
-    inset: 0;
-    z-index: 32;
-    display: flex;
-    justify-content: center;
-    background: rgba(8, 9, 16, 0.55);
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-    animation: veil-in 0.28s ease-out;
+    composes: veil from './Sheet.module.scss';
 }
 
 .veil-out {
-    animation: veil-out 0.3s ease-in forwards;
-}
-
-@keyframes veil-in {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
-}
-
-@keyframes veil-out {
-    from {
-        opacity: 1;
-    }
-
-    to {
-        opacity: 0;
-    }
+    composes: veil-out from './Sheet.module.scss';
 }
 
 .page {
-    --cm-text: #f2f3f7;
-    --cm-text-2: rgba(228, 230, 240, 0.6);
-    --cm-field: rgba(255, 255, 255, 0.1);
-    --cm-hairline: rgba(255, 255, 255, 0.1);
-
-    display: flex;
-    flex-direction: column;
-    width: min(480px, 100%);
-    height: 100%;
-    box-sizing: border-box;
-    background:
-        radial-gradient(120% 76% at 50% -6%, rgba(24, 26, 40, 0.4) 0%, rgba(15, 16, 27, 0.88) 48%, rgba(9, 10, 18, 0.96) 100%),
-        linear-gradient(135deg, #363a52, #191b2a);
-    box-shadow: 0 0 80px rgba(0, 0, 0, 0.5);
-    color: var(--cm-text);
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
-        'Helvetica Neue', 'Microsoft YaHei', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    animation: cm-in 0.42s cubic-bezier(0.32, 0.72, 0.2, 1) both;
-    will-change: transform, opacity;
-    overflow: hidden;
+    composes: page from './Sheet.module.scss';
 }
 
 .page-out {
-    animation: cm-out 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+    composes: page-out from './Sheet.module.scss';
 }
-
-@keyframes cm-in {
-    from {
-        transform: translateY(34%) scale(0.94);
-        opacity: 0.35;
-    }
-
-    to {
-        transform: translateY(0) scale(1);
-        opacity: 1;
-    }
-}
-
-@keyframes cm-out {
-    from {
-        transform: translateY(0) scale(1);
-        opacity: 1;
-    }
-
-    to {
-        transform: translateY(34%) scale(0.94);
-        opacity: 0.3;
-    }
-}
-
-/* --- top bar: collapse + title + refresh --- */
 
 .topbar {
-    position: relative;
-    z-index: 4;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 6px 18px 0;
+    composes: topbar from './Sheet.module.scss';
 }
 
 .top-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--cm-text);
-    cursor: pointer;
-    transition: transform 0.15s, background-color 0.2s, opacity 0.2s;
-
-    @media (hover: hover) {
-        &:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.08);
-        }
-    }
-
-    &:active:not(:disabled) {
-        transform: scale(0.92);
-    }
-
-    &:disabled {
-        opacity: 0.4;
-        cursor: default;
-    }
+    composes: top-btn from './Sheet.module.scss';
 }
 
 .top-title {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: 0.3px;
+    composes: top-title from './Sheet.module.scss';
+}
+
+.state {
+    composes: state from './Sheet.module.scss';
 }
 
 /* --- summary --- */
@@ -158,8 +55,8 @@
     gap: 3px;
     padding: 12px 6px;
     border-radius: 16px;
-    background: var(--cm-field);
-    border: 1px solid var(--cm-hairline);
+    background: var(--field);
+    border: 1px solid var(--hairline);
 }
 
 .summary-value {
@@ -171,7 +68,7 @@
 
 .summary-label {
     font-size: 11.5px;
-    color: var(--cm-text-2);
+    color: var(--text-2);
 }
 
 /* --- actions --- */
@@ -187,10 +84,10 @@
     flex: 1;
     height: 44px;
     padding: 0 12px;
-    border: 1px solid var(--cm-hairline);
+    border: 1px solid var(--hairline);
     border-radius: 15px;
-    background: var(--cm-field);
-    color: var(--cm-text);
+    background: var(--field);
+    color: var(--text);
     font-size: 14.5px;
     font-weight: 700;
     font-family: inherit;
@@ -199,7 +96,7 @@
 
     @media (hover: hover) {
         &:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.16);
+            background: var(--row-hover);
         }
     }
 
@@ -238,7 +135,7 @@
     height: 3px;
     margin: 12px 20px 0;
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--hairline);
     overflow: hidden;
 }
 
@@ -252,24 +149,9 @@
 /* --- list --- */
 
 .list {
-    flex: 1;
-    min-height: 0;
+    composes: body from './Sheet.module.scss';
+
     margin-top: 12px;
-    padding: 0 20px calc(18px + env(safe-area-inset-bottom, 0px));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
-}
-
-.list::-webkit-scrollbar {
-    display: none;
-}
-
-.state {
-    margin: 32px 0;
-    text-align: center;
-    font-size: 13.5px;
-    color: var(--cm-text-2);
 }
 
 .empty {
@@ -285,9 +167,9 @@
     height: 64px;
     margin-bottom: 14px;
     border-radius: 20px;
-    background: var(--cm-field);
-    border: 1px solid var(--cm-hairline);
-    color: var(--cm-text-2);
+    background: var(--field);
+    border: 1px solid var(--hairline);
+    color: var(--text-2);
 }
 
 .empty-title {
@@ -301,7 +183,7 @@
     max-width: 280px;
     font-size: 13px;
     line-height: 1.7;
-    color: var(--cm-text-2);
+    color: var(--text-2);
 }
 
 .item {
@@ -309,7 +191,7 @@
     align-items: center;
     gap: 11px;
     padding: 7px 4px;
-    border-bottom: 1px solid var(--cm-hairline);
+    border-bottom: 1px solid var(--hairline);
 
     &:last-child {
         border-bottom: 0;
@@ -354,7 +236,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12.5px;
-    color: var(--cm-text-2);
+    color: var(--text-2);
 }
 
 .item-remove {
@@ -368,7 +250,7 @@
     border: 0;
     border-radius: 50%;
     background: transparent;
-    color: var(--cm-text-2);
+    color: var(--text-2);
     cursor: pointer;
     transition: transform 0.15s, background-color 0.2s, color 0.2s;
 
@@ -393,14 +275,7 @@
     flex-shrink: 0;
     padding: 2px 7px;
     border-radius: 7px;
-    background: var(--cm-field);
-    color: var(--cm-text-2);
+    background: var(--field);
+    color: var(--text-2);
     font-size: 11px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .veil,
-    .page {
-        animation: none;
-    }
 }
