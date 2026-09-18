@@ -28,7 +28,10 @@
 
 /* eslint-disable no-restricted-globals */
 
-const VERSION = 'v1';
+// Bumped whenever the caching strategy changes, so old caches are dropped on
+// activate. v2 accompanies the IndexedDB key-path fix: the shell had to be
+// re-issued for the repaired JS bundle to reach visitors who already had v1.
+const VERSION = 'v2';
 const SHELL_CACHE = `music-shell-${VERSION}`;
 const RUNTIME_CACHE = `music-runtime-${VERSION}`;
 const KEEP = [SHELL_CACHE, RUNTIME_CACHE];

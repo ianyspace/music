@@ -62,10 +62,10 @@ import styles from './MusicApp.module.scss';
  * - `/desktop` → `variant="desktop"` (wide-screen workspace)
  *
  * Every stateful piece lives here exactly once — library sources (public R2 +
- * optional Google Drive), 7-day caches, playback, lyrics and Media Session —
- * and `variant` only swaps the rendered UI. Authorization never happens on its
- * own: the public library needs none, and Google is only contacted when the
- * visitor asks for it.
+ * optional Google Drive), the permanent local caches, playback, lyrics and
+ * Media Session — and `variant` only swaps the rendered UI. Authorization never
+ * happens on its own: the public library needs none, and Google is only
+ * contacted when the visitor asks for it.
  *
  * Playback lives here (single <audio> element, so music keeps running while
  * screens switch): transport controls, shuffle/repeat, seek, in-list search,
@@ -176,7 +176,13 @@ const MusicApp = function ({ variant = 'h5' }) {
             }
             throw err;
         }
-        cacheAudio(cacheKey, blob);
+        // Awaited on purpose. Firing this and moving on let the write race the
+        // caller, and on iOS the page is routinely backgrounded the moment
+        // playback starts — which suspends a pending IndexedDB write and leaves
+        // the track uncached, so the same song was re-downloaded every session.
+        // The write is a local transaction (a few ms), so awaiting it does not
+        // delay `play()` meaningfully; the blob is already in memory by here.
+        await cacheAudio(cacheKey, blob);
         return URL.createObjectURL(blob);
     }, []);
 
@@ -385,7 +391,7 @@ const MusicApp = function ({ variant = 'h5' }) {
     }, []);
 
     // The public library is the default experience, so the page shows songs
-    // straight from the 7-day cache with no authorization involved.
+    // straight from the permanent list cache with no authorization involved.
     useEffect(() => {
         const savedId = storageGet(CLIENT_ID_KEY);
         const cached = readListCache(CLOUD_SOURCE, savedId);
