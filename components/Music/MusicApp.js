@@ -126,6 +126,14 @@ const MusicApp = function ({ variant = 'h5' }) {
     // 'list' | 'profile' — which tab page is showing; the full-screen
     // now-playing page floats above it while `playerOpen` is true.
     const [tab, setTab] = useState('list');
+    // Scroll the body back to top whenever the active tab changes, so the
+    // visitor does not land in the middle of a page they have never seen.
+    // The scroll position of the *hidden* tab is implicitly preserved because
+    // its DOM stays mounted and the browser remembers the scroll offset of
+    // elements that are removed from layout and later restored.
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+    }, [tab]);
     const [playerOpen, setPlayerOpen] = useState(false);
     // While true the sheet plays its slide-down exit animation and only
     // unmounts when that finishes (`onClosed`).
@@ -1404,8 +1412,7 @@ const MusicApp = function ({ variant = 'h5' }) {
                         {/* Both tab pages stay mounted (scroll position survives the
                     switch); the shown one replays its enter transition. */}
                         <div
-                            className={`${styles.view}${tab === 'list' ? ` ${styles['view-in']}` : ''}`}
-                            style={{ display: tab === 'list' ? undefined : 'none' }}
+                            className={`${styles.view}${tab === 'list' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
                         >
                             <TrackList
                                 connected={hasLibrary}
@@ -1426,8 +1433,7 @@ const MusicApp = function ({ variant = 'h5' }) {
                             />
                         </div>
                         <div
-                            className={`${styles.view}${tab === 'profile' ? ` ${styles['view-in']}` : ''}`}
-                            style={{ display: tab === 'profile' ? undefined : 'none' }}
+                            className={`${styles.view}${tab === 'profile' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
                         >
                             <Profile
                                 sourceName={sourceLabel(librarySource)}

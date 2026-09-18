@@ -148,6 +148,22 @@
     box-sizing: border-box;
 }
 
+/* A tab that is not shown is removed from layout completely so it cannot
+   leak scrollbars or keep the document taller than the active tab.
+   
+   `display: none` alone should be enough, but some mobile browsers keep the
+   scrollbar gutter if the element had overflow before hiding. The extra
+   declarations here (height:0, overflow:hidden, visibility:hidden) are
+   defensive: they ensure the hidden tab contributes zero to document metrics
+   and cannot be reached by scroll, touch, or screen-reader navigation. */
+.view-off {
+    display: none;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+}
+
 /* Applied to whichever view is shown — remounting the class replays the
    fade-rise on every tab switch (both views stay mounted for scroll memory). */
 .view-in {
