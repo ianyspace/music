@@ -129,10 +129,18 @@ check('REPEAT_MODES holds exactly the three repeat states',
 check('MusicApp imports both keys',
     /SHUFFLE_KEY,/.test(appJs) && /REPEAT_KEY,/.test(appJs), 'imported');
 check('MusicApp imports the mode list', /REPEAT_MODES,/.test(appJs), 'imported');
-check('shuffle defaults to off',
-    /const \[shuffle, setShuffle\] = useState\(false\)/.test(appJs), 'useState(false)');
+// The mode a visitor gets before they have ever touched the button, read out of
+// the source so the behaviour tests below cannot drift from it.
+const defaultShuffle = /const \[shuffle, setShuffle\] = useState\(true\)/.test(appJs);
+const defaultRepeat = (/const \[repeat, setRepeat\] = useState\('(\w+)'\)/.exec(appJs) || [])[1] || '';
+const DEFAULT_STATE = { shuffle: defaultShuffle, repeat: defaultRepeat };
+
+check('shuffle defaults to 随机 (on)',
+    defaultShuffle, `useState(${defaultShuffle})`);
 check('repeat defaults to off',
-    /const \[repeat, setRepeat\] = useState\('off'\)/.test(appJs), "useState('off')");
+    defaultRepeat === 'off', `useState('${defaultRepeat}')`);
+check('the default is one of the four modes the button can show',
+    REPEAT_MODES.includes(defaultRepeat), `${defaultShuffle ? 'shuffle' : defaultRepeat}`);
 
 check('the mode is read in exactly one place',
     (appJs.match(/storageGet\(SHUFFLE_KEY\)/g) || []).length === 1
@@ -186,7 +194,7 @@ const freshRef = () => ({ current: false });
 const usedRef = () => ({ current: true });
 
 // (a) a reload must give the visitor their mode back
-let run = runEffect({ [SHUFFLE_KEY]: 'on', [REPEAT_KEY]: 'one' }, { shuffle: false, repeat: 'off' }, freshRef());
+let run = runEffect({ [SHUFFLE_KEY]: 'on', [REPEAT_KEY]: 'one' }, DEFAULT_STATE, freshRef());
 check('a reload restores a stored shuffle',
     run.calls.some(([what, value]) => what === 'shuffle' && value === true), JSON.stringify(run.calls));
 check('a reload restores a stored repeat mode',
@@ -195,28 +203,29 @@ check('restoring writes nothing back over what was just read',
     run.store.get(SHUFFLE_KEY) === 'on' && run.store.get(REPEAT_KEY) === 'one',
     `${run.store.get(SHUFFLE_KEY)} / ${run.store.get(REPEAT_KEY)}`);
 
-run = runEffect({ [SHUFFLE_KEY]: 'off', [REPEAT_KEY]: 'all' }, { shuffle: true, repeat: 'one' }, freshRef());
+run = runEffect({ [SHUFFLE_KEY]: 'off', [REPEAT_KEY]: 'all' }, DEFAULT_STATE, freshRef());
 check('an explicit "off" is restored as off, not treated as absent',
     run.calls.some(([what, value]) => what === 'shuffle' && value === false), JSON.stringify(run.calls));
 
 // (b) "no value saved yet" has to stay a state of its own: nothing written, so
-// a future change of default is not frozen into the visitor's storage.
-run = runEffect({}, { shuffle: false, repeat: 'off' }, freshRef());
+// a visitor who has never touched the button always sees the *current* default
+// rather than the one that happened to ship on their first visit.
+run = runEffect({}, DEFAULT_STATE, freshRef());
 check('a first visit keeps the defaults', run.calls.length === 0, JSON.stringify(run.calls));
 check('a first visit writes nothing', run.store.size === 0, `${run.store.size} keys written`);
 
 // (c) a corrupt value must not become a mode nobody chose
-run = runEffect({ [SHUFFLE_KEY]: 'yes', [REPEAT_KEY]: 'banana' }, { shuffle: false, repeat: 'off' }, freshRef());
+run = runEffect({ [SHUFFLE_KEY]: 'yes', [REPEAT_KEY]: 'banana' }, DEFAULT_STATE, freshRef());
 check('an unrecognised shuffle value leaves the default in place',
     run.calls.length === 0, JSON.stringify(run.calls));
-run = runEffect({ [SHUFFLE_KEY]: 'yes', [REPEAT_KEY]: 'one' }, { shuffle: false, repeat: 'off' }, freshRef());
+run = runEffect({ [SHUFFLE_KEY]: 'yes', [REPEAT_KEY]: 'one' }, DEFAULT_STATE, freshRef());
 check('one corrupt key does not stop the other from restoring',
     run.calls.length === 1 && run.calls[0][0] === 'repeat' && run.calls[0][1] === 'one',
     JSON.stringify(run.calls));
-run = runEffect({ [SHUFFLE_KEY]: 'on', [REPEAT_KEY]: '' }, { shuffle: false, repeat: 'off' }, freshRef());
+run = runEffect({ [SHUFFLE_KEY]: 'on', [REPEAT_KEY]: '' }, DEFAULT_STATE, freshRef());
 check('an empty repeat value leaves the default in place',
     !run.calls.some(([what]) => what === 'repeat'), JSON.stringify(run.calls));
-run = runEffect({ [SHUFFLE_KEY]: 'on', [REPEAT_KEY]: 'shuffle' }, { shuffle: false, repeat: 'off' }, freshRef());
+run = runEffect({ [SHUFFLE_KEY]: 'on', [REPEAT_KEY]: 'shuffle' }, DEFAULT_STATE, freshRef());
 check('the phone-only "随机" label is not mistaken for a repeat mode',
     !run.calls.some(([what]) => what === 'repeat'), JSON.stringify(run.calls));
 
@@ -241,7 +250,7 @@ const roundTrip = function (shuffle, repeat) {
     const written = runEffect({}, { shuffle, repeat }, usedRef()).store;
     const seed = {};
     written.forEach((value, key) => { seed[key] = value; });
-    const back = runEffect(seed, { shuffle: false, repeat: 'off' }, freshRef()).calls;
+    const back = runEffect(seed, DEFAULT_STATE, freshRef()).calls;
     return back.some(([what, value]) => what === 'shuffle' && value === shuffle)
         && back.some(([what, value]) => what === 'repeat' && value === repeat);
 };
@@ -286,9 +295,9 @@ check('shuffle is never given a string value',
 const cycleBody = bodyAfter(appJs, 'const cyclePlaybackMode = useCallback(function () {');
 check('the phone cycling button was located', Boolean(cycleBody), 'body extracted');
 
-const simulateCycle = function () {
-    let shuffle = false;
-    let repeat = 'off';
+const simulateCycle = function (startShuffle, startRepeat) {
+    let shuffle = startShuffle;
+    let repeat = startRepeat;
     const seen = [];
     const factory = new Function(
         'setShuffle', 'setRepeat', 'shuffle', 'repeat',
@@ -304,15 +313,27 @@ const simulateCycle = function () {
     }
     return seen;
 };
-const visited = simulateCycle();
-check('the phone button walks 关闭 → 列表循环 → 单曲循环 → 随机',
-    visited.slice(0, 4).join(' → ') === 'off → all → one → shuffle',
-    visited.slice(0, 4).join(' → '));
+
+// The canonical walk, in the order the button documents it.
+const CANONICAL = ['off', 'all', 'one', 'shuffle'];
+const rotate = function (order, by) { return order.slice(by).concat(order.slice(0, by)); };
+
+// Simulated from the visitor's actual default, so the assertion covers the
+// first thing a new visitor sees rather than an arbitrary entry point.
+const visited = simulateCycle(DEFAULT_STATE.shuffle, DEFAULT_STATE.repeat);
+check('the cycle was simulated from the shipped default',
+    visited[0] === (DEFAULT_STATE.shuffle ? 'shuffle' : DEFAULT_STATE.repeat),
+    visited[0]);
+check('the phone button walks the four modes in the documented cycle',
+    rotate(CANONICAL, CANONICAL.indexOf(visited[0])).join(' → ') === visited.slice(0, 4).join(' → '),
+    `${visited.slice(0, 4).join(' → ')} (canonical order: ${CANONICAL.join(' → ')})`);
 check('the cycle returns to where it started',
     visited[4] === visited[0], `${visited[4]} vs ${visited[0]}`);
 check('every mode the cycle produces is one the restore recognises',
     visited.slice(0, 4).every((mode) => mode === 'shuffle' || REPEAT_MODES.includes(mode)),
     visited.slice(0, 4).join(', '));
+check('the cycle visits all four modes, none twice',
+    new Set(visited.slice(0, 4)).size === 4, visited.slice(0, 4).join(', '));
 
 // ...and each of those four has to survive a reload as itself.
 const cycleRoundTrip = visited.slice(0, 4).map((mode) => {

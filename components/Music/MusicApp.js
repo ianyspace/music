@@ -165,7 +165,10 @@ const MusicApp = function ({ variant = 'h5' }) {
     const [current, setCurrent] = useState(null);
     const [loadingId, setLoadingId] = useState('');
     const [isPlaying, setIsPlaying] = useState(false);
-    const [shuffle, setShuffle] = useState(false);
+    // 随机 by default. `false` here is only the pre-restore value — the mode
+    // effect below adopts whatever is stored, and a visitor who has ever picked
+    // something else gets that back instead.
+    const [shuffle, setShuffle] = useState(true);
     // 'off' → 'all' → 'one' → 'off'
     const [repeat, setRepeat] = useState('off');
     const [progress, setProgress] = useState({ time: 0, duration: 0 });
@@ -344,7 +347,9 @@ const MusicApp = function ({ variant = 'h5' }) {
     // leaves the default in place, so a corrupt preference can never put the
     // player into a mode the visitor did not choose. And because nothing is
     // written until the visitor actually changes something, "no value saved
-    // yet" stays a state of its own rather than becoming a stored default.
+    // yet" stays a state of its own rather than becoming a stored default —
+    // which is what lets the default below be 随机 without pinning every
+    // existing visitor to whatever the default was on their first visit.
     //
     // The mode is changed by three controls (the phone's combined button, and
     // the wide-screen shuffle and repeat buttons) and they all go through
