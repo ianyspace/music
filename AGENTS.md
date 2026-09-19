@@ -498,6 +498,36 @@ components/Music/three/
 - `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
+### 要看「画出来是什么样」的时候
+
+改 3D 场景、玻璃、布局这类**视觉**的东西，`npm run build` 只证明语法没坏。
+要真的看一眼，别去量无头浏览器的 DOM —— 用 Junction 搭一个带真 basePath 的
+本地 HTTP 根，再截图：
+
+```bash
+# .workbuddy-ai/serve/ 里三个 Windows Junction（New-Item -ItemType Junction）
+#   music        -> out          于是 http://127.0.0.1:8899/music/3d/ 是真应用
+#   node_modules -> 真实目录       importmap 能取到 three.module.js
+#   components   -> 真实目录       能直接 import 未构建的 scene/*.js
+python3 -m http.server 8899 --bind 127.0.0.1 --directory .workbuddy-ai/serve
+chrome --headless=new --window-size=1440,810 --timeout=25000 \
+       --screenshot=shot.png "http://127.0.0.1:8899/music/3d/"
+```
+
+三个坑，踩过就别再踩：
+
+1. **`file://` 下 ES module 动态 import 一定失败**（不透明 origin），必须走 HTTP。
+2. **页面里有活的 rAF 时 `--virtual-time-budget` 永不耗尽**，`--screenshot` /
+   `--dump-dom` 会一直挂到超时。真页面用 `--timeout=N`；自己写的 harness
+   则把循环写成有限步（跑 N 帧、渲染一次、停）。
+3. **importmap 要补没有扩展名的裸相对导入。** `scene/lyrics.js` 里写的是
+   `from './textures'`，浏览器不做扩展名补全 → 404，但报出来的错是
+   `Failed to fetch dynamically imported module: .../lyrics.js` ——
+   错误指向最外层那个模块，不是真正 404 的那个，很容易查错方向。
+
+服务起在 `--directory` 上，**不要 `cd out`** —— 否则 `npm run build` 会因为
+`EBUSY: rmdir 'out'` 失败（Windows 会把占用它的 python 进程锁住那个目录）。
+
 > 本仓库的工作区是 **CRLF**、CI 是 **LF**，且 `core.autocrlf=true`（仓库内一律 LF）。
 > 用脚本批量改源码时注意别把文件写成混合行尾（Node 里 `split('\n')` 会留下 `\r`）。
 
