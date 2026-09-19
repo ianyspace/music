@@ -97,6 +97,13 @@ jobs:
           # fail silently — the list looks fine, the totals are wrong, or the
           # three-dots button is silently torn out of the accessibility tree.
           node scripts/check-dislike-pin.js
+          # The audio cache's 30-day expiry. The first version of it refreshed
+          # the expiry inside the stored record, which meant rewriting the
+          # audio blob on the read path — and a `readwrite` transaction blocks
+          # every other transaction on the store, so the next song's cache read
+          # never finished. Nothing in the build catches a timing behaviour, so
+          # the "the read path must not write" invariant is asserted here.
+          node scripts/check-cache-ttl.js
           echo "build output verified"
 
       - name: Setup Pages

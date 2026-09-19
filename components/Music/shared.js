@@ -25,6 +25,15 @@ export const RIPPLES_KEY = 'music:setting:ripples';
 // what you want — an orphaned dislike list would silently hide songs.
 export const DISLIKED_KEY = 'music:setting:disliked';
 export const ORDER_KEY = 'music:setting:order';
+// Last-played stamps for cached audio, as `{ '<source>:<id>': timestamp }`.
+//
+// Deliberately NOT stored inside the cached record itself. Refreshing a stamp
+// that lives in the record means rewriting the audio blob, and a `readwrite`
+// transaction on the audio store blocks every other transaction against it —
+// so one multi-megabyte rewrite makes the *next* song's cache read wait for
+// the whole write, which on a phone is the difference between the next song
+// starting and never loading. A stamp is a few bytes; the blob is megabytes.
+export const CACHE_PLAYED_KEY = 'music:cachePlayed';
 // Drive returns at most `pageSize` files per response; follow nextPageToken
 // so libraries bigger than one page still show up (capped to stay sane).
 export const LIST_HARD_CAP = 1000;

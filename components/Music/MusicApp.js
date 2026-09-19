@@ -35,6 +35,7 @@ import {
 import {
     getCachedAudio,
     touchCachedAudio,
+    pruneExpiredAudio,
     cacheAudio,
     listCachedAudio,
     deleteCachedAudio,
@@ -133,7 +134,10 @@ const MusicApp = function ({ variant = 'h5' }) {
     // its DOM stays mounted and the browser remembers the scroll offset of
     // elements that are removed from layout and later restored.
     useEffect(() => {
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        // `scrollTo(x, y)` rather than an options object: `behavior: 'instant'`
+        // is a newer enum member and an unrecognised value there is a TypeError
+        // on older mobile browsers, which would take the whole page down.
+        window.scrollTo(0, 0);
     }, [tab]);
     const [playerOpen, setPlayerOpen] = useState(false);
     // While true the sheet plays its slide-down exit animation and only
@@ -471,6 +475,15 @@ const MusicApp = function ({ variant = 'h5' }) {
     }, [driveOpen, closeDriveSheet]);
 
     /* --- cache manager --- */
+
+    // Sweep the audio cache once per page load: anything not played for 30 days
+    // goes. It is here — off the playback path — rather than in the read that
+    // serves a song, because enforcing a TTL while a song is being fetched is
+    // how a cache read ends up rewriting a multi-megabyte blob and blocking the
+    // next play. Keys only, so the sweep itself is cheap.
+    useEffect(() => {
+        pruneExpiredAudio().catch(() => { });
+    }, []);
 
     const readCache = useCallback(async function () {
         setCacheLoading(true);
@@ -1248,8 +1261,8 @@ const MusicApp = function ({ variant = 'h5' }) {
         } catch (err) {
             setNotice('浏览器阻止了自动播放，请点击播放按钮');
         }
-        // Refresh the cache expiry after playback starts — this is off the
-        // critical path so a slow write cannot delay the audio.
+        // Restart the song's 30 days. This is a few bytes into localStorage,
+        // not a rewrite of the cached blob — see the note on CACHE_PLAYED_KEY.
         touchCachedAudio(audioCacheKey(current.track)).catch(() => { });
         return () => audio.removeEventListener('loadedmetadata', seekOnMetadata);
     }, [current]);
