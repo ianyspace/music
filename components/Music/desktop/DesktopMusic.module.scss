@@ -119,16 +119,21 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    /* The capsule bar floats over the bottom of the screen. Biasing the group
-       up by half of this is what keeps the caption clear of it at every
-       viewport height, without either block knowing about the other. */
+    /* The capsule bar floats over the bottom of the screen. Biasing the record
+       up by half of this is what keeps it clear of the bar at every viewport
+       height, without either block knowing about the other. */
     padding-bottom: 12vh;
     box-sizing: border-box;
 }
 
-/* The record and its caption, as one centred column. Stays mounted while the
-   lyrics are shown (faded out, not unmounted) so the rotor keeps its angle:
-   coming back from the words is coming back to the same groove. */
+/* The record. Stays mounted while the lyrics are shown (faded out, not
+   unmounted) so the rotor keeps its angle: coming back from the words is
+   coming back to the same groove.
+
+   A centred title-and-artist line used to sit under it, and it is gone on
+   purpose: the page already names the song in the list row and again in the
+   capsule bar, and the caption was the loudest of the three — and the only one
+   that could neither be clicked nor dragged. The stage is the record. */
 .stage-record {
     display: flex;
     flex-direction: column;
@@ -147,7 +152,10 @@
    it. `min()` against the viewport width keeps the record from eating the
    list's column on a narrow window, and the pixel cap stops it ballooning on
    a 4K screen. The height term is the one that matters: at 56vh the record
-   plus its caption still clears the capsule bar at every window height.
+   clears the capsule bar at every window height. (It used to have a caption
+   under it and this was the term that kept *that* clear; the caption is gone,
+   so the term now has slack — left as it is because 56vh is the size the
+   record has been tuned to, not because the old sum still binds.)
 
    The last term is the one that has to know about the *list*. `44vw` alone
    is not enough, because it measures the whole viewport while the record is
@@ -398,34 +406,11 @@
     transform: rotate(15deg);
 }
 
-/* --- the caption under the record --- */
+/* --- the caption under the record -----------------------------------------
 
-.head {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex-shrink: 0;
-    width: min(680px, 74vw);
-    margin-top: 2.6vh;
-    text-align: center;
-}
-
-.head-label {
-    max-width: 100%;
-    font-size: clamp(20px, 1.5vw, 26px);
-    font-weight: 700;
-    letter-spacing: -0.2px;
-    color: var(--text);
-}
-
-.head-title {
-    white-space: nowrap;
-}
-
-.head-artist {
-    font-weight: 500;
-    color: var(--text-2);
-}
+   There isn't one any more — see `.stage-record` above for why. The rules that
+   drew it (`.head`, `.head-label`, `.head-title`, `.head-artist`) are gone
+   with it; `Marquee` is still the bar's, which is where the name lives now. */
 
 /* --- mode toast, centred over the record --- */
 

@@ -238,7 +238,7 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 .root  (100vh，overflow: hidden —— 整页不滚动)
 ├── .backdrop / .glow          色场，铺满
 ├── .stage  (absolute; inset: 0)   ← 唯一有自己布局的块
-│     ├── .stage-record         唱片 + 歌名（有歌词时 opacity: 0，不卸载）
+│     ├── .stage-record         唱片（有歌词时 opacity: 0，不卸载）
 │     └── .lyrics               歌词，absolute 铺在 stage 上
 ├── .side    (absolute)  列表：无面板背景，直接滚动
 ├── .settings-btn (absolute)
@@ -306,6 +306,13 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
   列表头上那个三点弹出菜单（`.menu-*`）**已删除**：它的三项
   （云盘账号 / 缓存管理 / 不喜欢歌曲）都搬进了右上角设置弹窗，其中「不喜欢歌曲」
   是新增的一行，且**不在 `connected` 分支里** —— 公共曲库也有被隐藏的歌。
+- **唱片下方不再有歌名 / 歌手**（`.head*` 四条规则已删除，`.stage-record` 现在只装唱片）。
+  理由不是「简洁」，是**同一首歌在页面上被说了三遍**：列表行、唱片下方、胶囊条，
+  而唱片下方那遍最响、却既点不动也拖不动。要再放东西到唱片下面，
+  先确认它不是在重复别处已有的信息。`.stage` 的 `padding-bottom: 12vh`
+  与 `.rig` 的 `56vh` 都还留着 —— 前者现在负责让唱片避开播放条，
+  后者当初是按「唱片 + 标题」算的，标题没了就有余量，但 56vh 是唱片被调好的尺寸，
+  不要因为「有余量」就顺手放大。
 - **底部胶囊条里没有唱片**：`.bar-disc` 那枚 36px 旋转黑胶已删除 ——
   舞台有真的唱片、行里有封面，那是第三份；在这个尺寸上它只是一枚带糊图的深色圆点。
   播放 / 暂停按钮是 44px（曾经 50px）：条里唯一实心色的按钮，可以比旁边 38px 的

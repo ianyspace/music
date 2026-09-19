@@ -529,13 +529,6 @@ const DesktopMusic = function ({
                             </span>
                         </button>
                     </div>
-
-                    <div className={styles.head}>
-                        <Marquee text={`${title} - ${artist}`} className={styles['head-label']} center>
-                            <span className={styles['head-title']}>{title}</span>
-                            <span className={styles['head-artist']}> - {artist}</span>
-                        </Marquee>
-                    </div>
                 </div>
 
                 {modeToast && (
