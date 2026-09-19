@@ -20,6 +20,7 @@
   "size": 8421376,
   "url": "https://music-cdn.example.com/songs/%E7%89%B5%E4%B8%9D%E6%88%8F-%E9%93%B6%E4%B8%B4.mp3",
   "lyricsUrl": "https://music-cdn.example.com/songs/%E7%89%B5%E4%B8%9D%E6%88%8F-%E9%93%B6%E4%B8%B4.lrc",
+  "coverUrl": "https://music-cdn.example.com/songs/%E7%89%B5%E4%B8%9D%E6%88%8F-%E9%93%B6%E4%B8%B4.jpg",
   "source": "cloud"
 }
 ```
@@ -27,6 +28,12 @@
 - 只列出音频扩展名：`mp3` `flac` `m4a` `wav` `ogg` `oga` `opus` `aac` `wma` `ape`
 - 同名 `.lrc` / `.txt` 会作为歌词挂在 `lyricsUrl`（忽略扩展名、空格、点、连字符和开头的序号，
   例如 `01. 牵丝戏 - 银临.mp3` 能匹配 `牵丝戏-银临.lrc`）
+- 同名图片会作为封面挂在 `coverUrl`（`jpg` `jpeg` `png` `webp`，匹配规则同上，
+  例如 `01. 牵丝戏 - 银临.mp3` 能匹配 `牵丝戏-银临.jpg`）
+- `lyricsUrl` / `coverUrl` 没有对应文件时是 **`null`，不是省略字段**：前端把「没有这个字段」
+  理解成「这个清单还不认识封面」，会退回自己按 `.jpg` 猜名字（每首没有封面的歌白费一个 404）。
+  所以别把它们删掉。
+- 加封面要**重新部署 Worker** 才生效；已经部署的旧版本不会返回 `coverUrl`。
 
 ## 当前部署（本仓库）
 

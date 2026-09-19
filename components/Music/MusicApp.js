@@ -60,6 +60,7 @@ import {
 } from 'components/Music/librarySource';
 import TrackList from 'components/Music/TrackList';
 import NowPlaying from 'components/Music/NowPlaying';
+import Cover from 'components/Music/Cover';
 import CacheManager from 'components/Music/CacheManager';
 import DislikedSheet from 'components/Music/DislikedSheet';
 import DriveSheet from 'components/Music/DriveSheet';
@@ -1756,6 +1757,7 @@ const MusicApp = function ({ variant = 'h5' }) {
                                 style={{ background: trackGradient(rowMenu.name) }}
                                 aria-hidden="true"
                             >
+                                <Cover track={rowMenu} />
                                 <IconNote size={22} />
                             </span>
                             <span className={styles['row-meta']}>

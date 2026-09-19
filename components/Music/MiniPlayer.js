@@ -8,6 +8,7 @@ import {
     IconLocate,
 } from './icons';
 import { parseTrackName, trackGradient } from './shared';
+import Cover from './Cover';
 import Marquee from './Marquee';
 
 import styles from './MiniPlayer.module.scss';
@@ -164,6 +165,7 @@ const MiniPlayer = function ({
                         className={styles['disc-cover']}
                         style={{ background: trackGradient(current.track.name) }}
                     >
+                        <Cover track={current.track} />
                         <IconNote />
                     </span>
                 </span>

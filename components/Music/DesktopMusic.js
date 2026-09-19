@@ -39,6 +39,7 @@ import {
     trackGradient,
 } from './shared';
 import { DRIVE_SOURCE } from './librarySource';
+import Cover from './Cover';
 import Marquee from './Marquee';
 
 import styles from './DesktopMusic.module.scss';
@@ -648,6 +649,12 @@ const DesktopMusic = function ({
                                                 style={{ background: trackGradient(track.name) }}
                                                 aria-hidden="true"
                                             >
+                                                {/* First child on purpose: the
+                                                    cover swallows the note glyph
+                                                    underneath it, but the
+                                                    play/pause scrim below has to
+                                                    land on top of the photo. */}
+                                                <Cover track={track} />
                                                 {active && !loading ? (
                                                     <span className={styles['thumb-overlay']}>
                                                         {isPlaying ? <IconPause /> : <IconPlay />}
@@ -771,6 +778,7 @@ const DesktopMusic = function ({
                         <span className={styles.rotor} aria-hidden="true">
                             <span className={styles['disc-grooves']} />
                             <span className={styles['disc-label']} style={{ background: gradient }}>
+                                <Cover track={current ? current.track : null} />
                                 {current ? <IconNote /> : <IconMusicSpace size={34} />}
                             </span>
                             <span className={styles['disc-sheen']} />
@@ -855,6 +863,7 @@ const DesktopMusic = function ({
                                 className={styles['bar-disc-cover']}
                                 style={{ background: gradient }}
                             >
+                                <Cover track={current ? current.track : null} />
                                 <IconNote />
                             </span>
                         </span>

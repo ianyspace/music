@@ -12,7 +12,13 @@
  * the source, and every track carries `source` so caches and downloads can be
  * routed correctly:
  *
- *   { id, name, size, source, url?, lyricsUrl?, lyricFile? }
+ *   { id, name, size, source, url?, lyricsUrl?, lyricFile?, coverUrl?, coverFile? }
+ *
+ * The two `*File` fields are the Drive spelling of a sidecar file (the listing
+ * gives us the whole file object, and the bytes are behind the visitor's
+ * token); the two `*Url` fields are the cloud spelling (the Worker resolved
+ * the pairing and handed back a public link). `lyricsUrlOf` and `coverUrlOf`
+ * are what the rest of the app asks, so nobody has to know which is which.
  */
 
 import { music } from 'config';
@@ -113,6 +119,31 @@ const absoluteUrl = function (url) {
     return base ? `${base}/${String(url).replace(/^\/+/, '')}` : '';
 };
 
+/**
+ * The cover URL to use when the index says nothing about covers at all.
+ *
+ * The site and the Worker are deployed separately — the static export goes out
+ * from this repository, the Worker from `cloudflare-worker/` — so a visitor can
+ * be running a client that knows about covers against a Worker that predates
+ * them. In that case the client falls back to the naming rule the Worker itself
+ * uses: the same key with a `.jpg` extension. It costs a 404 per song that has
+ * no cover, and the renderer answers that with the gradient it would have shown
+ * anyway.
+ *
+ * A Worker that *does* answer is believed even when the answer is `null`: it
+ * listed the bucket, so it knows whether a cover exists, and guessing on top of
+ * that would only buy a 404. That is why the caller checks for the field rather
+ * than for a truthy value — `''` means "no cover", `undefined` means "this
+ * index never heard of covers".
+ *
+ * `.png` / `.webp` covers therefore need the current Worker; only `.jpg` can be
+ * guessed. `AUDIO_FILE` anchors at the end of the string, so a URL that carries
+ * a query string is left alone instead of being rewritten into a wrong guess.
+ */
+const guessCoverUrl = function (url) {
+    return AUDIO_FILE.test(url) ? url.replace(AUDIO_FILE, '.jpg') : '';
+};
+
 // Ceiling on the library listing. Without one a half-open connection leaves
 // `fetch` pending forever, which reads in the UI as "加载中…" that never ends —
 // indistinguishable from an empty library, and impossible to retry. Failing
@@ -133,14 +164,20 @@ export const fetchCloudTracks = async function ({ forceRefresh = false } = {}) {
         tracks: (data.tracks || [])
             .filter((item) => item && item.id && item.url)
             .filter((item) => AUDIO_FILE.test(item.name || item.key || ''))
-            .map((item) => ({
-                id: item.id,
-                name: item.name || item.key || item.id,
-                size: item.size,
-                url: absoluteUrl(item.url),
-                lyricsUrl: absoluteUrl(item.lyricsUrl),
-                source: CLOUD_SOURCE,
-            })),
+            .map((item) => {
+                const url = absoluteUrl(item.url);
+                return {
+                    id: item.id,
+                    name: item.name || item.key || item.id,
+                    size: item.size,
+                    url,
+                    lyricsUrl: absoluteUrl(item.lyricsUrl),
+                    // See `guessCoverUrl`: a missing field is an old index, an
+                    // empty one is a song without a cover.
+                    coverUrl: 'coverUrl' in item ? absoluteUrl(item.coverUrl) : guessCoverUrl(url),
+                    source: CLOUD_SOURCE,
+                };
+            }),
         folders: [],
     };
 };
@@ -154,18 +191,28 @@ export const fetchDriveTracks = async function ({ driveGet, token, folderId }) {
         throw error;
     }
 
-    let q = "(mimeType contains 'audio' or name contains '.lrc' or name contains '.txt') and trashed=false";
+    // Covers ride along with the lyrics: same-name sidecar files, matched with
+    // the same normalisation (it drops the extension and the leading track
+    // number, which is exactly the "same name" rule both of them follow), so
+    // `01. 牵丝戏 - 银临.mp3` finds `牵丝戏-银临.jpg`.
+    let q = "(mimeType contains 'audio' or mimeType contains 'image'"
+        + " or name contains '.lrc' or name contains '.txt') and trashed=false";
     if (folderId) q += ` and '${folderId}' in parents`;
 
+    // `thumbnailLink` is what makes a Drive cover showable at all: an `<img>`
+    // cannot send the Authorization header that `?alt=media` needs, so a
+    // cover URL has to be one the browser can just fetch. See `coverUrlOf`.
     const files = await listAllFiles(driveGet, {
         q,
-        fields: 'files(id,name,mimeType,size)',
+        fields: 'files(id,name,mimeType,size,thumbnailLink)',
         pageSize: '200',
         orderBy: 'name',
     }, token);
 
     const lyricFiles = files.filter((file) => /\.(lrc|txt)$/i.test(file.name));
     const lyricByKey = new Map(lyricFiles.map((file) => [normalizeLyricKey(file.name), file]));
+    const coverFiles = files.filter((file) => file.mimeType && file.mimeType.startsWith('image/'));
+    const coverByKey = new Map(coverFiles.map((file) => [normalizeLyricKey(file.name), file]));
 
     return {
         tracks: files
@@ -174,6 +221,7 @@ export const fetchDriveTracks = async function ({ driveGet, token, folderId }) {
                 ...file,
                 source: DRIVE_SOURCE,
                 lyricFile: lyricByKey.get(normalizeLyricKey(file.name)) || null,
+                coverFile: coverByKey.get(normalizeLyricKey(file.name)) || null,
             })),
         folders: [],
     };
@@ -189,6 +237,32 @@ export const lyricsUrlOf = function (track) {
 
 export const hasLyrics = function (track) {
     return Boolean(track && lyricsUrlOf(track));
+};
+
+/**
+ * The artwork for a track, or `''` when it has none.
+ *
+ * Callers must treat a non-empty result as "try this", not as "this exists":
+ * the cover is a sidecar file like the lyrics, so a song can lose it, the
+ * Worker can be older than the feature (see `guessCoverUrl`), and a Drive
+ * thumbnail expires after a few hours. Whoever renders it owns the fallback —
+ * `components/Music/Cover.js` drops the image and the gradient underneath shows
+ * through.
+ */
+export const coverUrlOf = function (track) {
+    if (!track) return '';
+    if (track.coverUrl) return track.coverUrl;
+    if (track.coverFile && track.coverFile.thumbnailLink) return driveThumbnail(track.coverFile.thumbnailLink);
+    return '';
+};
+
+// Drive hands out its thumbnails at `=s220`. The largest tile a cover lands in
+// is 62px, so 512 is comfortable on a retina screen; the size is the last thing
+// in the URL, so swapping it is safe, and the flags after it (`-c` for Drive's
+// own square crop) are left exactly as Drive set them. If Google ever changes
+// that shape the original link still works, only softer.
+const driveThumbnail = function (link) {
+    return String(link).replace(/=s\d+([-a-z]*)$/i, '=s512$1');
 };
 
 export const fetchLyricsText = async function (track, { token = '' } = {}) {

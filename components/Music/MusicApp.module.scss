@@ -370,6 +370,8 @@
 }
 
 .row-cover {
+    /* The cover image is absolutely positioned inside this tile. */
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;

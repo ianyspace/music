@@ -103,6 +103,16 @@ jobs:
           # fail silently — the list looks fine, the totals are wrong, or the
           # three-dots button is silently torn out of the accessibility tree.
           node scripts/check-dislike-pin.js
+          # The cover image is an absolutely positioned overlay on nine tiles
+          # across seven files, so every one of its failure modes is silent: a
+          # tile that never gets a Cover keeps its gradient forever, a Cover
+          # handed the wrong object shows another song's artwork, a tile that is
+          # not positioned sends the photo somewhere else on the page, and a
+          # cover that paints over the row's play/pause scrim (or under the note
+          # glyph) looks like a rendering bug with no error. The same-name
+          # pairing is also duplicated — the Worker does it for R2, the file
+          # listing for Drive — so both are pinned to the same rule here.
+          node scripts/check-covers.js
           # The audio cache's 30-day expiry. The first version of it refreshed
           # the expiry inside the stored record, which meant rewriting the
           # audio blob on the read path — and a `readwrite` transaction blocks

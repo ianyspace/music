@@ -8,6 +8,7 @@ import {
     IconRefresh,
 } from './icons';
 import { formatSize, formatExpiry, parseTrackName, trackGradient } from './shared';
+import Cover from './Cover';
 
 import styles from './CacheManager.module.scss';
 
@@ -206,6 +207,7 @@ const CacheManager = function ({
                                     style={{ background: trackGradient(name) }}
                                     aria-hidden="true"
                                 >
+                                    <Cover track={track} />
                                     <IconNote />
                                 </span>
                                 <span className={styles['item-text']}>

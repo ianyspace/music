@@ -6,6 +6,7 @@ import {
     IconNote,
 } from './icons';
 import { parseTrackName, trackGradient } from './shared';
+import Cover from './Cover';
 
 import styles from './DislikedSheet.module.scss';
 
@@ -114,6 +115,7 @@ const DislikedSheet = function ({
                                     style={{ background: trackGradient(row.name) }}
                                     aria-hidden="true"
                                 >
+                                    <Cover track={row.track} />
                                     <IconNote />
                                 </span>
                                 <span className={styles['item-text']}>

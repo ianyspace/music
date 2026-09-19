@@ -1,0 +1,24 @@
+// Shared cover image: a photo laid over the gradient + glyph its host already
+// paints, so "this song has no cover" is simply "nothing on top".
+
+.cover {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* The image is the same box as its host — every host is either the tile
+       itself or an absolutely centred label of the same size — so inheriting
+       the host's shape is enough to make the photo look like it had always
+       been that tile. No `overflow: hidden` needed anywhere. */
+    border-radius: inherit;
+    /* Every one of these tiles wears a 1px inset hairline; the record label
+       adds a dark rim and the drawer tile a drop shadow. Painted by the host
+       they would sit *under* the photo, so the songs with a cover would lose
+       the ring that the songs without one keep — two row styles in one list.
+       Inheriting lands the same shadow in the same place, above the photo. */
+    box-shadow: inherit;
+    /* Decoration on top of a control: taps, text selection and the phone's
+       long-press image sheet all belong to the row underneath. */
+    pointer-events: none;
+}

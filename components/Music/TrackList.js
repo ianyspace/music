@@ -13,6 +13,7 @@ import {
 } from './icons';
 import { parseTrackName, trackGradient } from './shared';
 import { DRIVE_SOURCE } from './librarySource';
+import Cover from './Cover';
 
 import styles from './TrackList.module.scss';
 
@@ -220,6 +221,12 @@ const TrackList = function ({
                                             style={{ background: trackGradient(track.name) }}
                                             aria-hidden="true"
                                         >
+                                            {/* First child on purpose: the
+                                                cover swallows the note glyph
+                                                underneath it, but the
+                                                play/pause scrim below has to
+                                                land on top of the photo. */}
+                                            <Cover track={track} />
                                             {active && !loading ? (
                                                 <span className={styles['thumb-overlay']}>
                                                     {isPlaying ? <IconPause /> : <IconPlay />}

@@ -9,11 +9,14 @@
  *   GET /tracks?refresh=1  → same, bypassing the edge cache
  *
  * Each track is:
- *   { id, name, key, size, url, lyricsUrl, source: 'cloud' }
+ *   { id, name, key, size, url, lyricsUrl, coverUrl, source: 'cloud' }
  *
  * `id` is the R2 object key (stable and unique), `url` points at the public
- * R2 domain so the browser can download the audio directly, and `lyricsUrl`
- * is the matching `.lrc` / `.txt` object with the same base name (optional).
+ * R2 domain so the browser can download the audio directly, and `lyricsUrl` /
+ * `coverUrl` are the matching `.lrc` / `.txt` / image objects with the same
+ * base name (either may be `null`). Both are paired here rather than in the
+ * client because R2 cannot be listed over HTTP: the bucket is enumerated once,
+ * in this Worker, and the answer travels with the index.
  *
  * The index is cached in `caches.default` for CACHE_TTL_SECONDS to keep R2
  * Class A (list) operations low; `?refresh=1` is the escape hatch.
@@ -21,6 +24,7 @@
 
 const AUDIO_EXTENSIONS = ['mp3', 'flac', 'm4a', 'wav', 'ogg', 'oga', 'opus', 'aac', 'wma', 'ape'];
 const LYRIC_EXTENSIONS = ['lrc', 'txt'];
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 const CACHE_TTL_SECONDS = 300;
 const LIST_PAGE_SIZE = 1000;
 const LIST_HARD_CAP = 5000;
@@ -36,7 +40,8 @@ const basenameOf = function (key) {
 };
 
 // Mirrors `normalizeLyricKey` in components/Music/shared.js so that
-// "01. 牵丝戏 - 银临.mp3" matches "牵丝戏-银临.lrc".
+// "01. 牵丝戏 - 银临.mp3" matches "牵丝戏-银临.lrc" — and, since the rule is
+// just "same base name, any extension", "牵丝戏-银临.jpg" as well.
 const normalizeLyricKey = function (name) {
     return name
         .replace(/\.[a-z0-9]+$/i, '')
@@ -99,16 +104,20 @@ const buildIndex = async function (env) {
     const base = String(env.R2_PUBLIC_BASE || '').replace(/\/+$/, '');
 
     const lyricsByKey = new Map();
+    const coversByKey = new Map();
     const audioObjects = [];
     objects.forEach((object) => {
         const ext = extensionOf(object.key);
         if (LYRIC_EXTENSIONS.includes(ext)) lyricsByKey.set(normalizeLyricKey(object.key), object);
+        else if (IMAGE_EXTENSIONS.includes(ext)) coversByKey.set(normalizeLyricKey(object.key), object);
         else if (AUDIO_EXTENSIONS.includes(ext)) audioObjects.push(object);
     });
 
     const tracks = audioObjects
         .map((object) => {
-            const lyric = lyricsByKey.get(normalizeLyricKey(object.key));
+            const key = normalizeLyricKey(object.key);
+            const lyric = lyricsByKey.get(key);
+            const cover = coversByKey.get(key);
             return {
                 id: object.key,
                 key: object.key,
@@ -116,6 +125,11 @@ const buildIndex = async function (env) {
                 size: object.size,
                 url: `${base}/${encodeKey(object.key)}`,
                 lyricsUrl: lyric ? `${base}/${encodeKey(lyric.key)}` : null,
+                // `null`, not absent: the client reads a missing field as "this
+                // index predates covers" and falls back to guessing the
+                // `.jpg` name, which would cost it a 404 per song. Saying
+                // "there is none" is the answer it needs to hear.
+                coverUrl: cover ? `${base}/${encodeKey(cover.key)}` : null,
                 source: 'cloud',
             };
         })

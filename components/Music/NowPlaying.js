@@ -15,6 +15,7 @@ import {
     IconRipple,
 } from './icons';
 import { parseTrackName, trackGradient, formatTime } from './shared';
+import Cover from './Cover';
 import Marquee from './Marquee';
 
 import styles from './NowPlaying.module.scss';
@@ -256,6 +257,7 @@ const NowPlaying = function ({
                                 <span className={styles.rotor} aria-hidden="true">
                                     <span className={styles['disc-grooves']} />
                                     <span className={styles['disc-label']} style={{ background: gradient }}>
+                                        <Cover track={track} />
                                         <IconNote />
                                     </span>
                                     <span className={styles['disc-sheen']} />

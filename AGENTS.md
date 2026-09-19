@@ -74,11 +74,21 @@
   store 已存在时 `createObjectStore` 是空操作，不升版本号只有新访客能拿到修复。
   另外 `styles.x` 写错只返回 `undefined`、类名被静默丢掉，元素照常渲染却毫无样式 ——
   这类静默失效由 `scripts/check-css-modules.js` 在 CI 里兜住。
+- **封面和歌词都是「同名附属文件」**：数据层给两种来源各留一组字段（cloud 是 Worker 解析好的
+  公开链接 `coverUrl` / `lyricsUrl`，drive 是文件对象 `coverFile` / `lyricFile`），
+  **只有 `coverUrlOf()` / `lyricsUrlOf()` 知道哪个是哪个**，调用方一律走它们，不要自己判 source。
+  渲染时封面是**盖在渐变之上的叠加层**（`components/Music/Cover.js`）：有图用图，
+  没有、或图加载失败（歌没传封面、Drive 缩略图过期、Worker 还是旧版）就露出调用方本来就画着的
+  `trackGradient` —— 所以「没有封面」不需要任何单独的分支，`Cover` 返回 `null` 就是全部处理。
+  两点容易踩：① 图片是 `position: absolute` 的叠加层，宿主 tile 必须是定位元素，且 `<Cover>`
+  要放在**第一个子节点**（音符图标被它盖住是对的，行的播放/暂停遮罩必须盖在它上面）；
+  ② **公共曲库加封面要重新部署 Worker** 才生效，旧 Worker 不返回 `coverUrl` 时客户端会退回
+  按 `.jpg` 猜名字（`guessCoverUrl`，代价是每首没封面的歌一个 404），由 `scripts/check-covers.js` 兜住。
 
 ## 检查脚本
 
 `npm run build` 不会发现的问题 —— 纯 CSS 的定位数字、跨文件的名字握手、只能靠时序
-才暴露的行为 —— 都由 `scripts/check-*.js` 在 CI 里兜住。**推之前八个都要跑一遍**
+才暴露的行为 —— 都由 `scripts/check-*.js` 在 CI 里兜住。**推之前每一个都要跑一遍**
 （`for s in scripts/check-*.js; do node $s || break; done`），它们都是纯 Node、秒级。
 
 | 脚本 | 兜住什么 |
@@ -88,6 +98,7 @@
 | `check-locate-btn` | 「回到正在播放」按钮的定位数字跨三个文件；两个布局的锚点与门控 |
 | `check-ripples-setting` | 唱片波纹偏好写入点与读取点分居两个文件，还要同时关掉两套布局的波纹 |
 | `check-dislike-pin` | 不喜欢 / 置顶：读一次、写每次、过滤只在一处；行内两个控件必须是**并列 button** |
+| `check-covers` | 九处画渐变的地方都配了封面；封面叠加层的定位/绘制顺序/回落；两个曲库的配对规则 |
 | `check-cache-ttl` | 缓存读取路径不许写（见上方缓存约定） |
 | `check-playback-mode` | 播放顺序的「mount 时恢复 + 变化时持久化」不能拆成两个 effect |
 | `check-settings-persistence` | 所有 `music:setting:*` 键的清单守卫：有读必须有写、键名唯一、组件里不许出现字面量 |
@@ -103,6 +114,9 @@
   而漏写 `/m` 会让肯定断言以一个和样式无关的理由失败。两个都真踩过。
 - **锚定源码时用 `\r?\n`，不要用裸 `\n`**：工作区是 CRLF、CI 是 LF，裸 `\n` 会在其中
   一边静默匹配不到。
+- **模板字符串（preview 脚本里那整页 HTML）的注释里不要写反引号**：反引号会把模板提前闭合，
+  报成 `SyntaxError: Unexpected identifier`，而且指到的行离真正的错误很远。这个坑踩过两次
+  （`locate-in`、`pointer-events: none`），照常写 `pointer-events:none` 就行。
 
 ## 两套布局的缝
 
@@ -130,6 +144,7 @@
 - `npm run build` — 构建，产物在 `out/`
 - `for s in scripts/check-*.js; do node $s || break; done` — 跑全部检查（推之前必跑）
 - `node scripts/preview-desktop-list.js` — 生成列表面板的可量尺寸预览页（先 `npm run build`）
+- `node scripts/preview-covers.js` — 生成封面的可量尺寸预览页：列表/抽屉/缓存/唱片四种形状，每种都放了「有封面」和「没封面」两个对照
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 > 本仓库的工作区是 **CRLF**、CI 是 **LF**，且 `core.autocrlf=true`（仓库内一律 LF）。
