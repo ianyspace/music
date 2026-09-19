@@ -301,6 +301,26 @@ export const makeArtwork = function (name) {
     } catch (err) { return ''; }
 };
 
+/**
+ * The `MediaMetadata.artwork` list for a track: the real cover when the library
+ * has one, the drawn gradient when it does not.
+ *
+ * The cover URL is an argument rather than the track, because working out
+ * *which* URL is the cover is `coverUrlOf`'s job in `librarySource.js` — and
+ * that module imports this one, so asking back would be a cycle.
+ *
+ * `sizes` is claimed only for the gradient, which is 320×320 by construction.
+ * A cover's real dimensions are not known here (the Drive thumbnail is asked
+ * for at 512 and the bucket's images have whatever size they were uploaded
+ * with), and a wrong `sizes` is worse than none: it is a promise the lock
+ * screen lays the image out against.
+ */
+export const mediaArtwork = function (coverUrl, name) {
+    if (coverUrl) return [{ src: coverUrl }];
+    const drawn = makeArtwork(name);
+    return drawn ? [{ src: drawn, sizes: '320x320', type: 'image/png' }] : [];
+};
+
 export const listAllFiles = async function (driveGet, params, accessToken) {
     const files = [];
     let pageToken = '';

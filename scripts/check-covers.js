@@ -26,6 +26,11 @@
  * same thing. `coverUrlOf` is the only place allowed to know which is which, so
  * that a call site can never forget the fallback.
  *
+ * The lock screen is the third surface, and the one where the fallback is not
+ * free: the OS fetches that artwork by itself, so a cover that will not load is
+ * reported to an `onerror` rather than to a `Cover` that can just return null.
+ * Both halves — the choice and the second write — are checked here.
+ *
  * Run: node scripts/check-covers.js
  */
 
@@ -217,15 +222,105 @@ check('the image is decorative',
 check('covers below the fold are not fetched',
     /loading="lazy"/.test(coverJs), 'loading="lazy"');
 
-// One resolver, so no call site can skip the fallback: the component owns the
-// "which field is it" knowledge and every tile goes through it. The module that
-// *defines* it does not count as a consumer.
-const consumers = fs.readdirSync(path.join(root, 'components/Music'))
-    .filter((name) => name.endsWith('.js') && name !== 'librarySource.js')
-    .filter((name) => /coverUrlOf/.test(read(`components/Music/${name}`)));
-check('coverUrlOf is used from exactly one place',
-    consumers.length === 1 && consumers[0] === 'Cover.js',
-    consumers.join(', ') || 'nowhere');
+// One resolver, so no call site can read the wrong field. Phrased as "no
+// component knows the field names" rather than "exactly one component mentions
+// the resolver": the resolver is meant to be *used* — `Cover` for the tiles,
+// `MusicApp` for the lock screen — while `track.coverUrl` / `track.coverFile`
+// are what has to stay in one file.
+const app = read('components/Music/MusicApp.js');
+const shared = read('components/Music/shared.js');
+const componentFiles = fs.readdirSync(path.join(root, 'components/Music'))
+    .filter((name) => name.endsWith('.js') && name !== 'librarySource.js');
+const fieldReaders = componentFiles.filter((name) => {
+    const text = read(`components/Music/${name}`);
+    // `.coverUrl\b` does not match `.coverUrlOf(`: `\b` needs a non-word
+    // character after `coverUrl`, and `O` is a word character.
+    return /\.coverUrl\b/.test(text) || /\.coverFile\b/.test(text);
+});
+check('no component reads a cover field directly',
+    fieldReaders.length === 0,
+    fieldReaders.join(', ') || 'coverUrlOf is the only reader');
+
+const callers = componentFiles.filter((name) => /coverUrlOf\(/.test(read(`components/Music/${name}`)));
+check('...and the two places that show artwork ask it',
+    callers.length === 2 && callers.includes('Cover.js') && callers.includes('MusicApp.js'),
+    callers.join(', ') || 'nowhere — update this list when a third tile appears');
+
+// Naming the resolver is not the same as importing it: the import list is a
+// separate statement, and a free variable there is a ReferenceError at runtime
+// rather than anything the bundler refuses. Sliced from the real statement, so
+// the identifier also appearing in the body below cannot satisfy this.
+const importedBy = function (text, name, from) {
+    const end = text.indexOf(`} from '${from}';`);
+    const start = end === -1 ? -1 : text.lastIndexOf('import {', end);
+    if (start === -1) return false;
+    return text.slice(start + 'import {'.length, end)
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .includes(name);
+};
+check('...and both actually import it',
+    importedBy(app, 'coverUrlOf', 'components/Music/librarySource')
+    && importedBy(app, 'mediaArtwork', 'components/Music/shared')
+    && importedBy(read('components/Music/Cover.js'), 'coverUrlOf', './librarySource'),
+    'a missing import is a runtime ReferenceError, not a build failure');
+
+/* --- the lock screen shows the same cover ------------------------------- */
+
+// `blockOf` hands back the whole declaration — header line included — so the
+// header is dropped here to leave a body that `new Function` can be given.
+const artBlock = blockOf(shared, 'export const mediaArtwork = function (coverUrl, name)');
+const artFn = artBlock ? artBlock.slice(artBlock.indexOf('{')) : '';
+check('mediaArtwork is exported from shared.js', artFn !== '', artFn ? 'found' : 'missing');
+
+// Driven, not pattern-matched: the choice between the photo and the drawn
+// gradient is the whole content of the helper, and a regex can only ask
+// whether both strings appear somewhere in it.
+//
+// The body is re-evaluated with `makeArtwork` injected, because drawing a
+// gradient needs a canvas. `coverUrl` and `name` come in as parameters for the
+// same reason — `functionBodyOf`-style slicing would have to skip the
+// parameter list to find the body, and getting that wrong silently yields the
+// destructuring braces instead.
+const mediaArtwork = artFn
+    ? new Function('makeArtwork', 'coverUrl', 'name', `return (function () ${artFn})();`)
+    : null;
+const art = (coverUrl, drawn) => (mediaArtwork
+    ? JSON.stringify(mediaArtwork(() => drawn, coverUrl, '某首歌'))
+    : '(missing)');
+
+// The expected object is exact on purpose: the cover entry must carry `src`
+// and nothing else. `sizes` is a promise the lock screen lays the image out
+// against, and the only size known here is the gradient's own 320×320.
+check('the lock screen prefers the cover it is handed',
+    art('https://cdn.example/a.jpg', 'data:image/png;base64,GRADIENT')
+    === '[{"src":"https://cdn.example/a.jpg"}]',
+    art('https://cdn.example/a.jpg', 'data:image/png;base64,GRADIENT'));
+check('...and draws the gradient when there is no cover',
+    art('', 'data:image/png;base64,GRADIENT')
+    === '[{"src":"data:image/png;base64,GRADIENT","sizes":"320x320","type":"image/png"}]',
+    art('', 'data:image/png;base64,GRADIENT'));
+check('...publishing nothing when even the canvas is unavailable',
+    art('', '') === '[]', art('', ''));
+
+check('the cover URL comes from the resolver, not from the track',
+    /const coverUrl = coverUrlOf\(current\.track\)/.test(app), 'coverUrlOf(current.track)');
+check('...and is what the metadata is built from',
+    /publish\(mediaArtwork\(coverUrl, current\.track\.name\)\)/.test(app),
+    'mediaArtwork(coverUrl, ...)');
+
+// The OS fetches the artwork itself, so a cover that will not load (a 0-byte
+// object in the bucket, an expired Drive thumbnail) has to be answered here:
+// `onerror` on a probe image, republishing the gradient entry. Asserted on the
+// handler's own body, not on a window around it.
+const probeHandler = blockOf(app, 'probe.onerror = () =>');
+check('a cover that will not load falls back to the gradient',
+    probeHandler !== '' && /publish\(mediaArtwork\('', current\.track\.name\)\)/.test(probeHandler),
+    probeHandler ? 'republished' : 'no onerror handler');
+check('...and the probe is detached on teardown',
+    /if \(probe\) probe\.onerror = null;/.test(app),
+    'a stale failure must not repaint the next song');
 
 /* --- the two libraries produce the same thing --------------------------- */
 

@@ -84,6 +84,13 @@
   要放在**第一个子节点**（音符图标被它盖住是对的，行的播放/暂停遮罩必须盖在它上面）；
   ② **公共曲库加封面要重新部署 Worker** 才生效，旧 Worker 不返回 `coverUrl` 时客户端会退回
   按 `.jpg` 猜名字（`guessCoverUrl`，代价是每首没封面的歌一个 404），由 `scripts/check-covers.js` 兜住。
+  **锁屏 / 耳机键的封面是第三个用到它的地方**（`MusicApp` 的 mediaSession effect，选图逻辑在
+  `shared.js` 的 `mediaArtwork`）。这里没有 `Cover` 那种「返回 null 就露出渐变」的便宜：
+  那张图是**操作系统自己去取的**，取不到时只会空白，所以失败要由我们兜 —— 一个 `Image()`
+  探针的 `onerror` 会**再写一次 metadata**，把 `mediaArtwork('', name)` 画出来的渐变发过去。
+  探针必须在 effect 的清理里摘掉，否则上一首的失败会重画下一首的 metadata。
+  `MediaMetadata.artwork` 里只有渐变那一项声明 `sizes`（它按构造就是 320×320），封面不声明 ——
+  不知道尺寸的 `sizes` 是给锁屏的一句假承诺。
 - **空列表的文案只有一处决策**（`shared.js` 的 `emptyListMessage`），四个分支按顺序判断：
   还在加载 → 搜了没搜到 → `libraryCount > 0` 说明歌都被移进「不喜欢」了 → 曲库真的空。
   两个容易搞错的地方：

@@ -30,7 +30,7 @@ import {
     isIOSLike,
     SILENT_WAV,
     parseTrackName,
-    makeArtwork,
+    mediaArtwork,
     listAllFiles,
     parseLyrics,
     trackGradient,
@@ -49,6 +49,7 @@ import {
     DRIVE_SOURCE,
     audioCacheKey,
     clearListCache,
+    coverUrlOf,
     downloadTrackBlob,
     fetchCloudTracks,
     fetchDriveTracks,
@@ -1371,18 +1372,37 @@ const MusicApp = function ({ variant = 'h5' }) {
         if (!current || typeof window === 'undefined' || !('mediaSession' in navigator)) return undefined;
         const session = navigator.mediaSession;
         const { artist, title } = parseTrackName(current.track.name);
-        try {
-            const metadata = new window.MediaMetadata({
+        // The lock screen gets the song's own cover when the library has one,
+        // and the gradient the rest of the UI draws when it does not.
+        // `coverUrlOf` is the only thing that knows which field holds it.
+        const coverUrl = coverUrlOf(current.track);
+        const publish = function (artwork) {
+            session.metadata = new window.MediaMetadata({
                 title,
                 artist,
                 album: '云盘音乐',
+                artwork,
             });
-            const artwork = makeArtwork(current.track.name);
-            if (artwork) {
-                metadata.artwork = [{ src: artwork, sizes: '320x320', type: 'image/png' }];
-            }
-            session.metadata = metadata;
-        } catch (err) { /* MediaMetadata unavailable — metadata is optional */ }
+        };
+        try { publish(mediaArtwork(coverUrl, current.track.name)); }
+        catch (err) { /* MediaMetadata unavailable — metadata is optional */ }
+
+        // The artwork is a URL the OS fetches on its own, so a cover that will
+        // not load — the zero-byte objects the bucket currently holds, an
+        // expired Drive thumbnail, an older Worker's guess — would leave the
+        // lock screen blank, where the gradient at least gives it the song's
+        // colour. `Cover` answers the same failure the same way in the list;
+        // here it costs a second metadata write, because the failure is
+        // reported to us and not to the metadata object.
+        let probe = null;
+        if (coverUrl) {
+            probe = new window.Image();
+            probe.onerror = () => {
+                try { publish(mediaArtwork('', current.track.name)); }
+                catch (err) { /* metadata is optional */ }
+            };
+            probe.src = coverUrl;
+        }
         const actions = {
             play: () => { const a = audioRef.current; if (a) safePlay(a); },
             pause: () => { const a = audioRef.current; if (a) a.pause(); },
@@ -1393,6 +1413,9 @@ const MusicApp = function ({ variant = 'h5' }) {
             try { session.setActionHandler(name, actions[name]); } catch (err) { /* action unsupported */ }
         });
         return () => {
+            // Detached first: switching songs must not let the outgoing song's
+            // cover failure repaint the incoming song's metadata.
+            if (probe) probe.onerror = null;
             Object.keys(actions).forEach((name) => {
                 try { session.setActionHandler(name, null); } catch (err) { /* ignore on teardown */ }
             });
