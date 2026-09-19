@@ -45,12 +45,8 @@ const isExpired = function (expiresAt) {
 };
 
 /**
- * Reads a cached blob and refreshes its expiry on every hit.
- *
- * A play is the signal that the visitor still cares about the song, so the
- * clock resets to 30 days from now. An expired row is dropped rather than
- * served, so stale audio never surprises the visitor with a network fetch
- * mid-playback.
+ * Reads a cached blob. Expired rows are dropped on read so stale audio never
+ * surprises the visitor with a network fetch mid-playback.
  */
 export const getCachedAudio = async function (id) {
     const record = await readEntry(id);
@@ -59,13 +55,22 @@ export const getCachedAudio = async function (id) {
         await deleteStoredEntry(id);
         return null;
     }
-    // Refresh the expiry — this is a "touch" that costs one small write but
-    // keeps the song alive as long as it is being played.
-    const refreshed = Date.now() + CACHE_TTL_MS;
-    if (record.expiresAt !== refreshed) {
-        await writeEntry({ ...record, expiresAt: refreshed });
-    }
     return record.blob;
+};
+
+/**
+ * Refreshes the expiry of a cached track to 30 days from now.
+ *
+ * Called after playback starts (not during the critical path) so the write
+ * cannot block or fail the play itself. If the write fails the song still
+ * plays — it just may age out sooner.
+ */
+export const touchCachedAudio = async function (id) {
+    const record = await readEntry(id);
+    if (!record || !record.blob) return;
+    const refreshed = Date.now() + CACHE_TTL_MS;
+    if (record.expiresAt === refreshed) return;
+    await writeEntry({ ...record, expiresAt: refreshed });
 };
 
 export const cacheAudio = async function (id, blob) {

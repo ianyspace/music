@@ -34,6 +34,7 @@ import {
 } from 'components/Music/shared';
 import {
     getCachedAudio,
+    touchCachedAudio,
     cacheAudio,
     listCachedAudio,
     deleteCachedAudio,
@@ -1247,6 +1248,9 @@ const MusicApp = function ({ variant = 'h5' }) {
         } catch (err) {
             setNotice('浏览器阻止了自动播放，请点击播放按钮');
         }
+        // Refresh the cache expiry after playback starts — this is off the
+        // critical path so a slow write cannot delay the audio.
+        touchCachedAudio(audioCacheKey(current.track)).catch(() => { });
         return () => audio.removeEventListener('loadedmetadata', seekOnMetadata);
     }, [current]);
 
