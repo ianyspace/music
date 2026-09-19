@@ -87,10 +87,6 @@ const TrackList = function ({
 
     return (
         <div className={styles.page}>
-            {/* Sticky colour wash parked directly under the floating glass —
-                it gives the header's backdrop-filter something to refract
-                even before the first row scrolls beneath it. */}
-            <span className={styles['head-glow']} aria-hidden="true" />
             <header className={styles.head}>
                 <div className={styles['head-row']}>
                     <h1 className={styles.title}>
