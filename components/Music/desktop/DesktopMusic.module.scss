@@ -351,19 +351,41 @@
     }
 }
 
-/* --- tonearm (shared geometry with the phone player) --- */
+/* --- tonearm --------------------------------------------------------------
 
+   The phone player's arm, at the phone player's size *relative to the record*.
+   It used to be a hand-fitted overlay — `width: 46%` of the disc, dropped in
+   at `top: -9%` — and 46% is the number that was wrong: the phone draws one
+   SVG unit as `1/86` of the disc, this one drew it as `1/217`, so the desktop
+   arm was **2.5× smaller** than the same arm on a phone. A toy arm lying on a
+   record, with a pivot the size of a pea.
+
+   The numbers below are the phone's rig expressed relative to the *disc*
+   rather than the other way round. There the arm's coordinate space *is* the
+   rig (100 × 122) and the record is 86% of the rig's width, centred in it;
+   here the rig is the record, so the arm's box has to be `100 / 86 = 116.28%`
+   of it wide and `122 / 86 = 141.86%` tall, pulled back out by
+   `(1.1628 - 1) / 2 = 8.14%` to the left and `(1.4186 - 1) / 2 = 20.93%` up.
+   One unit is then `1.1628 / 100 = 1/86` of the disc in both files, and the
+   path data — which really is shared verbatim — draws one object.
+
+   Nothing has to move to make room: the arm's box grows but almost all of the
+   new area is empty. The leftmost thing it paints is the pivot's halo, at
+   `0.47` of the disc's width, and the lowest is the stylus on the upper-right
+   rim — the same rim, at 0.98 of the disc's radius, that the phone's stylus
+   lands on. */
 .arm {
     position: absolute;
-    top: -9%;
-    left: 50%;
+    top: -20.93%;
+    left: -8.14%;
     z-index: 2;
-    width: 46%;
-    height: 56%;
-    transform: translateX(-46%);
+    width: 116.28%;
+    height: 141.86%;
     overflow: visible;
     pointer-events: none;
-    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35));
+    /* Scaled with the arm: a 6px offset under a 2.5×-larger arm reads as a
+       hard edge rather than as the gap between arm and vinyl. */
+    filter: drop-shadow(0 14px 30px rgba(0, 0, 0, 0.38));
 }
 
 .arm-swing {

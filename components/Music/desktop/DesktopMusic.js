@@ -66,10 +66,15 @@ const LIST_HIDE_MS = 3000;
 
 /**
  * Decorative tonearm, drawn in the record rig's own coordinate space
- * (100 × 122 — the rig's aspect ratio) so it scales with the record instead of
- * drifting off it. `playing` swings the arm down to track the groove. Geometry
- * is shared verbatim with the phone player (`NowPlaying.js`) so the desktop
- * record is the same object, just larger.
+ * (100 × 122 — the phone player's rig) so it scales with the record instead of
+ * drifting off it. `playing` swings the arm down to track the groove.
+ *
+ * The path data is the phone player's (`NowPlaying.js`), verbatim — and, since
+ * `.arm` in this file's stylesheet sizes the box so that one unit is the same
+ * fraction of the disc on both screens, it is now the same *object* at two
+ * sizes rather than the same outline at two scales. That distinction is the
+ * whole fix: the box used to be 46% of the disc, which made this arm 2.5×
+ * smaller than the one a phone draws over the same record.
  */
 const Tonearm = function ({ playing }) {
     return (
@@ -80,6 +85,7 @@ const Tonearm = function ({ playing }) {
             focusable="false"
         >
             <g className={styles['arm-swing']}>
+                {/* curved tube: one gentle sweep from the pivot onto the rim */}
                 <path
                     d="M52.5 4.6 C 56 13, 62 21, 68.5 26 C 73 29.4, 76.5 30.2, 78.8 30.3"
                     fill="none"
@@ -87,11 +93,13 @@ const Tonearm = function ({ playing }) {
                     strokeWidth="3"
                     strokeLinecap="round"
                 />
+                {/* headshell resting on the record's upper-right rim */}
                 <g transform="rotate(28 78.8 30.3)">
                     <rect x="76.6" y="27.5" width="11.6" height="5.6" rx="2.1" fill="#f2f3f7" />
                     <rect x="85.4" y="28.8" width="3.6" height="3" rx="1.2" fill="#dfe2ea" />
                     <rect x="79.4" y="29.2" width="1.7" height="2.2" rx="0.7" fill="#26272e" />
                 </g>
+                {/* pivot: halo ring back and clearly wider, body shrunk */}
                 <circle cx="52.5" cy="4.6" r="5" fill="rgba(255, 255, 255, 0.12)" />
                 <circle cx="52.5" cy="4.6" r="3" fill="#191a20" stroke="#f2f3f7" strokeWidth="1.6" />
                 <circle cx="52.5" cy="4.6" r="1" fill="#f2f3f7" />
