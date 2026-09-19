@@ -12,10 +12,14 @@ import { createAnalyzer } from './analyzer';
  * The 3D stage: one renderer, one scene, one camera rig, and a `frame()` that
  * advances all of it.
  *
- * This module is deliberately framework-free — it takes a `<canvas>` and hands
- * back plain functions. React only mounts the canvas and calls `frame` from a
- * rAF loop, so nothing about the scene depends on a render pass, and nothing
+ * This module is deliberately framework-free — it takes a host element and
+ * hands back plain functions. React only mounts the host and calls `frame` from
+ * a rAF loop, so nothing about the scene depends on a render pass, and nothing
  * about React ends up inside the render loop.
+ *
+ * The canvas is created *here* rather than rendered by React, for one reason:
+ * a failed WebGL context cannot be retried on the same canvas, and a canvas
+ * React owns cannot be replaced without a re-render.
  */
 
 /**
@@ -31,18 +35,83 @@ const damp = function (current, goal, lambda, delta, reduced) {
     return reduced ? goal : THREE.MathUtils.damp(current, goal, lambda, delta);
 };
 
-export const createStage = function (canvas, { reduced = false } = {}) {
-    const renderer = new THREE.WebGLRenderer({
-        canvas,
-        antialias: true,
-        alpha: false,
-        powerPreference: 'high-performance',
-    });
+/**
+ * Three attempts at a WebGL context, most desirable first.
+ *
+ * `WebGLRenderer` throws when the browser will not hand over a context, and the
+ * page it is thrown from unmounts — a white screen with one line in the
+ * console. That is worth a second and third try, because the two most common
+ * causes are both avoidable:
+ *
+ *  - `high-performance` asks for the discrete GPU on a laptop that may not be
+ *    able to give it to this process. `default` asks for whatever works.
+ *  - `antialias` needs a multisampled buffer, which a weak or emulated adapter
+ *    can refuse even though it can draw everything else.
+ *
+ * Each attempt gets a **fresh canvas**. The spec is not clear on whether a
+ * failed `getContext` poisons the canvas for later calls, and every report of
+ * this failing says it does — so nothing is reused between attempts, and the
+ * canvas is only put in the document once one of them has succeeded.
+ */
+const RENDERER_ATTEMPTS = [
+    { antialias: true, powerPreference: 'high-performance' },
+    { antialias: true, powerPreference: 'default' },
+    { antialias: false, powerPreference: 'default' },
+];
+
+const createRenderer = function (host, canvasClass) {
+    let reason = '';
+
+    for (let i = 0; i < RENDERER_ATTEMPTS.length; i += 1) {
+        const canvas = document.createElement('canvas');
+        if (canvasClass) canvas.className = canvasClass;
+        canvas.setAttribute('aria-hidden', 'true');
+
+        try {
+            const renderer = new THREE.WebGLRenderer({
+                canvas,
+                alpha: false,
+                ...RENDERER_ATTEMPTS[i],
+            });
+            host.appendChild(canvas);
+            return renderer;
+        } catch (err) {
+            reason = (err && err.message) || String(err);
+        }
+    }
+
+    const error = new Error(reason || '这个浏览器没有可用的 WebGL');
+    error.code = 'NO_WEBGL';
+    throw error;
+};
+
+/**
+ * @param {HTMLElement} host   the element the canvas is put inside
+ * @param {object} options     `{ canvasClass, reduced, onContextLost }`
+ */
+export const createStage = function (host, {
+    canvasClass = '',
+    reduced = false,
+    onContextLost,
+} = {}) {
+    const renderer = createRenderer(host, canvasClass);
+    const canvas = renderer.domElement;
+
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.02;
     renderer.setClearColor(0x04050a, 1);
+
+    // A lost context (a driver reset, a laptop switching GPUs, the browser
+    // reclaiming memory in a background tab) leaves a canvas that never draws
+    // again. `preventDefault` is what allows it to be restored at all, and the
+    // caller is told so it can stop the loop and say so on screen.
+    const onLost = (event) => {
+        event.preventDefault();
+        if (onContextLost) onContextLost();
+    };
+    canvas.addEventListener('webglcontextlost', onLost);
 
     const scene = new THREE.Scene();
     // Exponential rather than linear: the scene has no back wall to place a
@@ -117,7 +186,7 @@ export const createStage = function (canvas, { reduced = false } = {}) {
 
     const raycaster = new THREE.Raycaster();
 
-    const rig = createCameraRig(canvas.clientWidth / Math.max(1, canvas.clientHeight), { reduced });
+    const rig = createCameraRig(host.clientWidth / Math.max(1, host.clientHeight), { reduced });
     const analyzer = createAnalyzer();
 
     // --- the moving parts ----------------------------------------------------
@@ -233,6 +302,7 @@ export const createStage = function (canvas, { reduced = false } = {}) {
 
         dispose() {
             disposed = true;
+            canvas.removeEventListener('webglcontextlost', onLost);
             analyzer.dispose();
             tonearm.dispose();
             particles.dispose();
@@ -243,6 +313,10 @@ export const createStage = function (canvas, { reduced = false } = {}) {
             envTarget.dispose();
             scene.environment = null;
             renderer.dispose();
+            // The canvas belongs to this module, not to React, so it leaves
+            // with it — otherwise a retry after a failure would stack a second
+            // canvas on top of the first.
+            if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
         },
     };
 };

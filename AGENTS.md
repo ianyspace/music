@@ -394,6 +394,22 @@ components/Music/three/
   传 `true` 会让访客的「关掉歌词」在下一首就失效。传 `false` 再自己补，关掉才关得住。
 - **3D 版不用 `core/PageHead`**，只写自己的 `<Head>`：那个组件会顺带加载 Google
   Identity Services 脚本，而这一页没有任何地方能用上它。
+- **这一页绝对不许白屏，这是硬要求。** React 19 里 mount effect 抛异常会把整棵树卸掉，
+  剩下的是 `styles/index.scss` 里 `html, body` 的 `#f6f6f7` —— 一片白，加控制台一行字。
+  所以三层防护缺一不可：`scene/index.js` 的 `createRenderer` 三次重试后抛带原因的错、
+  `ThreeStage` 把建场和每一帧都包在 try/catch 里、`pages/3d.js` 外面套 `ThreeBoundary`。
+  **`ThreeBoundary` 必须在 `ThreeApp` 外面**（它是边界，得在被保护的东西之上），
+  它的 `.crash` 因此不能依赖 `.page` 上的 token —— `--t-*` 声明在 `.page, .crash` 这个
+  **并列选择器**上。
+- **canvas 由 `scene/index.js` 创建并 append 到宿主 div，不由 React 渲染。**
+  原因是失败重试：一个 `getContext` 失败的 canvas 不能再用（规范没写清，但实际如此），
+  每次重试必须换一张新的 canvas，而 React 渲染的 canvas 换不掉。
+  重试顺序是 `(antialias, high-performance)` → `(antialias, default)` → `(no antialias, default)`，
+  对应「双显卡笔记本拿不到独显」和「弱显卡不给多重采样缓冲」两个常见原因。
+  `dispose()` 要把 canvas 从宿主里摘掉，否则重试会叠第二张。
+- **`webglcontextlost` 要 `preventDefault()` 并告诉调用方**：不 preventDefault 上下文
+  永远恢复不了；告诉调用方是为了让 rAF 停下来、把话说在屏幕上，而不是留一块黑画布。
+- **rAF 里每帧都要 try/catch**：一帧抛异常就是每帧抛异常，会以 60 次/秒的速度刷控制台。
 - **token 前缀是 `--t-`，且不引入任何 `--glass-*`。** 这一页只有深色，没有 `theme-dark`。
   `grep -n '\-\-glass' components/Music/three/` 必须是空的。
 - **毛玻璃面板只能有三个**（徽标 / 列表 / 胶囊条）。桌面端的毛玻璃糊的是画好的色彩场，

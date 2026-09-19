@@ -1,6 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 
 import { createStage } from './scene';
+import { IconCube } from './icons';
 
 import styles from './ThreeApp.module.scss';
 
@@ -9,10 +11,10 @@ import styles from './ThreeApp.module.scss';
  *
  * Everything below this file is framework-free (`scene/`), and everything above
  * it is plain DOM (`ThreeHud`). This is the only place the two meet: it owns the
- * `<canvas>`, drives `frame()` from `requestAnimationFrame`, and turns pointer
+ * host element, drives `frame()` from `requestAnimationFrame`, and turns pointer
  * events into camera moves.
  *
- * Two things are worth knowing about the loop:
+ * Three things are worth knowing about the loop:
  *
  *  - **`delta` is capped.** A background tab, a long paint or a breakpoint in
  *    the debugger all hand back a huge `delta`, and a camera that damps by
@@ -22,6 +24,11 @@ import styles from './ThreeApp.module.scss';
  *    state, but re-creating the loop on every `timeupdate` (four times a
  *    second) would tear down and rebuild the renderer each time. The state
  *    object goes into a ref that the loop reads.
+ *  - **Nothing in here is allowed to throw out of the effect.** A throw in a
+ *    mount effect unmounts the whole tree in React 19 — no error boundary, no
+ *    message, just the white page behind the app. So both the stage's
+ *    construction and every frame are caught, and the page answers with a card
+ *    that says what happened instead of disappearing.
  */
 
 const MAX_DELTA = 1 / 20;
@@ -36,23 +43,59 @@ const prefersReducedMotion = function () {
 
 const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
     const hostRef = useRef(null);
-    const canvasRef = useRef(null);
     const stageRef = useRef(null);
     const stateRef = useRef(state);
     const toggleRef = useRef(onToggleLyrics);
+    // `''` = fine. Anything else is shown on the card, verbatim: the browser's
+    // own wording ("Error creating WebGL context.") is the most useful thing
+    // that can be put in front of someone whose GPU just refused.
+    const [failure, setFailure] = useState('');
+    // Bumped by the retry button. It is a dependency of the mount effect, so a
+    // retry really does build a new renderer rather than re-run the same code
+    // path that already failed.
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
         stateRef.current = state;
         toggleRef.current = onToggleLyrics;
     });
 
-    // --- the renderer, the loop and the pointer, once ------------------------
+    const retry = useCallback(() => {
+        setFailure('');
+        setAttempt((count) => count + 1);
+    }, []);
+
+    // --- the renderer, the loop and the pointer ------------------------------
     useEffect(() => {
         const host = hostRef.current;
-        const canvas = canvasRef.current;
-        if (!host || !canvas) return undefined;
+        if (!host) return undefined;
 
-        const stage = createStage(canvas, { reduced: prefersReducedMotion() });
+        let raf = 0;
+        let dead = false;
+
+        // Declared before the stage so that the context-lost callback can
+        // close over it — the stage may outlive this effect only in the sense
+        // that it is disposed by the cleanup below, never by `fail`.
+        const fail = function (message) {
+            if (dead) return;
+            dead = true;
+            if (raf) cancelAnimationFrame(raf);
+            raf = 0;
+            setFailure(message);
+        };
+
+        let stage;
+        try {
+            stage = createStage(host, {
+                canvasClass: styles.canvas,
+                reduced: prefersReducedMotion(),
+                onContextLost: () => fail('显卡上下文丢失了，这一帧之后就再也没画出来'),
+            });
+        } catch (err) {
+            setFailure((err && err.message) || '这个浏览器没有可用的 WebGL');
+            return undefined;
+        }
+
         stageRef.current = stage;
 
         const fit = () => stage.resize(host.clientWidth, host.clientHeight);
@@ -60,14 +103,21 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         const observer = new ResizeObserver(fit);
         observer.observe(host);
 
-        let raf = 0;
         let last = performance.now();
 
         const tick = (now) => {
             raf = requestAnimationFrame(tick);
             const delta = Math.min((now - last) / 1000, MAX_DELTA);
             last = now;
-            if (delta > 0) stage.frame(delta, stateRef.current);
+            if (delta <= 0) return;
+            try {
+                stage.frame(delta, stateRef.current);
+            } catch (err) {
+                // A frame that throws will throw on every frame. Report once
+                // and stop, rather than filling the console sixty times a
+                // second until the tab is closed.
+                fail((err && err.message) || '渲染时出错');
+            }
         };
         raf = requestAnimationFrame(tick);
 
@@ -75,6 +125,7 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         // others; either way there is nothing to look at, so the loop stops and
         // the audio context goes with it.
         const onVisibility = () => {
+            if (dead) return;
             if (document.hidden) {
                 if (raf) cancelAnimationFrame(raf);
                 raf = 0;
@@ -142,6 +193,7 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         host.addEventListener('wheel', onWheel, { passive: false });
 
         return () => {
+            dead = true;
             if (raf) cancelAnimationFrame(raf);
             document.removeEventListener('visibilitychange', onVisibility);
             host.removeEventListener('pointerdown', onPointerDown);
@@ -153,7 +205,7 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
             stage.dispose();
             stageRef.current = null;
         };
-    }, []);
+    }, [attempt]);
 
     // --- the cover ----------------------------------------------------------
     const coverUrl = state.coverUrl;
@@ -162,7 +214,7 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         const stage = stageRef.current;
         if (!stage) return;
         stage.setCover(coverUrl, coverFallback);
-    }, [coverUrl, coverFallback]);
+    }, [coverUrl, coverFallback, attempt]);
 
     // --- the audio tap ------------------------------------------------------
     // Deferred to the first play on purpose: an `AudioContext` created on page
@@ -175,11 +227,32 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         if (!stage || !audio || !playing) return;
         stage.analyzer.attach(audio);
         stage.analyzer.resume();
-    }, [playing, audioRef]);
+    }, [playing, audioRef, attempt]);
 
     return (
         <div className={styles.stage} ref={hostRef}>
-            <canvas className={styles.canvas} ref={canvasRef} aria-hidden="true" />
+            {failure && (
+                <div className={styles.fallback} role="alert">
+                    <span className={styles['fallback-mark']} aria-hidden="true">
+                        <IconCube size={18} />
+                    </span>
+                    <p className={styles['fallback-title']}>3D 场景没能启动</p>
+                    <p className={styles['fallback-text']}>
+                        浏览器没能拿到 WebGL 上下文，所以这一页画不出东西 ——
+                        其余部分都是好的，音乐照样能放。常见原因是「使用硬件加速」被关掉了，
+                        或者显卡驱动被浏览器拉黑了。
+                    </p>
+                    <p className={styles['fallback-detail']}>{failure}</p>
+                    <div className={styles['fallback-actions']}>
+                        <button type="button" className={styles['fallback-primary']} onClick={retry}>
+                            再试一次
+                        </button>
+                        <Link className={styles['fallback-link']} href="/desktop">
+                            回简洁版
+                        </Link>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
