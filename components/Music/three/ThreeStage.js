@@ -145,6 +145,15 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         let lastY = 0;
         let travel = 0;
 
+        /** Client coordinates to the normalised pair the scene wants. */
+        const toScene = (event) => {
+            const rect = host.getBoundingClientRect();
+            return {
+                x: ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                y: -(((event.clientY - rect.top) / rect.height) * 2 - 1),
+            };
+        };
+
         const onPointerDown = (event) => {
             if (event.pointerType === 'mouse' && event.button !== 0) return;
             pointerId = event.pointerId;
@@ -152,9 +161,17 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
             lastY = event.clientY;
             travel = 0;
             host.setPointerCapture(event.pointerId);
+            const at = toScene(event);
+            stage.aim(at.x, at.y);
         };
 
         const onPointerMove = (event) => {
+            // The aim is updated whether or not a button is down: the dust
+            // parts around a cursor that is only hovering, which is most of
+            // the time.
+            const at = toScene(event);
+            stage.aim(at.x, at.y);
+
             if (pointerId === null || event.pointerId !== pointerId) return;
             const dx = event.clientX - lastX;
             const dy = event.clientY - lastY;
@@ -175,10 +192,12 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
             pointerId = null;
             if (travel >= DRAG_SLOP) return;
 
-            const rect = host.getBoundingClientRect();
-            const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            const y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-            if (stage.pick(x, y)) toggleRef.current();
+            const at = toScene(event);
+            if (stage.pick(at.x, at.y)) toggleRef.current();
+        };
+
+        const onPointerLeave = () => {
+            stage.aimOff();
         };
 
         const onWheel = (event) => {
@@ -190,6 +209,7 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         host.addEventListener('pointermove', onPointerMove);
         host.addEventListener('pointerup', onPointerUp);
         host.addEventListener('pointercancel', onPointerUp);
+        host.addEventListener('pointerleave', onPointerLeave);
         host.addEventListener('wheel', onWheel, { passive: false });
 
         return () => {
@@ -200,6 +220,7 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
             host.removeEventListener('pointermove', onPointerMove);
             host.removeEventListener('pointerup', onPointerUp);
             host.removeEventListener('pointercancel', onPointerUp);
+            host.removeEventListener('pointerleave', onPointerLeave);
             host.removeEventListener('wheel', onWheel);
             observer.disconnect();
             stage.dispose();

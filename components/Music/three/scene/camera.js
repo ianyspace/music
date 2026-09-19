@@ -24,10 +24,17 @@ import * as THREE from 'three';
 const FOV = 44;
 
 const FRAMING = {
-    home: { radius: 4.3, phi: 0.5, targetY: 0.25 },
+    // Slightly higher than a record-on-a-table angle. The dust disc lies in the
+    // floor plane and the record stands on top of it; from 0.5 the camera was
+    // almost level with the dust and the whole galaxy collapsed into a line
+    // behind the record.
+    home: { radius: 4.3, phi: 0.6, targetY: 0.25 },
     playing: { radius: 3.25, phi: 0.72, targetY: 0.18 },
     paused: { radius: 3.6, phi: 0.66, targetY: 0.18 },
-    lyrics: { radius: 3.9, phi: 0.38, targetY: 1.05 },
+    // Low and far, aimed at the middle of the sheet rather than the record.
+    // The lyrics plane is 5.6 units wide, so anything closer than this clips
+    // the ends of a long line.
+    lyrics: { radius: 5.4, phi: 0.34, targetY: 1.82 },
 };
 
 /** Radians per second of unattended drift, and the pause after a drag. */
@@ -105,6 +112,16 @@ export const createCameraRig = function (aspect, { reduced = false } = {}) {
             right.set(Math.cos(theta), 0, -Math.sin(theta));
             target.addScaledVector(right, -0.52 * shift);
             camera.lookAt(target);
+
+            // A breath of zoom on the beat, on top of the push above. It is
+            // the cheapest way to make the whole frame feel like it is moving
+            // with the music rather than only the objects in it — and it is
+            // kept under 1.5°, because a wide-angle FOV pump is a headache.
+            const fov = FOV - (reduced ? 0 : state.level * 1.4);
+            if (Math.abs(fov - camera.fov) > 0.01) {
+                camera.fov = fov;
+                camera.updateProjectionMatrix();
+            }
         },
 
         /** Pointer drag, in pixels. */

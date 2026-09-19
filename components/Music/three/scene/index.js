@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { envTexture } from './textures';
 import { createTurntable, RECORD_RADIUS } from './record';
 import { createTonearm, ARM_REST, ARM_LEAD_IN, ARM_RUN_OUT } from './tonearm';
-import { createParticles } from './particles';
+import { createParticles, RING_Y } from './particles';
 import { createLyrics } from './lyrics';
 import { createCameraRig } from './camera';
 import { createAnalyzer } from './analyzer';
@@ -143,17 +143,27 @@ export const createStage = function (host, {
     fill.position.set(-4.5, 2.2, -2.6);
     scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0xfa233b, 1.5);
+    // Red, low, and behind: it is what puts an accent on the record's edge.
+    // Kept under half the key light on purpose — at 1.5 the vinyl's cap caught
+    // enough of it that the disc read as red plastic rather than as black
+    // vinyl with a red rim, which is the same mistake the beat light made.
+    const rim = new THREE.DirectionalLight(0xfa233b, 0.85);
     rim.position.set(-2.6, 1.2, -4.2);
     scene.add(rim);
 
     scene.add(new THREE.HemisphereLight(0x39435f, 0x05060a, 0.8));
 
-    // The beat's own light, right over the label. It is the only light whose
+    // The beat's own light, over the label. It is the only light whose
     // intensity changes at runtime, which is why the record's `setLevel` can
     // stay subtle and the scene still visibly reacts.
-    const beatLight = new THREE.PointLight(0xff3350, 2.6, 9, 2);
-    beatLight.position.set(0, 0.62, 0);
+    //
+    // It used to sit 0.62 units above the record, which with the physical
+    // falloff (`decay: 2` means irradiance ∝ 1/d²) made it *brighter than the
+    // key light* — the whole disc came out red-washed and the cover art went
+    // pink. Twice as far away and a quarter of the intensity puts it back
+    // where it belongs: a tint on the metal, not a lamp on the table.
+    const beatLight = new THREE.PointLight(0xff3350, 0.7, 11, 2);
+    beatLight.position.set(0, 1.35, 0);
     scene.add(beatLight);
 
     // --- the room ------------------------------------------------------------
@@ -167,6 +177,7 @@ export const createStage = function (host, {
     scene.add(particles.points);
 
     const lyrics = createLyrics();
+    scene.add(lyrics.glow);
     scene.add(lyrics.mesh);
 
     // What a click is tested against. The record itself is a bad target: it is
@@ -185,6 +196,16 @@ export const createStage = function (host, {
     scene.add(pickTarget);
 
     const raycaster = new THREE.Raycaster();
+
+    // Where the cursor is, in the world, for the dust to part around. The
+    // plane the ray lands on follows the dust: flat on the floor while the
+    // record is the subject, and up at the height of the words once the ring
+    // has formed — a ray aimed at the lyrics that hit the floor would clear a
+    // hole two metres below where the visitor is actually pointing.
+    const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const aimPoint = new THREE.Vector3();
+    let aimY = 0;
+    let pointer = null;
 
     const rig = createCameraRig(host.clientWidth / Math.max(1, host.clientHeight), { reduced });
     const analyzer = createAnalyzer();
@@ -234,8 +255,18 @@ export const createStage = function (host, {
             tonearm.update(armAngle, armLift);
 
             turntable.setLevel(level);
-            particles.update(delta, level, state.playing);
-            beatLight.intensity = 1.4 + level * 4.6;
+            lyrics.setLevel(level);
+            aimY = damp(aimY, state.lyricsVisible ? RING_Y : 0, 2, delta, reduced);
+            floor.constant = -aimY;
+            particles.update(delta, {
+                level,
+                playing: state.playing,
+                // The galaxy becomes the river the moment the words come up,
+                // and turns back into one when they go away.
+                formation: state.lyricsVisible ? 1 : 0,
+                pointer,
+            });
+            beatLight.intensity = 0.55 + level * 2.6;
 
             rig.update(delta, {
                 playing: state.playing,
@@ -268,6 +299,22 @@ export const createStage = function (host, {
 
         orbit(dx, dy) {
             rig.orbit(dx, dy);
+        },
+
+        /**
+         * Where the cursor is, for the dust. `x` and `y` are normalised device
+         * coordinates; the ray is intersected with the plane the dust is
+         * currently in, so the hand works on the whole cloud and not just the
+         * disc, and follows the cloud up when it stands into the ring.
+         */
+        aim(x, y) {
+            raycaster.setFromCamera({ x, y }, rig.camera);
+            const hit = raycaster.ray.intersectPlane(floor, aimPoint);
+            pointer = hit ? { x: aimPoint.x, y: aimPoint.y, z: aimPoint.z } : null;
+        },
+
+        aimOff() {
+            pointer = null;
         },
 
         dolly(amount) {
