@@ -377,7 +377,7 @@ components/Music/three/
     camera.js         四机位 rig + 拖拽 + 7 秒后自动漂移 + 节拍推进
     record.js         唱盘 + 唱片 + 倒影 + 光池 + 光环
     tonearm.js        真解算的唱臂（正弦定理，随播放进度内移）
-    particles.js      5000 粒尘埃：星系 / 光环两种形态，同一个 attribute 混合
+    particles.js      5000 粒尘埃：星系 / 环两种形态，同一对三角函数、同一个 attribute
     lyrics.js         canvas 贴图歌词平面 —— 场景里最大的物体，另加一层加色发光
     textures.js       六种程序化 canvas 贴图，**零资源文件**
     analyzer.js       Web Audio 分析 + 合成节拍回退
@@ -410,6 +410,34 @@ components/Music/three/
 - **`webglcontextlost` 要 `preventDefault()` 并告诉调用方**：不 preventDefault 上下文
   永远恢复不了；告诉调用方是为了让 rAF 停下来、把话说在屏幕上，而不是留一块黑画布。
 - **rAF 里每帧都要 try/catch**：一帧抛异常就是每帧抛异常，会以 60 次/秒的速度刷控制台。
+- **粒子只有一对三角函数，两种形态是同一对值的两种读法。** 每颗粒子的角度是 `base + ωt`；
+  星系读成 `x = cos·r, z = sin·r`（水平圆盘），环读成 `x = cos·r, y = RING_Y + sin·r·flat`
+  （竖着的椭圆）。所以形态切换只是绕 x 轴转过去，多花两次乘法，不需要第二套坐标。
+  两件事不要随手改：
+  - **环要有自己的时钟**（`RING_SPIN`，而且和唱片反向）。环如果跟着星系的分壳自转，
+    内外差速会在一两分钟内把它剪成螺旋 —— 让星系活起来的那套物理，正好是毁掉环的那套。
+  - **角度要按椭圆弧长采样**（`pickAngle`），不能均匀取。扁椭圆的 `ds/dθ` 从侧面的 1
+    降到两端的 `flat`，均匀角度会把尘埃堆成左右两坨，环就不再是环。用拒绝采样做，
+    只在 mount 时跑一次，运行时零成本。
+- **粒子材质必须 `toneMapped: false`，而且不能靠提亮来塑形。** ACES 曲线会把加色点压成
+  灰点（第一版 1500 粒 / size 0.03 就是这么消失的）；反过来，形态切换时再给材质加增益
+  会得到一个实心光圈。**形状靠密度，不靠增益**：环的径向带很窄（有边），但很深（是环面
+  不是扁箍），近侧的投影大、远侧小，屏幕上的密度自然降一半。
+- **`material.opacity` 和 `size` 是全局的，逐粒子亮度只能每帧重写 color buffer。**
+  `PointsMaterial` 只有一个 `size`，所以「有的像星星、有的像雾」只能靠
+  `palette × bright × twinkle` 写进 `color` 属性。第二颗材质 = 第二次 draw call，更贵。
+  亮点尾巴要又短又稀：6% 的 3.4 倍亮会把空角落点成噪点，眼睛先看到噪点，形状就没了。
+- **歌词的卡拉 OK 走字靠 `onBeforeCompile`，不是每帧重画 canvas。** 2048×1024 的贴图
+  是 8MB，60fps 上传就是每秒 0.5GB 的总线流量。canvas 里画满亮度的那一行，片元着色器
+  用 `uWipe` 把行进线右侧的 alpha 乘到 `UNSUNG`；`band` 用 `abs(vMapUv.y - 0.5)` 把走字
+  限制在活动行（活动行永远画在画布垂直正中），邻行不受影响。每帧只改一个 uniform。
+  两个坑：片元里 uv 的 varying 名在 r152 之后是 `vMapUv`（不是 `vUv`），钩子要挂在
+  `#include <opaque_fragment>` 之前；着色器编译失败只会让这块平面变黑，所以验证脚本
+  必须收 `console.error`。
+- **歌词平面宽 5.6 单位，机位 `lyrics` 的 `radius` 和它是一对。** 再近就切掉长句两端，
+  再远字就小了。同理 `RING_Y` 是歌词平面的高度（`lyrics.js` 的 `BASE_Y`），
+  `index.js` 在歌词打开时把鼠标射线打的那张平面也抬到这个高度 —— 不然光标指着歌词，
+  洞却开在两米以下的地板上。`RING_Y` 从 `particles.js` 导出就是为这一处。
 - **token 前缀是 `--t-`，且不引入任何 `--glass-*`。** 这一页只有深色，没有 `theme-dark`。
   `grep -n '\-\-glass' components/Music/three/` 必须是空的。
 - **毛玻璃面板只能有三个**（徽标 / 列表 / 胶囊条）。桌面端的毛玻璃糊的是画好的色彩场，
@@ -527,6 +555,28 @@ chrome --headless=new --window-size=1440,810 --timeout=25000 \
 
 服务起在 `--directory` 上，**不要 `cd out`** —— 否则 `npm run build` 会因为
 `EBUSY: rmdir 'out'` 失败（Windows 会把占用它的 python 进程锁住那个目录）。
+
+### 只想看一个 scene 模块，或者想量像素的时候
+
+整页截图看不到细节，而且 `scene/*.js` 是纯 three.js、不依赖 React，所以
+`.workbuddy-ai/lyrics-harness.html` 用 importmap 把 `three` 指到 `node_modules`，
+直接 `import` 未构建的 `scene/lyrics.js` + `scene/particles.js`，自己摆机位、
+自己喂一帧，**完全不需要 build**。参数走 query：
+
+```bash
+./probe.sh "t=7.4&form=1&probe=1"   # t=歌里的秒数 form=0星系/1环 cam=机位距离
+```
+
+`probe=1` 会把画好的帧读回来，按 64×28 的格子打印一张**每格亮起来的像素数**图。
+这一步不是装饰：肉眼看一张小截图，分不清「一圈尘埃」和「均匀的噪点」，
+而纯几何的投影模型又不知道雾、加色混合和点尺寸 —— 只有像素能仲裁。两个实现细节：
+
+- 统计的是**每格超过背景色的像素个数**，不是每格最亮值。最亮值那张图永远是满的
+  （5000 颗里总有一颗落在这一格），什么问题都答不了。
+- 亮度台阶是**绝对**的（一级 = 该格 2% 的像素），不是按最亮格归一化 —— 归一化之后
+  白字永远占满量程，尘埃全部落到 0，等于没测。
+
+截图仍然要看，但它是最后一步：先用像素图确认形状成立，再用截图判断好不好看。
 
 > 本仓库的工作区是 **CRLF**、CI 是 **LF**，且 `core.autocrlf=true`（仓库内一律 LF）。
 > 用脚本批量改源码时注意别把文件写成混合行尾（Node 里 `split('\n')` 会留下 `\r`）。

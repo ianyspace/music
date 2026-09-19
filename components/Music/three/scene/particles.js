@@ -173,6 +173,31 @@ export const createParticles = function () {
         shellSpin[s] = SPIN_IN + (SPIN_OUT - SPIN_IN) * (s / (SHELLS - 1));
     }
 
+    /**
+     * An angle that is even along the *ellipse* rather than around the circle.
+     *
+     * A flat ellipse has far more length near its ends than near its top and
+     * bottom — `ds/dθ` runs from 1 at the sides down to `flat` at the tips — so
+     * a uniform angle piles the dust into two blobs on the left and right and
+     * leaves the arcs over and under the words nearly bare. It stops reading as
+     * a ring and starts reading as a pair of smudges.
+     *
+     * Rejection sampling against `ds/dθ` fixes it, and it costs nothing at
+     * runtime: this runs once per particle, at mount, and never again. The same
+     * angle drives the galaxy too, but a disc's density is set by its radius
+     * and it shears into a spiral within a minute anyway, so a mild bias in the
+     * angle is invisible there.
+     */
+    const pickAngle = function () {
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+            const a = Math.random() * Math.PI * 2;
+            const s = Math.sin(a);
+            const c = Math.cos(a);
+            if (Math.random() < Math.sqrt(RING_FLAT * RING_FLAT * s * s + c * c)) return a;
+        }
+        return Math.random() * Math.PI * 2;
+    };
+
     for (let i = 0; i < COUNT; i += 1) {
         // `sqrt` over the squared range is what makes the density even: without
         // it every particle piles up near the middle, where the area is small.
@@ -224,10 +249,15 @@ export const createParticles = function () {
         // reads as stars, and it is what gives the cloud depth without a single
         // extra draw call. The second factor is what pushes the tail down —
         // without it the spread is too narrow to see.
+        //
+        // The tail is kept short and rare on purpose. Six per cent at 3.4× was
+        // enough bright specks scattered through the empty corners to read as
+        // grain, and grain is what the eye finds first — the shape underneath
+        // disappears behind it. Fewer, softer outliers and the ring wins.
         const roll = Math.random();
-        bright[i] = (roll > 0.94
-            ? 3.4
-            : (0.3 + roll * 0.85) * (0.45 + roll * 0.55)) * (onRing ? 1 : 0.3);
+        bright[i] = (roll > 0.965
+            ? 2.6
+            : (0.3 + roll * 0.85) * (0.45 + roll * 0.55)) * (onRing ? 1 : 0.26);
     }
 
     // The buffers start filled rather than empty: `update` rewrites them every
