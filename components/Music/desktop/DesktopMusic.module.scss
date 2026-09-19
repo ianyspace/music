@@ -38,9 +38,16 @@
 
 .root {
     /* Layout knobs. The two bar values are shared with `.side`, which has to
-       stop above the capsule — one number, two consumers, no magic offsets. */
+       stop above the capsule — one number, two consumers, no magic offsets.
+
+       `--bar-h` was 76px, which is the number that made the bar read as a slab:
+       a 76px capsule whose tallest content is a 40px control leaves 18px of
+       empty glass above and below, and the seek rail then had to be squeezed
+       into whatever was left at the bottom edge. 64px is the row plus the
+       rail's own strip (see `.bar-row`'s bottom padding), which is all the
+       height the bar ever had a use for. */
     --side: 348px;
-    --bar-h: 76px;
+    --bar-h: 64px;
     --bar-bottom: 26px;
 
     position: relative;
@@ -1289,12 +1296,19 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     height: 100%;
-    /* 34px of padding, not 26: the capsule's ends are semicircles of radius
-       38, and at the top and bottom of the content box that curve eats ~15px
-       of the row. Below that the content would sit outside the fill. */
-    padding: 0 34px;
+    /* 30px of padding, not 20: the capsule's ends are semicircles of radius
+       32, and at the top and bottom of the content box that curve eats ~13px
+       of the row. Below that the content would sit outside the fill.
+
+       The bottom padding is the rail's strip, and it is what keeps the two
+       from colliding: it lifts the row's centre to 37.5px off the capsule's
+       floor, so a 40px control clears the rail's track by the same 6.5px it
+       clears the capsule's ceiling. Without it the transport would sit on the
+       progress bar — the 76px capsule used to hide that behind 18px of empty
+       glass. */
+    padding: 0 30px 11px;
     box-sizing: border-box;
 }
 
@@ -1302,10 +1316,10 @@
     appearance: none;
     -webkit-appearance: none;
     position: absolute;
-    left: 34px;
+    left: 30px;
     bottom: 4px;
     display: block;
-    width: calc(100% - 68px);
+    width: calc(100% - 60px);
     height: 14px;
     margin: 0;
     background: transparent;
@@ -1376,7 +1390,10 @@
 }
 
 .bar-label {
-    font-size: 13.5px;
+    /* 14px, not 13.5: the bar got 12px shorter and the type has to hold its
+       own against a 40px control beside it. The phone's mini bar runs its
+       label at 13px inside a 58px bar. */
+    font-size: 14px;
     font-weight: 600;
     color: var(--text);
 }
@@ -1399,12 +1416,14 @@
     flex-shrink: 0;
 }
 
+/* 36px, down from 38 — the bar is 64px now, and the phone's bar runs its
+   buttons at 36px inside 58. */
 .ctrl-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     border: 0;
     border-radius: 50%;
@@ -1437,26 +1456,35 @@
     color: var(--accent);
 }
 
-/* The one solid-colour button in the bar, and the only one that is allowed to
-   be bigger than the 38px ring of its neighbours — but only a little. At 50px
-   inside a 76px capsule it was the bar's subject; the song is the subject, and
-   the transport is a control. 44px still reads as "the main one" beside 38px
-   buttons while leaving the capsule its air. */
+/* The bar's one solid-colour button. It has been getting smaller for three
+   passes — 50px, then 44, now 40 — and the size was only half of why it read
+   as the bar's subject rather than its control.
+
+   The other half was the paint: a `linear-gradient` from `--accent-2` to
+   `--accent` under a `0 12px 26px -10px` red glow. That is a lit, raised ball,
+   which is the exact look the rest of this page just dropped — the glass is
+   flat now, the record is the only thing with a highlight on it, and a glossy
+   red sphere floating in a pane of frosted glass belonged to neither. Flat
+   `--accent`, no gradient, no glow.
+
+   The phone's play button is 30px with an 18px glyph — the glyph fills the
+   button. This is 40px with the same 18px glyph, so it is the *ring* around it
+   that carries the weight, which is what "the main one" should look like in a
+   row of 36px rings. */
 .ctrl-play {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    margin: 0 3px;
+    width: 40px;
+    height: 40px;
+    margin: 0 2px;
     padding: 0 0 0 2px;
     border: 0;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+    background: var(--accent);
     color: #fff;
     cursor: pointer;
-    box-shadow: 0 12px 26px -10px rgba(250, 35, 59, 0.6);
-    transition: transform 0.16s, box-shadow 0.2s;
+    transition: transform 0.16s, background-color 0.2s;
 
     &:hover:not(:disabled) {
         transform: scale(1.05);
@@ -1469,12 +1497,11 @@
     &:disabled {
         cursor: default;
         opacity: 0.4;
-        box-shadow: none;
     }
 
     svg {
-        width: 19px;
-        height: 19px;
+        width: 18px;
+        height: 18px;
     }
 }
 
@@ -1490,12 +1517,12 @@
 
 .time {
     color: var(--text-2);
-    font-size: 11.5px;
+    font-size: 12px;
 }
 
 .time-sep {
     color: var(--text-3);
-    font-size: 11.5px;
+    font-size: 12px;
 }
 
 /* ==========================================================================
