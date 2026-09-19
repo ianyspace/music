@@ -553,6 +553,18 @@ chrome --headless=new --window-size=1440,810 --timeout=25000 \
    `Failed to fetch dynamically imported module: .../lyrics.js` ——
    错误指向最外层那个模块，不是真正 404 的那个，很容易查错方向。
 
+`scene/index.js` 是**可以脱离 React 一帧一帧驱动的**（`frame(delta, state)`），
+所以除了单模块 harness，还能搭一个只 import `createStage` 的页面，
+自己喂 200 帧 `{ playing, hasTrack, progress, lyricsVisible, lyrics, lyricsTime }`，
+就能在无头浏览器里看到**完整构图**（唱片 + 唱臂 + 尘埃环 + 歌词）——
+不用起 dev server，也不用等一首真歌。要看擦除在哪一刻是什么样，
+就按时间跑（`?t=7.4`）而不是按帧数跑。
+
+**判断「差得够不够」要读像素，不要靠眼睛。** 深色画面上的亮度差眼睛判不准
+（歌词擦除那两半，肉眼看「好像差不多」，读回来是 252 对 84）。
+把截图丢进一个 canvas 页、扫一条带里每列的最亮值、`--dump-dom` 取回来，
+几行代码的事。
+
 服务起在 `--directory` 上，**不要 `cd out`** —— 否则 `npm run build` 会因为
 `EBUSY: rmdir 'out'` 失败（Windows 会把占用它的 python 进程锁住那个目录）。
 
