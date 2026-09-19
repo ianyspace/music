@@ -23,6 +23,9 @@ import * as THREE from 'three';
 
 const FOV = 44;
 
+/** A full turn, for folding an azimuth onto the nearest one. */
+const TURN = Math.PI * 2;
+
 const FRAMING = {
     // Slightly higher than a record-on-a-table angle. The dust disc lies in the
     // floor plane and the record stands on top of it; from 0.5 the camera was
@@ -85,7 +88,19 @@ export const createCameraRig = function (aspect, { reduced = false } = {}) {
             // room, so a camera that keeps circling would spend half the song
             // reading them from behind.
             const drifting = !state.lyrics && !reduced && performance.now() > handBackAt;
-            if (drifting) theta += DRIFT * delta;
+            if (drifting) {
+                theta += DRIFT * delta;
+            } else if (state.lyrics && !reduced && performance.now() > handBackAt) {
+                // …and then it turns to face them, which stopping the drift does
+                // not do on its own. `FRAMING.lyrics` sets the distance, the
+                // height and the aim, but not the azimuth — so a visitor who
+                // arrives from a drag, or from a minute of unattended drift,
+                // reads the song from the side. The words are a flat plane
+                // facing `+z`, so the azimuth that faces them is a whole turn,
+                // and `Math.round` picks the nearest one: always the short way
+                // round, never a spin.
+                theta = damp(theta, Math.round(theta / TURN) * TURN, 1.6, delta);
+            }
 
             phi = damp(phi, framing.phi, 2.4, delta);
             radius = damp(radius, framing.radius, 2.2, delta);
