@@ -39,3 +39,6 @@ yarn-error.log*
 
 # scratch
 .commit-msg
+
+# WorkBuddy session notes — local working memory, not part of the project
+.workbuddy-ai/
