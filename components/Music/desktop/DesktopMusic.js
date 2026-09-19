@@ -7,7 +7,6 @@ import {
     IconDislike,
     IconFolder,
     IconGear,
-    IconGoogleDrive,
     IconLocate,
     IconLogout,
     IconMoon,
@@ -189,16 +188,11 @@ const DesktopMusic = function ({
     // `false` = folded away, only the toggle button remains. Defaults to open.
     const [listOpen, setListOpen] = useState(true);
     const [searchOpen, setSearchOpen] = useState(false);
-    // The list header's three-dots popover: 'more' | ''. It is only ever the
-    // popover itself — the entries inside it open the shell-owned sheets
-    // (settings, cache manager, disliked songs) and close this again.
-    const [menu, setMenu] = useState('');
     // Playback mode announce, centred on the stage for a moment — same
     // behaviour as the phone player's mode toast.
     const [modeToast, setModeToast] = useState('');
     const lastModeRef = useRef('');
     const modeTimerRef = useRef(0);
-    const menuRef = useRef(null);
     const [cacheCount, setCacheCount] = useState(0);
 
     const meta = current ? parseTrackName(current.track.name) : null;
@@ -242,9 +236,9 @@ const DesktopMusic = function ({
     const listVisible = listOpen && !autoHidden;
 
     // Anything the visitor is *doing* with the list counts as being in range,
-    // not just the pointer: a half-typed search or an open popover must not
-    // vanish under them either.
-    const listBusy = listHover || Boolean(menu) || searchOpen || keyword !== '';
+    // not just the pointer: a half-typed search, or a row whose drawer is open
+    // over it, must not vanish under them either.
+    const listBusy = listHover || searchOpen || keyword !== '' || Boolean(rowMenuId);
     // Booleans, not `current` itself: the effect below arms a timer, and a
     // dependency that changed identity on every render would clear and re-arm
     // it forever — the list would simply never fold.
@@ -331,21 +325,6 @@ const DesktopMusic = function ({
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [settingsOpen, closeSettings]);
 
-    // The three-dots menu closes on any outside click / Escape.
-    useEffect(() => {
-        if (!menu) return undefined;
-        const onPointerDown = (event) => {
-            if (menuRef.current && !menuRef.current.contains(event.target)) setMenu('');
-        };
-        const onKeyDown = (event) => { if (event.key === 'Escape') setMenu(''); };
-        window.addEventListener('pointerdown', onPointerDown);
-        window.addEventListener('keydown', onKeyDown);
-        return () => {
-            window.removeEventListener('pointerdown', onPointerDown);
-            window.removeEventListener('keydown', onKeyDown);
-        };
-    }, [menu]);
-
     // How many tracks are already cached locally — the settings dialog reports
     // it the way the phone's cache manager does, so the number is honest.
     useEffect(() => {
@@ -386,6 +365,13 @@ const DesktopMusic = function ({
     const [jumping, setJumping] = useState(false);
     const settleRef = useRef(null);
     const pulseRef = useRef(null);
+    // Which ends of the list still have rows beyond them. The panel has no
+    // frame, so these two fades are the list's only way of saying "there is
+    // more" — and they have to be *earned*: a list short enough to fit shows
+    // neither, and one scrolled to the bottom stops fading at the bottom.
+    // `false` both ways on the first render, so nothing fades before the first
+    // measurement lands.
+    const [listEnds, setListEnds] = useState({ top: false, bottom: false });
 
     // `currentId` itself is declared with the other derived values above — the
     // row lookup reads the same one the list marks its rows with.
@@ -395,6 +381,37 @@ const DesktopMusic = function ({
             ? list.querySelector(`[data-track-id="${CSS.escape(currentId)}"]`)
             : null;
     }, [currentId]);
+
+    // The list's own ends, read off the scroller rather than guessed from the
+    // row count: how many rows fit depends on the window, so "is there more"
+    // is only ever true of a measurement.
+    //
+    // Three inputs, because the answer changes for three different reasons —
+    // the visitor scrolls (the listener), the window or the panel resizes (the
+    // observer), or the rows themselves change (the deps, since a scroller
+    // whose box did not move tells the observer nothing about its content).
+    // The state is written as a whole object and only when it actually differs,
+    // so a scroll that changes nothing costs no render.
+    useEffect(() => {
+        const list = listRef.current;
+        if (!list) return undefined;
+        const measure = function () {
+            const top = list.scrollTop > 1;
+            // A pixel of slack: at the true bottom `scrollTop + clientHeight`
+            // can land a fraction short of `scrollHeight`, which would leave
+            // the fade on over the last row forever.
+            const bottom = list.scrollTop + list.clientHeight < list.scrollHeight - 1;
+            setListEnds((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }));
+        };
+        measure();
+        list.addEventListener('scroll', measure, { passive: true });
+        const observer = new ResizeObserver(measure);
+        observer.observe(list);
+        return () => {
+            list.removeEventListener('scroll', measure);
+            observer.disconnect();
+        };
+    }, [listLoading, visibleCount]);
 
     // The scroller *is* the list here — the tool row is its sibling, not an
     // overlay — so the plain viewport of `.list` is already the right frame and
@@ -445,10 +462,6 @@ const DesktopMusic = function ({
         window.clearTimeout(settleRef.current);
         settleRef.current = window.setTimeout(() => setJumping(false), SETTLE_MS);
     }, [rowOf]);
-
-    const openMenu = function (which) {
-        setMenu((open) => (open === which ? '' : which));
-    };
 
     const handleLyricsClick = function (event) {
         if (Math.abs(event.clientY - pressYRef.current) > 8) return;
@@ -602,81 +615,14 @@ const DesktopMusic = function ({
                         ) : (
                             <button
                                 type="button"
-                                className={styles['tool-btn']}
+                                className={styles['search-btn']}
                                 title="搜索"
-                                aria-label="搜索"
+                                aria-label="搜索歌曲"
                                 onClick={() => setSearchOpen(true)}
                             >
                                 <IconSearch />
-                                <span>搜索歌曲</span>
                             </button>
                         )}
-                        <div className={styles['menu-wrap']} ref={menuRef}>
-                            <button
-                                type="button"
-                                className={`${styles['tool-icon']}${menu ? ` ${styles['tool-icon-on']}` : ''}`}
-                                title="更多"
-                                aria-label="更多"
-                                aria-haspopup="menu"
-                                aria-expanded={Boolean(menu)}
-                                onClick={() => openMenu('more')}
-                            >
-                                <IconMoreVertical />
-                            </button>
-                            {menu && (
-                                <div className={styles.menu} role="menu" aria-label="更多功能">
-                                    <button
-                                        type="button"
-                                        className={styles['menu-item']}
-                                        role="menuitem"
-                                        onClick={() => { setMenu(''); setSettingsOpen(true); }}
-                                    >
-                                        <span className={styles['menu-icon']} aria-hidden="true"><IconGoogleDrive size={20} /></span>
-                                        <span className={styles['menu-text']}>
-                                            <span className={styles['menu-title']}>谷歌云盘链接</span>
-                                            <span className={styles['menu-sub']}>
-                                                {connected ? '已连接，可在设置里切换或断开' : '连接或切换自己的云盘曲库'}
-                                            </span>
-                                        </span>
-                                        <IconChevronRight />
-                                    </button>
-                                    {/* The cache manager and the disliked-songs
-                                        screen are shell-owned sheets, the same ones
-                                        the phone layout opens — so these entries
-                                        raise them rather than dropping the visitor
-                                        into the settings dialog, which only ever
-                                        reported a count. */}
-                                    <button
-                                        type="button"
-                                        className={styles['menu-item']}
-                                        role="menuitem"
-                                        onClick={() => { setMenu(''); onOpenCache(); }}
-                                    >
-                                        <span className={styles['menu-icon']} aria-hidden="true"><IconArchive size={20} /></span>
-                                        <span className={styles['menu-text']}>
-                                            <span className={styles['menu-title']}>缓存管理</span>
-                                            <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
-                                        </span>
-                                        <IconChevronRight />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={styles['menu-item']}
-                                        role="menuitem"
-                                        onClick={() => { setMenu(''); onOpenDisliked(); }}
-                                    >
-                                        <span className={styles['menu-icon']} aria-hidden="true"><IconDislike size={20} /></span>
-                                        <span className={styles['menu-text']}>
-                                            <span className={styles['menu-title']}>不喜欢歌曲</span>
-                                            <span className={styles['menu-sub']}>查看已隐藏的歌曲，可移出让它回到列表</span>
-                                        </span>
-                                        <span className={styles['menu-value']}>
-                                            {dislikedCount > 0 ? `${dislikedCount} 首` : ''}
-                                        </span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
                     </div>
 
                     {/* The list is the only content here: no library card, no
@@ -694,7 +640,10 @@ const DesktopMusic = function ({
                                 })}
                             </p>
                         ) : (
-                            <ul className={styles.list} ref={listRef}>
+                            <ul
+                                className={`${styles.list}${listEnds.top ? ` ${styles['list-fade-top']}` : ''}${listEnds.bottom ? ` ${styles['list-fade-bottom']}` : ''}`}
+                                ref={listRef}
+                            >
                                 {visibleTracks.map((track) => {
                                     const item = parseTrackName(track.name);
                                     const active = track.id === currentId;
@@ -708,7 +657,16 @@ const DesktopMusic = function ({
                                         // row's width; the three-dots button sits beside
                                         // it and only exists under the pointer, so a
                                         // long list does not turn into a column of dots.
-                                        <li key={track.id} data-track-id={track.id} className={styles['track-row']}>
+                                        //
+                                        // The *row* carries the hover tint, not the play
+                                        // target: the dots are part of the row, and a
+                                        // highlight that stopped short of them read as
+                                        // two controls instead of one.
+                                        <li
+                                            key={track.id}
+                                            data-track-id={track.id}
+                                            className={active ? styles['track-row-active'] : styles['track-row']}
+                                        >
                                             <button
                                                 type="button"
                                                 className={active ? styles['item-active'] : styles.item}
@@ -990,6 +948,25 @@ const DesktopMusic = function ({
                                 </button>
                             </section>
                         )}
+
+                        {/* The three-dots popover that used to live above the
+                            list held three entries; two of them (the Drive
+                            account, the cache manager) already had a row in
+                            here, and this is the third. It sits outside the
+                            `connected` branch on purpose: the public library
+                            has hidden songs too. */}
+                        <section className={styles.group}>
+                            <div className={styles['group-label']}>曲库</div>
+                            <button
+                                type="button"
+                                className={`${styles.row} ${styles['row-btn']} ${styles['row-btn-last']}`}
+                                onClick={onOpenDisliked}
+                            >
+                                <span className={styles['row-icon']}><IconDislike /></span>
+                                <span className={styles['row-label']}>不喜欢歌曲</span>
+                                <span className={styles['row-value']}>{dislikedCount} 首</span>
+                            </button>
+                        </section>
 
                         <section className={styles.group}>
                             <div className={styles['group-label']}>外观</div>
