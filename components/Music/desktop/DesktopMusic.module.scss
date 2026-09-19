@@ -844,13 +844,59 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     list-style: none;
+    /* The list is a display surface, not a panel, so its scrollbar stays out
+       of sight until the pointer is actually in the list.
+
+       `thin` rather than `none` is the important half: the gutter stays
+       reserved, so revealing the thumb cannot shift a single row sideways.
+       Both spellings below are set to the same behaviour on purpose — an
+       engine may honour the standard properties *or* the `::-webkit-scrollbar`
+       pseudo-elements, and either way the result is "invisible, then visible
+       on hover". `:focus-within` rides along so a keyboard visitor who tabs
+       into a row gets the same affordance the mouse does. */
     scrollbar-width: thin;
-    scrollbar-color: var(--track) transparent;
+    scrollbar-color: transparent transparent;
     /* Rows dissolve at the bottom instead of being sliced in half by the
        scroller's edge — the list is floating over the stage, so a hard cut
        reads as a clipped panel and the fade reads as "there is more". */
     mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 36px), transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 36px), transparent 100%);
+}
+
+.list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.list::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+}
+
+/* Behind the hover query, like every other hover affordance in this file: on
+   a touch screen `:hover` can stick to the last thing tapped, and a scrollbar
+   pinned open by a tap is worse than no scrollbar at all. */
+@media (hover: hover) {
+    .list:hover {
+        scrollbar-color: var(--track) transparent;
+
+        &::-webkit-scrollbar-thumb {
+            background: var(--track);
+        }
+    }
+}
+
+/* The keyboard gets the same affordance as the mouse. Not behind the hover
+   query, because there is no pointer involved in tabbing to a row. */
+.list:focus-within {
+    scrollbar-color: var(--track) transparent;
+
+    &::-webkit-scrollbar-thumb {
+        background: var(--track);
+    }
 }
 
 /* A list row is two sibling controls, not a button wrapping another button —

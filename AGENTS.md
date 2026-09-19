@@ -254,6 +254,14 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 - **`.seek` 是绝对定位在胶囊内部的**（贴着下沿、左右各让开 34px）：
   胶囊的圆角是 999px，行内边距小于 34px 时内容会跑到填充外面去。
 - 列表的 `.list` 带 `mask-image` 下沿渐隐 —— 它是浮在色场上的，硬切会被读成「面板被裁了」。
+- **列表的滚动条默认隐形，hover / focus 才显形**：`scrollbar-width: thin` +
+  `scrollbar-color: transparent transparent`，`:hover` / `:focus-within` 时换成
+  `var(--track)`，同时把 `::-webkit-scrollbar-thumb` 的 `background` 一起换掉
+  （两套写法都设成同一行为，因为引擎可能认标准属性、也可能认 `::-webkit-*` 伪元素）。
+  关键是 **`thin` 而不是 `none`**：滚动槽一直占着那 10px，所以显形时一行都不会横移
+  （实测两种状态下 `row item x 18 → 288` 完全一致）。hover 那半放在
+  `@media (hover: hover)` 里（触屏上 `:hover` 会黏在最后点过的东西上），
+  `:focus-within` 不在里面 —— 键盘没有指针。
 - **唱片的宽度要自己让开列表那一列**：
   `min(56vh, 44vw, 700px, calc(100vw - 2 * var(--side) - 56px))`。
   `44vw` 不够 —— 它量的是整个视口，而唱片是居中在视口里的，所以「窄而高」的窗口
