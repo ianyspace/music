@@ -152,12 +152,20 @@
    slides under the rows — measured at -19px on 900x1000. Reserving the list's
    column on both sides (`2 * var(--side)`) keeps a 40px gap between the rows
    and the disc at every size, and costs nothing above ~1340px wide, where the
-   other terms are already smaller. */
+   other terms are already smaller.
+
+   That reservation would otherwise run out of room on a very narrow window —
+   it reaches zero at 616px, and a record that has shrunk to nothing is worse
+   than one that tucks under the list. Hence the `max(300px, …)` floor: the
+   record stops shrinking and the list floats over its edge instead. The floor
+   starts to bite below ~880px wide, which is already under the 900px where
+   `pages/index.js` sends visitors to `/h5` — so every width the desktop layout
+   is actually served at keeps a positive gap (32px at 900x1000). */
 .rig {
     position: relative;
     display: grid;
     place-items: center;
-    width: min(56vh, 44vw, 700px, calc(100vw - 2 * var(--side) - 56px));
+    width: min(56vh, 44vw, 700px, max(300px, calc(100vw - 2 * var(--side) - 56px)));
     aspect-ratio: 1;
     flex: 0 0 auto;
 }
@@ -1791,7 +1799,7 @@
     .rig {
         /* Same terms as the base rule, with the narrower column and cap — the
            list-reserving term is unchanged because it reads `--side` itself. */
-        width: min(56vh, 46vw, 620px, calc(100vw - 2 * var(--side) - 56px));
+        width: min(56vh, 46vw, 620px, max(300px, calc(100vw - 2 * var(--side) - 56px)));
     }
 
     /* The title cell collapses and the transport stays centred, because both
