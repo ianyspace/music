@@ -43,6 +43,13 @@ import { haloTexture } from './textures';
  * accident that makes it look deliberate — the light appears to be *filling*
  * the line as it is sung.
  *
+ * Two things make the wipe legible rather than decorative, and both are
+ * shader-side because both are about a boundary rather than about the text:
+ * `UNSUNG` has to be low enough that sung and unsung are obviously different
+ * brightnesses, and a small additive *glint* rides the leading edge so the
+ * boundary is a moving thing rather than a lighting gradient. Neither costs an
+ * extra uniform — the glint is computed from `uWipe`.
+ *
  * A line change is not a cut. The whole plane starts 6cm low and 55% faded and
  * rises into place over about a fifth of a second, so the sheet reads as
  * *scrolling* even though only one line is ever drawn at a time. That is the
@@ -74,10 +81,23 @@ const LINE_GAP = 178;
 
 /** Half-height of the active line, in UV space, for the wipe's mask. */
 const BAND = 0.13;
-/** How bright the part of the line that has not been sung yet stays. */
-const UNSUNG = 0.45;
+/**
+ * How bright the part of the line that has not been sung yet stays. Low
+ * enough that the difference between sung and unsung is obvious at a glance —
+ * at 0.45 the two halves of a line sat close enough in brightness that the
+ * wipe read as a lighting gradient rather than as the song moving.
+ */
+const UNSUNG = 0.3;
 /** The softness of the wipe's edge, in UV space. */
 const EDGE = 0.035;
+/**
+ * A sliver of extra light riding on the wipe's leading edge, and how far it
+ * spreads. Without it the wipe is a boundary between two brightnesses; with it
+ * the boundary reads as a *thing* moving across the words, which is what makes
+ * the eye follow it to the next character.
+ */
+const GLINT = 0.05;
+const GLINT_STRENGTH = 0.55;
 
 /** How long the last line is assumed to take, with nothing after it to say. */
 const LAST_LINE_SECONDS = 4.5;
@@ -134,6 +154,8 @@ export const createLyrics = function () {
                 `float w = 1.0 - smoothstep(uWipe - ${EDGE}, uWipe + ${EDGE}, vMapUv.x);
                 float mask = 1.0 - smoothstep(uBand * 0.7, uBand, abs(vMapUv.y - 0.5));
                 diffuseColor.a *= mix(1.0, mix(${UNSUNG}, 1.0, w), mask);
+                float g = (vMapUv.x - uWipe) / ${GLINT};
+                diffuseColor.rgb += vec3(1.0, 0.62, 0.68) * exp(-g * g) * mask * ${GLINT_STRENGTH};
                 #include <opaque_fragment>`,
             );
     };
