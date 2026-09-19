@@ -344,6 +344,103 @@ const cycleRoundTrip = visited.slice(0, 4).map((mode) => {
 check('every one of the four phone modes survives a reload',
     cycleRoundTrip.every(Boolean), cycleRoundTrip.join(', '));
 
+/* --- 5. shuffle still has a prefetch target ----------------------------- */
+
+// Shuffle used to have no "next" until the song ended, so `upcomingTrack`
+// returned null and the prefetcher sat idle — fine while 关闭 was the default,
+// but 随机 is the default now, so the one mode that could not pre-download was
+// also the one most visitors are in. The prefetch is what makes background
+// auto-advance work on iOS, where a cold fetch is suspended until the page
+// comes back. So shuffle now draws its next song up front.
+
+const effectAround = function (text, marker) {
+    const at = text.indexOf(marker);
+    if (at === -1) return '';
+    const open = text.lastIndexOf('useEffect(() => {', at);
+    return open === -1 ? '' : blockOf(text, open + 'useEffect(() => {'.length - 1);
+};
+
+const drawMarker = "if (!shuffle || repeat === 'one' || !current || visibleTracks.length < 2)";
+const drawBody = effectAround(appJs, drawMarker);
+check('the shuffle draw was located in MusicApp.js', Boolean(drawBody), 'body extracted');
+check('the draw re-runs when the song changes',
+    /useEffect\(\(\) => \{[\s\S]{0,700}\}, \[shuffle, repeat, current, visibleTracks\]\)/.test(appJs),
+    '[shuffle, repeat, current, visibleTracks] deps');
+check('the draw never offers the song already playing',
+    /filter\(\(track\) => track\.id !== current\.track\.id\)/.test(drawBody), 'excludes current');
+check('the draw stands down when there is nothing to advance to',
+    /visibleTracks\.length < 2/.test(drawBody) && /if \(!pool\.length\)/.test(drawBody),
+    'length guards');
+
+check('upcomingTrack hands shuffle its drawn song',
+    /if \(shuffle\) return shuffleNext;/.test(appJs), 'shuffleNext returned');
+check('upcomingTrack no longer blanks out in shuffle',
+    !/if \(shuffle\) return null;/.test(appJs), 'no unconditional null');
+check('auto-advance plays the drawn song',
+    /const planned = shuffleNext[\s\S]{0,240}if \(planned\) play\(shuffleNext\);/.test(appJs),
+    'planned pick played');
+check('auto-advance falls back to a fresh draw',
+    /if \(planned\) play\(shuffleNext\);\s*\n\s*else stepTrack\(1\);/.test(appJs), 'fallback');
+check('a planned pick that left the list is not played',
+    /visibleTracks\.some\(\(track\) => track\.id === shuffleNext\.id\)/.test(appJs),
+    'existence checked');
+check('manual 下一首 uses the drawn song too',
+    /const planned = shuffle[\s\S]{0,260}if \(planned\) play\(shuffleNext\);\s*\n\s*else stepTrack\(1\);/.test(appJs),
+    'playNext');
+check('手动 上一首 still draws fresh',
+    /上一首 draws fresh/.test(appJs) && !/playPrev[\s\S]{0,400}play\(shuffleNext\)/.test(appJs),
+    'playPrev untouched');
+
+// The draw itself, driven for real: the pool must exclude the current song,
+// stay inside the visible list, and respect every stand-down guard.
+const runDraw = function (state, randomValue) {
+    const calls = [];
+    const original = Math.random;
+    Math.random = () => randomValue;
+    try {
+        const factory = new Function(
+            'shuffle', 'repeat', 'current', 'visibleTracks', 'setShuffleNext',
+            `return function () ${drawBody};`
+        );
+        factory(state.shuffle, state.repeat, state.current, state.visibleTracks,
+            (value) => calls.push(value))();
+    } finally {
+        Math.random = original;
+    }
+    return calls;
+};
+
+const list = [
+    { id: 'a', name: 'A' },
+    { id: 'b', name: 'B' },
+    { id: 'c', name: 'C' },
+];
+const playingA = { track: list[0] };
+
+let draw = runDraw({ shuffle: true, repeat: 'off', current: playingA, visibleTracks: list }, 0);
+check('the draw picks from the list', draw.length === 1 && draw[0].id === 'b', JSON.stringify(draw));
+draw = runDraw({ shuffle: true, repeat: 'off', current: playingA, visibleTracks: list }, 0.999);
+check('the draw reaches the far end of the list', draw.length === 1 && draw[0].id === 'c', JSON.stringify(draw));
+
+const neverSelf = [0, 0.34, 0.5, 0.66, 0.999].every((value) => {
+    const picked = runDraw({ shuffle: true, repeat: 'off', current: playingA, visibleTracks: list }, value);
+    return picked.length === 1 && picked[0].id !== 'a';
+});
+check('the draw never picks the song already playing', neverSelf, 'checked 5 positions');
+
+draw = runDraw({ shuffle: true, repeat: 'off', current: null, visibleTracks: list }, 0);
+check('no song playing means nothing is drawn', draw.length === 1 && draw[0] === null, JSON.stringify(draw));
+draw = runDraw({ shuffle: false, repeat: 'off', current: playingA, visibleTracks: list }, 0);
+check('sequential modes draw nothing', draw.length === 1 && draw[0] === null, JSON.stringify(draw));
+draw = runDraw({ shuffle: true, repeat: 'one', current: playingA, visibleTracks: list }, 0);
+check('单曲循环 draws nothing', draw.length === 1 && draw[0] === null, JSON.stringify(draw));
+draw = runDraw({ shuffle: true, repeat: 'off', current: playingA, visibleTracks: [list[0]] }, 0);
+check('a one-song list draws nothing', draw.length === 1 && draw[0] === null, JSON.stringify(draw));
+
+// ...and the mode the visitor lands in by default is the one that draws.
+check('the shipped default mode has a prefetch target',
+    DEFAULT_STATE.shuffle && DEFAULT_STATE.repeat !== 'one', '随机 draws');
+
 /* --- report ------------------------------------------------------------- */
 
 let failed = 0;

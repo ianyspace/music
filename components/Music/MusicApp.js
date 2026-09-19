@@ -174,6 +174,13 @@ const MusicApp = function ({ variant = 'h5' }) {
     const [progress, setProgress] = useState({ time: 0, duration: 0 });
     // Id of the track whose audio blob is (or is being) prefetched.
     const [prefetchId, setPrefetchId] = useState('');
+    // Shuffle has no fixed "next", so one is *drawn* when the current song
+    // starts and kept until it is played or the song changes. Drawing it early
+    // is the whole point: `upcomingTrack` can then hand it to the prefetcher,
+    // which is what makes background auto-advance work on iOS (a cold fetch
+    // there is suspended until the page returns). Without this, 随机 — the
+    // default mode — would be the one mode that cannot pre-download.
+    const [shuffleNext, setShuffleNext] = useState(null);
     const [lyrics, setLyrics] = useState(null);
     const [lyricsLoading, setLyricsLoading] = useState(false);
     const [lyricsVisible, setLyricsVisible] = useState(false);
@@ -1178,9 +1185,20 @@ const MusicApp = function ({ variant = 'h5' }) {
         play(visibleTracks[(index + delta + visibleTracks.length) % visibleTracks.length]);
     }, [current, visibleTracks, shuffle, play]);
 
+    // 下一首. In shuffle this plays the song drawn for this track rather than
+    // drawing a fresh one, so a manual skip is as instant as it is in the
+    // sequential modes (where it lands on exactly the prefetched track) instead
+    // of throwing that download away and waiting on a new one. Still random —
+    // the pick was random, it was just made a little earlier.
     const playNext = useCallback(function () {
-        stepTrack(1);
-    }, [stepTrack]);
+        const planned = shuffle
+            && current
+            && shuffleNext
+            && shuffleNext.id !== current.track.id
+            && visibleTracks.some((track) => track.id === shuffleNext.id);
+        if (planned) play(shuffleNext);
+        else stepTrack(1);
+    }, [shuffle, current, shuffleNext, visibleTracks, play, stepTrack]);
 
     const playPrev = useCallback(function () {
         // Standard player behaviour: restart the current song first.
@@ -1190,6 +1208,8 @@ const MusicApp = function ({ variant = 'h5' }) {
             setProgress((state) => ({ ...state, time: 0 }));
             return;
         }
+        // 上一首 draws fresh: replaying the song that was planned as the *next*
+        // one would not be "previous" by any reading.
         stepTrack(-1);
     }, [stepTrack]);
 
@@ -1245,15 +1265,32 @@ const MusicApp = function ({ variant = 'h5' }) {
         setPlayerClosing(false);
     }, []);
 
-    // Which track auto-advance will pick up at `ended` (sequential only —
-    // shuffle chooses randomly at the last moment, so nothing to prefetch).
+    // Draw the song shuffle will play after this one, once per song.
+    //
+    // Drawn here rather than inside `upcomingTrack` so the pick is stable: a
+    // `useMemo` factory is allowed to run more than once for the same deps, and
+    // a fresh random pick each time would make the prefetcher chase a different
+    // track on every render. Keyed on `current`, so skipping to another song
+    // (by hand or by auto-advance) draws a new one.
+    useEffect(() => {
+        if (!shuffle || repeat === 'one' || !current || visibleTracks.length < 2) {
+            setShuffleNext(null);
+            return;
+        }
+        const pool = visibleTracks.filter((track) => track.id !== current.track.id);
+        if (!pool.length) { setShuffleNext(null); return; }
+        setShuffleNext(pool[Math.floor(Math.random() * pool.length)]);
+    }, [shuffle, repeat, current, visibleTracks]);
+
+    // Which track auto-advance will pick up at `ended`. Sequential modes know
+    // this from the list order; shuffle uses the song drawn above.
     const upcomingTrack = useMemo(function () {
         if (!current || repeat === 'one' || visibleTracks.length === 0) return null;
-        if (shuffle) return null;
+        if (shuffle) return shuffleNext;
         const index = visibleTracks.findIndex((track) => track.id === current.track.id);
         if (index === -1) return visibleTracks[0];
         return visibleTracks[index + 1] || (repeat === 'all' ? visibleTracks[0] : null);
-    }, [current, repeat, shuffle, visibleTracks]);
+    }, [current, repeat, shuffle, shuffleNext, visibleTracks]);
 
     // Keep the next song's blob downloaded while the current one plays, so
     // background auto-advance works on iOS (a cold fetch there is suspended
@@ -1266,8 +1303,10 @@ const MusicApp = function ({ variant = 'h5' }) {
 
     // Auto-advance at the end of a track. With the next blob already
     // prefetched this is a plain src swap — it keeps rolling even while the
-    // page sits in the background on iOS; only the rare un-cached case
-    // (shuffle, dead prefetch) falls back to a foreground fetch.
+    // page sits in the background on iOS. Every mode has a prefetch target now
+    // (shuffle's comes from the draw above), so the foreground fallback is left
+    // to genuinely un-cached cases: a dead prefetch, a pick the list dropped,
+    // or a library that was never downloaded.
     const handleEnded = useCallback(function () {
         setIsPlaying(false);
         if (!current) return;
@@ -1280,13 +1319,22 @@ const MusicApp = function ({ variant = 'h5' }) {
             return;
         }
         if (shuffle && visibleTracks.length > 1) {
-            stepTrack(1);
+            // Play the song drawn when this one started, so the blob the
+            // prefetcher already pulled is the one that plays — that is what
+            // keeps auto-advance rolling while the page is in the background.
+            // A fresh draw (`stepTrack`) is only the fallback for when the list
+            // changed under us and the pick is no longer in it.
+            const planned = shuffleNext
+                && shuffleNext.id !== current.track.id
+                && visibleTracks.some((track) => track.id === shuffleNext.id);
+            if (planned) play(shuffleNext);
+            else stepTrack(1);
             return;
         }
         const next = visibleTracks[visibleTracks.findIndex((track) => track.id === current.track.id) + 1];
         if (next) play(next);
         else if (repeat === 'all' && visibleTracks.length > 0) play(visibleTracks[0]);
-    }, [current, repeat, shuffle, visibleTracks, stepTrack, play]);
+    }, [current, repeat, shuffle, shuffleNext, visibleTracks, stepTrack, play]);
 
     // Mount the fetched blob into the audio element; browsers only allow
     // autoplay inside the user-gesture chain, so fall back to a hint.
