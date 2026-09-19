@@ -28,9 +28,12 @@ import {
     IconSun,
 } from './icons';
 import {
+    DESKTOP_LIST_KEY,
     formatSize,
     formatTime,
     parseTrackName,
+    storageGet,
+    storageSet,
     trackGradient,
 } from './shared';
 import { DRIVE_SOURCE } from './librarySource';
@@ -187,6 +190,32 @@ const DesktopMusic = function ({
     const modeTimerRef = useRef(0);
     const menuRef = useRef(null);
     const [cacheCount, setCacheCount] = useState(0);
+
+    // Restored on mount and written back on every change, from one effect.
+    //
+    // One effect rather than a read-effect plus a write-effect: the two would
+    // race on the mount commit, because effects run in declaration order and
+    // the writer would still see the pre-restore default — storing it over the
+    // visitor's choice. Both effects would look correct on their own.
+    //
+    // Restoring here rather than in `useState` is deliberate: this is a static
+    // export, so an initialiser that touches localStorage would also run during
+    // prerender and hand the client markup that disagrees with what it reads.
+    //
+    // Both values are matched explicitly, and nothing is written until the
+    // visitor actually folds the panel away or back, so "no value saved yet"
+    // stays a state of its own.
+    const listPrefSyncedRef = useRef(false);
+    useEffect(() => {
+        if (!listPrefSyncedRef.current) {
+            listPrefSyncedRef.current = true;
+            const saved = storageGet(DESKTOP_LIST_KEY);
+            if (saved === 'on') setListOpen(true);
+            else if (saved === 'off') setListOpen(false);
+            return;
+        }
+        storageSet(DESKTOP_LIST_KEY, listOpen ? 'on' : 'off');
+    }, [listOpen]);
 
     useEffect(() => {
         let instance;

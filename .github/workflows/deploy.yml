@@ -112,6 +112,12 @@ jobs:
           # isolation. The lifted effect body is driven against a fake
           # localStorage here to pin that down.
           node scripts/check-playback-mode.js
+          # The inventory guard for everything under `music:setting:*`. A
+          # preference with only half a round trip — read but never written, or
+          # declared and wired to nothing — fails silently: the control still
+          # flips and simply reverts on the next reload. The playback mode
+          # shipped that way once already, so the whole inventory is walked.
+          node scripts/check-settings-persistence.js
           echo "build output verified"
 
       - name: Setup Pages

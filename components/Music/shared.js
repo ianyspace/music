@@ -29,6 +29,12 @@ export const RIPPLES_KEY = 'music:setting:ripples';
 export const SHUFFLE_KEY = 'music:setting:shuffle';
 export const REPEAT_KEY = 'music:setting:repeat';
 export const REPEAT_MODES = ['off', 'all', 'one'];
+// Whether the wide-screen layout shows its playlist panel. A layout preference
+// like the theme, and it sits next to the theme and the ripples switch in the
+// desktop settings drawer — so it has to survive a reload for the same reason
+// they do: a setting that silently reverts reads as a broken switch rather than
+// as a default.
+export const DESKTOP_LIST_KEY = 'music:setting:desktopList';
 // The two list preferences. Both are *sets/orders of track keys* — the same
 // `<source>:<id>` form `audioCacheKey` builds — held as a JSON array in
 // localStorage rather than in IndexedDB: they are small, they are read on
