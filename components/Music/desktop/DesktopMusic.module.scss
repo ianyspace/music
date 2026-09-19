@@ -143,12 +143,21 @@
    it. `min()` against the viewport width keeps the record from eating the
    list's column on a narrow window, and the pixel cap stops it ballooning on
    a 4K screen. The height term is the one that matters: at 56vh the record
-   plus its caption still clears the capsule bar at every window height. */
+   plus its caption still clears the capsule bar at every window height.
+
+   The last term is the one that has to know about the *list*. `44vw` alone
+   is not enough, because it measures the whole viewport while the record is
+   centred in it: a window that is narrow **and tall** (a snapped half of a
+   1920x1080 screen is 960x1040) grows the disc on `56vh` until its left edge
+   slides under the rows — measured at -19px on 900x1000. Reserving the list's
+   column on both sides (`2 * var(--side)`) keeps a 40px gap between the rows
+   and the disc at every size, and costs nothing above ~1340px wide, where the
+   other terms are already smaller. */
 .rig {
     position: relative;
     display: grid;
     place-items: center;
-    width: min(56vh, 44vw, 700px);
+    width: min(56vh, 44vw, 700px, calc(100vw - 2 * var(--side) - 56px));
     aspect-ratio: 1;
     flex: 0 0 auto;
 }
@@ -1734,7 +1743,9 @@
     }
 
     .rig {
-        width: min(56vh, 46vw, 620px);
+        /* Same terms as the base rule, with the narrower column and cap — the
+           list-reserving term is unchanged because it reads `--side` itself. */
+        width: min(56vh, 46vw, 620px, calc(100vw - 2 * var(--side) - 56px));
     }
 
     /* The title cell collapses and the transport stays centred, because both
