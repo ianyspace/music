@@ -19,13 +19,17 @@
 // *is* the page and the player is a screen pushed on top of it.
 //
 // **Every surface here is CSS glass** — `backdrop-filter` over the `.backdrop`
-// colour field, plus a translucent fill, a hairline border and an inset
-// highlight. There is no WebGL and no glass library: the surfaces are ordinary
-// elements, so they survive a failed shader, print, and every browser that
-// never had one. The recipe itself is a set of tokens (`--glass-*`) defined by
+// colour field, plus a translucent fill and a hairline border. There is no
+// WebGL and no glass library: the surfaces are ordinary elements, so they
+// survive a failed shader, print, and every browser that never had one. The
+// recipe itself is a set of tokens (`--glass-*`) defined by
 // `DesktopApp.module.scss`, which owns the desktop token root — this file only
 // consumes them, so the workspace and the shell's own chrome (dialog, toast,
 // panels) cannot drift apart.
+//
+// The glass is *flat*: no inset highlight along the top edge, no tight shadow
+// under the bottom one. Those two were what gave a tile a lit lid and a raised
+// edge — a button, not a pane. See the token block for the whole story.
 //
 // The record is the exception, and deliberately so: it is a *vinyl* — an
 // opaque black disc with grooves — because a big translucent circle has
@@ -532,6 +536,21 @@
     pointer-events: none;
 }
 
+/* The column's first row: the fold toggle and the search, side by side. It is
+   a row of controls, not a surface — same `pointer-events: none` here as on
+   `.side`, with `auto` on the two controls themselves, because the half of the
+   row the search does not fill is empty space lying over the record.
+
+   `padding-bottom: 0`: the gap down to the list is `.side`'s own `gap`, so
+   there is exactly one number deciding it. */
+.side-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
 .side-toggle {
     display: inline-flex;
     align-items: center;
@@ -566,8 +585,19 @@
         color: var(--text);
         -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
         backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-        box-shadow: var(--glass-shadow), var(--glass-inset);
+        box-shadow: var(--glass-shadow);
     }
+}
+
+/* Folded, the search goes with the list: it filters the list, and there is no
+   list on screen. `visibility` rather than `display`, so the row keeps its
+   height and the toggle does not move by a pixel — and, on the field, because
+   an animation's fill (see `search-open`) outranks a plain declaration and
+   would win an `opacity: 0` here. */
+.side-folded .search-btn,
+.side-folded .search {
+    visibility: hidden;
+    pointer-events: none;
 }
 
 /* No background, no border, no shadow — the list *is* the content. The panel
@@ -588,27 +618,14 @@
     pointer-events: none;
 }
 
-/* --- the search, and only the search --------------------------------------
+/* --- the search, in the row with the toggle -------------------------------
    One control here now. The three-dots popover that used to sit beside it is
    gone: its three entries — the Drive account, the cache manager, the hidden
    songs — are rows in the settings dialog, which is the one surface on this
    page that is allowed to be a list of actions. */
 
-.tools {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-    /* No side padding, so the tile below lines up with `.side-toggle` directly
-       above it: the two are the same 36px square, and two stacked squares that
-       disagree by 2px read as a mistake. `18` is the column's own padding. */
-    padding: 0 0 10px;
-}
-
-/* The closed state is a *button*, not an empty search field. It used to be a
-   full-width pill carrying the placeholder 「搜索歌曲」, which looks like an
-   input you can type into and is not one — and it spent the column's widest row
-   saying nothing. Same tile as the panel toggle, so the two stack as a pair. */
+/* Same tile as the fold toggle it sits beside, down to the radius: the two are
+   the row, and two squares that disagree by 2px read as a mistake. */
 .search-btn {
     display: inline-flex;
     align-items: center;
@@ -621,6 +638,7 @@
     border-radius: 12px;
     background: transparent;
     color: var(--text-2);
+    pointer-events: auto;
     cursor: pointer;
     transition: color 0.18s, background-color 0.18s, transform 0.12s;
 
@@ -645,13 +663,16 @@
     gap: 8px;
     flex: 1;
     min-width: 0;
-    /* 36px, matching the button it replaces and the toggle above it: a
+    /* 36px, matching the button it replaces and the tile it sits beside: a
        different height would move the list up or down as the field opens. */
     height: 36px;
     padding: 0 4px 0 12px;
     border: 1px solid var(--glass-border);
-    border-radius: 18px;
+    /* The tile's radius, not a pill: the two share a row, and at 36px tall a
+       18px radius next to a 12px one reads as two different rows. */
+    border-radius: 12px;
     background: var(--glass-bg-soft);
+    pointer-events: auto;
     /* The field unrolls out of the button's corner rather than swelling from
        its middle — it is the button, opened. */
     transform-origin: left center;
@@ -855,7 +876,15 @@
    row, which is why the tint lives there and not on the button.
 
    Named `track-row`, not `row`: `.row` is the settings dialog's row and is
-   declared further down, so a second `.row` here would be silently overridden. */
+   declared further down, so a second `.row` here would be silently overridden.
+
+   `track-row-active` is *added to* `track-row`, never used instead of it. It
+   used to be the other way round — the `<li>` carried one class or the other —
+   and that was a real bug: the layout (`display: flex`, the centring, the
+   radius) lives on `track-row`, so the playing row fell back to a plain block.
+   Its play target turned into a full-width block and its three-dots button
+   wrapped onto a second line, which made the one row the visitor cares about
+   twice as tall as every other row in the list. */
 .track-row {
     display: flex;
     align-items: center;
@@ -1208,7 +1237,7 @@
     cursor: pointer;
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    box-shadow: var(--glass-shadow), var(--glass-inset);
+    box-shadow: var(--glass-shadow);
     transition: transform 0.16s, background-color 0.18s;
 
     &:hover {
@@ -1241,7 +1270,7 @@
     border-radius: 999px;
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow), var(--glass-inset);
+    box-shadow: var(--glass-shadow);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
 }
@@ -1329,52 +1358,14 @@
     }
 }
 
-/* the current song, repeated in the bar so the bar stands on its own */
+/* the current song, repeated in the bar so the bar stands on its own.
+   It used to open with a 36px spinning black disc — a third copy of the record
+   (the stage has the real one, the row has the cover) and, at that size, a dark
+   dot with a smudge of artwork in it. The title is the thing the bar is for. */
 .bar-track {
     display: flex;
     align-items: center;
-    gap: 11px;
     min-width: 0;
-}
-
-.bar-disc {
-    position: relative;
-    width: 36px;
-    height: 36px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background:
-        repeating-radial-gradient(circle at 50% 50%,
-            rgba(255, 255, 255, 0.06) 0 1px,
-            rgba(0, 0, 0, 0) 1px 3.5px),
-        radial-gradient(circle at 50% 50%, #26272d 0%, #141519 45%, #0a0b0e 80%, #17181d 100%);
-    box-shadow: 0 5px 12px -5px rgba(0, 0, 0, 0.5),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-    animation: disc-spin 12s linear infinite;
-}
-
-.bar-disc-paused {
-    animation-play-state: paused;
-}
-
-.bar-disc-cover {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 60%;
-    height: 60%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-    color: rgba(255, 255, 255, 0.92);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
-
-    svg {
-        width: 44%;
-        height: 44%;
-    }
 }
 
 .bar-label {
@@ -1439,12 +1430,17 @@
     color: var(--accent);
 }
 
+/* The one solid-colour button in the bar, and the only one that is allowed to
+   be bigger than the 38px ring of its neighbours — but only a little. At 50px
+   inside a 76px capsule it was the bar's subject; the song is the subject, and
+   the transport is a control. 44px still reads as "the main one" beside 38px
+   buttons while leaving the capsule its air. */
 .ctrl-play {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 50px;
-    height: 50px;
+    width: 44px;
+    height: 44px;
     margin: 0 3px;
     padding: 0 0 0 2px;
     border: 0;
@@ -1470,8 +1466,8 @@
     }
 
     svg {
-        width: 22px;
-        height: 22px;
+        width: 19px;
+        height: 19px;
     }
 }
 
@@ -1792,13 +1788,11 @@
     .disc,
     .disc::after,
     .ripple,
-    .bar-disc,
     .spin,
     .panel,
     .stage-record,
     .search,
     .lyrics,
-    .menu,
     .mode-toast,
     .locate-btn,
     .arm-swing {

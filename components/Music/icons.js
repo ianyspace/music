@@ -261,8 +261,14 @@ export const IconLogout = () => (
     </SvgStroke>
 );
 
-// Fold-away song list: a panel with a divider rail on its left, with the
-// chevron pointing at the edge the panel actually collapses towards (left).
+// Fold-away song list: a panel with a divider rail on its left and a chevron
+// in the narrow column beside it.
+//
+// This one's chevron points *right* — out of the rail and into the list — so
+// it is the "the list is here, bring it out" half of the pair; `IconPanelFold`
+// below is the same glyph mirrored. The toggle used to show this mark in both
+// states, which left the one control on the page with no way to say which way
+// it was about to go.
 export const IconPanel = ({ size = 18 }) => (
     <SvgStroke size={size}>
         <rect x="3" y="4.5" width="18" height="15" rx="3" />
@@ -271,11 +277,27 @@ export const IconPanel = ({ size = 18 }) => (
     </SvgStroke>
 );
 
+// The same panel, chevron reversed: "fold it away to the left". Deliberately
+// the mirror image and nothing else — a different shape would read as a
+// different control, and this is one control in two states.
+export const IconPanelFold = ({ size = 18 }) => (
+    <SvgStroke size={size}>
+        <rect x="3" y="4.5" width="18" height="15" rx="3" />
+        <path d="M9.2 4.5v15" />
+        <path d="M7.4 10.2 5.6 12l1.8 1.8" strokeWidth="1.6" />
+    </SvgStroke>
+);
+
 // Settings entry of the wide-screen layout (top-right glass button).
+//
+// The full material-style cog — eight teeth, each with its own chamfer, plus a
+// hub — turned into a grey smudge at 20px, and sitting alone in the corner of
+// an otherwise empty screen it read as decoration rather than as a door. This
+// is the same idea cut down to what survives the size: a hub and six spokes.
 export const IconGear = ({ size = 20 }) => (
     <SvgStroke size={size}>
         <circle cx="12" cy="12" r="3.2" />
-        <path d="M19.4 14.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.11a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.11a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.11a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.11a1.7 1.7 0 0 0-1.49 1.03z" />
+        <path d="M12 3.2V6.2M12 20.8V17.8M16.4 4.4 14.9 7M7.6 4.4 9.1 7M16.4 19.6 14.9 17M7.6 19.6 9.1 17" />
     </SvgStroke>
 );
 

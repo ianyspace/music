@@ -9,9 +9,16 @@
 // declares them.
 //
 // Nothing here is WebGL. A "glass" surface is a translucent fill, a hairline
-// border, an inset highlight and a `backdrop-filter` over whatever is painted
-// behind it — which is why the workspace keeps its colour field in `.backdrop`
-// and why the drawer, sitting over the workspace, frosts that instead.
+// border and a `backdrop-filter` over whatever is painted behind it — which is
+// why the workspace keeps its colour field in `.backdrop` and why the drawer,
+// sitting over the workspace, frosts that instead.
+//
+// There used to be a ninth value, `--glass-inset`: `inset 0 1px 0` of white,
+// a bright line along the top edge of every surface. That single line is what
+// made a tile read as a *raised* button — a bevelled lid catching the light —
+// rather than as a pane of frosted glass. It is gone, along with the tight
+// `0 2px 10px -4px` layer of the shadow that drew the card's edge; what is
+// left is one wide ambient shadow and no bevel. Same tokens, flat glass.
 
 .page {
     --accent: #fa233b;
@@ -30,18 +37,22 @@
     --field: rgba(120, 120, 128, 0.13);
 
     /* --- the glass recipe ------------------------------------------------
-       Every frosted surface in the desktop layout is these eight values and
+       Every frosted surface in the desktop layout is these seven values and
        nothing else. `-soft` is for insets that sit *on* glass (a search field
        inside the panel), `-strong` for surfaces that must read over busy
-       content (the drawer, the settings panel, the floating menu). */
+       content (the drawer, the settings panel, the floating menu).
+
+       `--glass-shadow` is one wide, low-opacity ambient layer, not a lift:
+       it separates the surface from the field behind it without drawing an
+       edge. A second, tight layer plus a top highlight is exactly the
+       raised-plastic look this is avoiding. */
     --glass-blur: 26px;
     --glass-sat: 1.8;
     --glass-bg: rgba(255, 255, 255, 0.46);
     --glass-bg-soft: rgba(255, 255, 255, 0.34);
     --glass-bg-strong: rgba(255, 255, 255, 0.66);
     --glass-border: rgba(255, 255, 255, 0.6);
-    --glass-shadow: 0 26px 60px -32px rgba(24, 30, 62, 0.4), 0 2px 10px -4px rgba(24, 30, 62, 0.12);
-    --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    --glass-shadow: 0 18px 46px -30px rgba(24, 30, 62, 0.34);
 
     --radius-lg: 26px;
     --radius-md: 18px;
@@ -70,8 +81,7 @@
     --glass-bg-soft: rgba(30, 34, 42, 0.38);
     --glass-bg-strong: rgba(28, 31, 39, 0.72);
     --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-shadow: 0 26px 60px -32px rgba(0, 0, 0, 0.72), 0 2px 10px -4px rgba(0, 0, 0, 0.45);
-    --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 18px 46px -30px rgba(0, 0, 0, 0.6);
 }
 
 /* No `backdrop-filter`: the fills have to carry the surfaces on their own.
@@ -146,7 +156,7 @@
     border-radius: 24px;
     background: var(--glass-bg-strong);
     border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow), var(--glass-inset);
+    box-shadow: var(--glass-shadow);
     -webkit-backdrop-filter: blur(30px) saturate(1.9);
     backdrop-filter: blur(30px) saturate(1.9);
     animation: card-in 0.26s cubic-bezier(0.32, 0.72, 0.2, 1) both;
@@ -333,7 +343,7 @@
     border-radius: 16px;
     background: var(--glass-bg-strong);
     border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow), var(--glass-inset);
+    box-shadow: var(--glass-shadow);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     color: var(--text);

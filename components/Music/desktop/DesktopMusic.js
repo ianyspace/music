@@ -15,6 +15,7 @@ import {
     IconNext,
     IconNote,
     IconPanel,
+    IconPanelFold,
     IconPause,
     IconPlay,
     IconPrev,
@@ -571,60 +572,79 @@ const DesktopMusic = function ({
                 two things inside. Without that the empty half of the column
                 would swallow clicks meant for the record behind it. */}
             <div className={`${styles.side}${listVisible ? '' : ` ${styles['side-folded']}`}`}>
-                <button
-                    type="button"
-                    className={styles['side-toggle']}
-                    onClick={() => setListOpen((open) => !open)}
-                    onPointerEnter={() => setListHover(true)}
-                    onPointerLeave={() => setListHover(false)}
-                    aria-expanded={listVisible}
-                    aria-label={listVisible ? '收起列表' : '展开列表'}
-                    title={listVisible ? '收起列表' : '展开列表'}
-                >
-                    <IconPanel />
-                </button>
+                {/* One row, two controls: fold the list away, and search it.
+                    They used to be stacked — the toggle alone at the top of the
+                    column, the search button on the panel's own tool row below
+                    it — which spent two rows on two 36px squares and pushed the
+                    first song down by a full row.
+
+                    `pointer-events: none` on the row and `auto` on each control,
+                    exactly like the column itself: the empty half of the row
+                    sits over the record, and a dead strip that swallows clicks
+                    is the one thing this page must not have. */}
+                <div className={styles['side-head']}>
+                    <button
+                        type="button"
+                        className={styles['side-toggle']}
+                        onClick={() => setListOpen((open) => !open)}
+                        onPointerEnter={() => setListHover(true)}
+                        onPointerLeave={() => setListHover(false)}
+                        aria-expanded={listVisible}
+                        aria-label={listVisible ? '收起列表' : '展开列表'}
+                        title={listVisible ? '收起列表' : '展开列表'}
+                    >
+                        {/* The chevron follows the state, not the label: it
+                            points the way the list will move. */}
+                        {listVisible ? <IconPanelFold /> : <IconPanel />}
+                    </button>
+
+                    {/* The closed state is a *button*, not an empty search
+                        field. It used to be a full-width pill carrying the
+                        placeholder 「搜索歌曲」, which looks like an input you
+                        can type into and is not one — and it spent the column's
+                        widest row saying nothing. Same 36px square as the toggle
+                        beside it, so the row is one line whether the field is
+                        open or shut and the list never shifts. */}
+                    {searchOpen ? (
+                        <label className={styles.search}>
+                            <span className={styles['search-icon']}><IconSearch /></span>
+                            <input
+                                ref={searchInputRef}
+                                type="search"
+                                value={search}
+                                onChange={(event) => onSearch(event.target.value)}
+                                onKeyDown={(event) => { if (event.key === 'Escape') closeSearch(); }}
+                                placeholder="搜索歌曲或歌手"
+                                aria-label="搜索歌曲或歌手"
+                            />
+                            <button
+                                type="button"
+                                className={styles['search-close']}
+                                title="关闭搜索"
+                                aria-label="关闭搜索"
+                                onClick={closeSearch}
+                            >
+                                ×
+                            </button>
+                        </label>
+                    ) : (
+                        <button
+                            type="button"
+                            className={styles['search-btn']}
+                            title="搜索"
+                            aria-label="搜索歌曲"
+                            onClick={() => setSearchOpen(true)}
+                        >
+                            <IconSearch />
+                        </button>
+                    )}
+                </div>
 
                 <div
                     className={styles.panel}
                     onPointerEnter={() => setListHover(true)}
                     onPointerLeave={() => setListHover(false)}
                 >
-                    <div className={styles.tools}>
-                        {searchOpen ? (
-                            <label className={styles.search}>
-                                <span className={styles['search-icon']}><IconSearch /></span>
-                                <input
-                                    ref={searchInputRef}
-                                    type="search"
-                                    value={search}
-                                    onChange={(event) => onSearch(event.target.value)}
-                                    onKeyDown={(event) => { if (event.key === 'Escape') closeSearch(); }}
-                                    placeholder="搜索歌曲或歌手"
-                                    aria-label="搜索歌曲或歌手"
-                                />
-                                <button
-                                    type="button"
-                                    className={styles['search-close']}
-                                    title="关闭搜索"
-                                    aria-label="关闭搜索"
-                                    onClick={closeSearch}
-                                >
-                                    ×
-                                </button>
-                            </label>
-                        ) : (
-                            <button
-                                type="button"
-                                className={styles['search-btn']}
-                                title="搜索"
-                                aria-label="搜索歌曲"
-                                onClick={() => setSearchOpen(true)}
-                            >
-                                <IconSearch />
-                            </button>
-                        )}
-                    </div>
-
                     {/* The list is the only content here: no library card, no
                         source badge, no panel of its own. It scrolls straight
                         over the colour field, and a row only paints itself —
@@ -665,7 +685,7 @@ const DesktopMusic = function ({
                                         <li
                                             key={track.id}
                                             data-track-id={track.id}
-                                            className={active ? styles['track-row-active'] : styles['track-row']}
+                                            className={`${styles['track-row']}${active ? ` ${styles['track-row-active']}` : ''}`}
                                         >
                                             <button
                                                 type="button"
@@ -774,18 +794,6 @@ const DesktopMusic = function ({
                 <div className={styles['bar-row']}>
                     {/* the song, once more — the bar stays useful on its own */}
                     <span className={styles['bar-track']}>
-                        <span
-                            className={`${styles['bar-disc']}${isPlaying ? '' : ` ${styles['bar-disc-paused']}`}`}
-                            aria-hidden="true"
-                        >
-                            <span
-                                className={styles['bar-disc-cover']}
-                                style={{ background: gradient }}
-                            >
-                                <Cover track={current ? current.track : null} />
-                                <IconNote />
-                            </span>
-                        </span>
                         <Marquee
                             text={current ? `${title} - ${artist}` : '还没有播放中的歌曲'}
                             className={styles['bar-label']}

@@ -200,7 +200,14 @@ pages/desktop.js ─▶ components/Music/desktop/DesktopApp.js ┘   + Cover/Mar
 ### 桌面端的毛玻璃
 
 **纯 CSS，没有 WebGL，没有玻璃库**（原来的 `@ybouane/liquidglass` 已卸载）。
-一个「玻璃面」就是四件事：半透明填充 + 发丝描边 + 内高光 + `backdrop-filter`。
+一个「玻璃面」就是三件事：半透明填充 + 发丝描边 + `backdrop-filter`。
+
+**它是平的，不是立体的**。这里曾经有第四件事 `--glass-inset`
+（`inset 0 1px 0 rgba(255,255,255,…)`，每个面的上沿一条亮线）和 `--glass-shadow`
+里那层紧贴的 `0 2px 10px -4px`。那条亮线就是「立体感」的来源 —— 一个被照亮的盖子，
+读成凸起的塑料按钮，而不是一块磨砂玻璃。两个都已删除，`--glass-shadow` 只剩一层
+宽而淡的环境投影（只是把面和背后的色场分开，不描边）。**加回任何内阴影 / 顶高光
+都会把这个观感带回来**，要加请先确认。
 
 token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（浅色）和
 `.page.theme-dark`（深色）。`DesktopMusic.module.scss`、`DesktopSheetChrome.module.scss`
@@ -211,8 +218,8 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 | `--glass-blur` / `--glass-sat` | `backdrop-filter: blur() saturate()` 的两个参数 |
 | `--glass-bg` | 常规面：胶囊播放条、设置按钮、折叠后的列表开关 |
 | `--glass-bg-soft` | 玻璃**之上**的凹陷（搜索框、输入框、设置里的曲库卡片） |
-| `--glass-bg-strong` | 要压住繁忙内容的面：菜单、设置弹窗、面板卡片、toast、定位按钮 |
-| `--glass-border` / `--glass-inset` / `--glass-shadow` | 描边、内高光、投影 |
+| `--glass-bg-strong` | 要压住繁忙内容的面：设置弹窗、面板卡片、toast、定位按钮 |
+| `--glass-border` / `--glass-shadow` | 描边、环境投影 |
 
 `.backdrop` 是**独立的兄弟层**（不是 `.root` 自己的背景）：`backdrop-filter` 只采样
 它**背后**已经画好的东西，把四团色晕放在自己那一格里，模糊才有东西可糊。
@@ -264,15 +271,31 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
   不在 `.item` 上：右侧的三个点是行的一部分，底色只铺到播放按钮就停下，
   会被读成「两个控件」。`.track-row-active` 必须声明在 `.track-row:hover` **之后**
   （两者同权重），并且要自己写 `:hover`，否则悬停中的播放行会掉回 `--hover`。
+  **`.track-row-active` 是「加到 `.track-row` 上」，绝不能替代它** ——
+  这里踩过一次：`<li>` 曾经二选一地挂一个类，而布局（`display: flex`、居中、
+  圆角）全在 `.track-row` 上，于是正在播放那一行退化成普通块级盒，
+  播放按钮撑满整宽、三个点被挤到第二行，**整行比别的行高一倍**。
   随之而来的：`.item-more:hover` **只改颜色、不填底** —— `--hover` 是半透明的，
   再填一次会把同一层淡色画两遍，行里会出现一块明显更深的方块。
-- 左侧那一列顶部只剩**一个搜索按钮**（`.search-btn`，36px 方块，和 `.side-toggle`
-  同尺寸、同 `padding`，两个方块叠着不会差 2px）：点击后它才变成整行的输入框
-  （`.search` 也是 36px，否则开合会让列表上下跳 2px）。原来那个常驻的
-  「搜索框样子的按钮」看起来像能输入、其实是按钮，还占了整列最宽的一行什么也没说。
+- **列表那一列顶部是一行两个 36px 方块**（`.side-head`：折叠开关 `.side-toggle`
+  + 搜索按钮 `.search-btn`），展开搜索时 `.search` 顶掉按钮、占满这一行剩下的宽度。
+  三者都是 36px、圆角都是 12px，所以开合搜索时列表一个像素都不动 ——
+  它们曾经是上下两行（开关在列顶、搜索在面板自己的工具行），白占一行高度。
+  `.side-head` 和 `.side` 一样是 `pointer-events: none`，只有两个控件是 `auto`：
+  行里搜索没占满的那半边是悬在唱片上的空白，不能吃掉点击。
+  折叠时搜索跟着列表一起走（`.side-folded .search-btn, .side-folded .search`，
+  用 `visibility` 而不是 `display`，行高不变、开关不移位；`.search` 上不能用
+  `opacity`，因为 `search-open` 动画的 fill 优先级高于普通声明）。
+  **折叠开关的图标必须分状态**：展开时 `IconPanelFold`（雪佛龙头朝左，
+  「收起来」），折叠时 `IconPanel`（朝右，「拿出来」）—— 两个是同一枚图标的镜像，
+  形状不同会被读成两个控件。原来两种状态共用一枚图标，那个按钮就没法说明自己要往哪走。
   列表头上那个三点弹出菜单（`.menu-*`）**已删除**：它的三项
   （云盘账号 / 缓存管理 / 不喜欢歌曲）都搬进了右上角设置弹窗，其中「不喜欢歌曲」
   是新增的一行，且**不在 `connected` 分支里** —— 公共曲库也有被隐藏的歌。
+- **底部胶囊条里没有唱片**：`.bar-disc` 那枚 36px 旋转黑胶已删除 ——
+  舞台有真的唱片、行里有封面，那是第三份；在这个尺寸上它只是一枚带糊图的深色圆点。
+  播放 / 暂停按钮是 44px（曾经 50px）：条里唯一实心色的按钮，可以比旁边 38px 的
+  大一点，但整条的主角是歌名，不是它。
 - **滚动条默认隐形，hover / focus 才显形**：这条规则是 `.list, .settings-body` **并列**的
   一条（页面上只有这两处滚动）。`scrollbar-width: thin` +
   `scrollbar-color: transparent transparent`，`:hover` / `:focus-within` 时换成
