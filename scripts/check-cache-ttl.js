@@ -329,6 +329,35 @@ check('no file refreshes an expiry inside a record',
     !/expiresAt: refreshed/.test(cacheJs) && !/refreshed/.test(cacheJs),
     'no refresh path');
 
+/* --- 10. the copy does not promise more than the cache can do ----------- */
+
+// The cache keeps audio on the device, but it is not an offline shell: with no
+// service worker the site cannot open without a network, and a cached song only
+// plays from a page that is already open. 「之后离线也能听」 on its own reads as
+// "I can open this offline", which is not true.
+const managerCopy = managerJs
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+check('the cache manager does not promise the site opens offline',
+    !/离线也能听|离线可用/.test(managerCopy), 'no bare offline promise');
+check('...and says the page has to be open for it to help',
+    /页面开着的时候断网也照样听/.test(managerCopy), 'scope stated');
+// The list cache is the one that is genuinely permanent, and its comment used
+// to claim it was what "makes the app open with no network".
+const listJs = read('components/Music/librarySource.js');
+const listComments = listJs
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+check('the list cache comment still says it is not an offline shell',
+    /It is \*\*not\*\* an offline shell/.test(listJs), 'states the limit');
+check('...and points at what does survive offline',
+    /audio cache/.test(listJs), 'the audio cache, for an open page');
+check('...with the old claim gone',
+    !/open with no network|offline app opens/.test(listJs), 'no stale claim');
+check('...but the permanence of the list itself is still documented',
+    /NEVER_EXPIRES/.test(listComments), 'expiresAt: NEVER_EXPIRES');
+
 /* --- report ------------------------------------------------------------- */
 
 let failed = 0;

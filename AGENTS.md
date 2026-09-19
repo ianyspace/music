@@ -17,7 +17,8 @@
 | `utils/retireServiceWorker.js` | 注销旧 Service Worker 的过渡代码，可删 |
 | `public/` | 站点图标（favicon.ico + PNG 一套），构建时原样拷进 `out/` |
 | `cloudflare-worker/` | Cloudflare Worker，把 R2 桶暴露成曲库清单 |
-| `scripts/check-css-modules.js` | CI 校验：每个 `styles.x` 查找都有对应 `.scss` 定义 |
+| `scripts/check-*.js` | CI 校验（见下方「检查脚本」），`node scripts/<name>.js` 单独跑 |
+| `scripts/preview-*.js` | 视觉核验：读**构建产物里的真实 CSS** + 硬编码 markup 生成单文件 HTML，用浏览器打开即可量尺寸 |
 | `styles/index.scss` | 唯一全局样式入口，只由 `pages/_app.js` 导入 |
 
 > **`public/` 里只放图标，没有 `sw.js`** —— 服务工人已彻底移除，见下方。
@@ -53,15 +54,64 @@
   （`/music/`）上会指向用户站点根目录然后 404 —— 本站在补上这个之前，favicon 一直是坏的。
   `pages/_document.js` 里用 `site.pathPrefix` 拼，CI 也断言这三个图标文件存在。
 - **缓存**：音频 blob 存 IndexedDB（`lib/cache/indexedDb.js`），key 是 `<source>:<track id>`；
-  曲库清单存 localStorage。**两者都是永久缓存**（`NEVER_EXPIRES = 0` 表示不过期），
-  不手动清除就不清除，所以 `audioCache.js` / `librarySource.js` 里没有 TTL 逻辑，
-  也不要再引入自动清理或「已过期」状态。旧版本写入的带真实 `expiresAt` 的记录仍按原时间生效。
-  `audioCache.js` 上的函数全部是 best-effort，IndexedDB 不可用时自动退化成纯联网播放。
+  曲库清单存 localStorage。**两者寿命不同，别搞混**：
+  - **音频 blob 有 30 天 TTL**（`audioCache.js` 的 `CACHE_TTL_MS`），**每播一次就续期到 30 天后**，
+    30 天没播放过才清除。最后一次播放时间存在 localStorage 的 `music:cachePlayed` 里
+    （`expiryOf()` = 上次播放时间 + TTL，没打过戳的记录回落到保存时间）。
+  - **曲库清单永久**（`librarySource.js` 的 `expiresAt: NEVER_EXPIRES`）——清单只是一个 URL 数组，
+    过期了只会让人看到空列表，没有任何收益。
+  - `NEVER_EXPIRES = 0` 的语义是「**没有任何东西给这条记录打时间戳**」，不是「永久」。
+    `expiryOf()` 对没有戳的记录返回 `NEVER_EXPIRES`：**「不知道它什么时候播过」不能当成
+    「它很旧」的证据**，否则会把访客整个缓存删掉。
+  - 旧版本写入的带真实 `expiresAt` 的记录仍按原时间生效，不会被意外「永久化」。
+- **缓存的读取路径绝对不能写**（踩过坑，且症状极难定位）：第一版 TTL 是在读缓存时把新过期时间
+  写回同一条记录，而 IndexedDB 的 `readwrite` 事务会**串行化阻塞同一个 store 上的所有其他事务** ——
+  于是「读下一首的缓存」永远等不到，表现为**点了播放没反应**（`6b3cd85` / `7f68c72`）。
+  续期只能在播放真正开始之后做。`scripts/check-cache-ttl.js` 就是为此存在的。
+- **`audioCache.js` 上的函数全部是 best-effort**，IndexedDB 不可用时自动退化成纯联网播放。
   这层是**唯一**的离线能力，所以它坏掉时症状是「播放列表空 / 不缓存」而不是「网站打不开」。
 - **改 IndexedDB 的 `keyPath` 或建索引，必须同时升 `DB_VERSION`**：
   store 已存在时 `createObjectStore` 是空操作，不升版本号只有新访客能拿到修复。
   另外 `styles.x` 写错只返回 `undefined`、类名被静默丢掉，元素照常渲染却毫无样式 ——
   这类静默失效由 `scripts/check-css-modules.js` 在 CI 里兜住。
+
+## 检查脚本
+
+`npm run build` 不会发现的问题 —— 纯 CSS 的定位数字、跨文件的名字握手、只能靠时序
+才暴露的行为 —— 都由 `scripts/check-*.js` 在 CI 里兜住。**推之前八个都要跑一遍**
+（`for s in scripts/check-*.js; do node $s || break; done`），它们都是纯 Node、秒级。
+
+| 脚本 | 兜住什么 |
+| --- | --- |
+| `check-css-modules` | `styles.x` 找不到定义 → 类名被静默丢掉，元素照常渲染却毫无样式 |
+| `check-locate-btn` | 「回到正在播放」按钮的定位数字跨三个文件；两个布局的锚点与门控 |
+| `check-ripples-setting` | 唱片波纹偏好写入点与读取点分居两个文件，还要同时关掉两套布局的波纹 |
+| `check-dislike-pin` | 不喜欢 / 置顶：读一次、写每次、过滤只在一处；行内两个控件必须是**并列 button** |
+| `check-cache-ttl` | 缓存读取路径不许写（见上方缓存约定） |
+| `check-playback-mode` | 播放顺序的「mount 时恢复 + 变化时持久化」不能拆成两个 effect |
+| `check-settings-persistence` | 所有 `music:setting:*` 键的清单守卫：有读必须有写、键名唯一、组件里不许出现字面量 |
+| `check-desktop-parity` | 手机端与宽屏端的功能对齐（见下方「两套布局的缝」） |
+| `check-docs` | README / AGENTS.md 与代码是否还对得上；每个检查脚本都必须登记并被 CI 调用 |
+
+三条写法上的约定：
+
+- **每个断言都要做变异验证**：把源码改成错的，确认脚本真的红。抓不到的断言等于没写，
+  而且比没写更糟 —— 它会让人以为这块有保护。变异脚本不必提交，跑完删掉。
+- **别用 `^\.foo \{[\s\S]{0,N}声明` 这种窗口去断言样式**，用 `blockOf(scss, selector)`
+  抠出整条规则再断言。窗口匹配不到时，**否定断言会免费通过**（`!test()` 恒真），
+  而漏写 `/m` 会让肯定断言以一个和样式无关的理由失败。两个都真踩过。
+- **锚定源码时用 `\r?\n`，不要用裸 `\n`**：工作区是 CRLF、CI 是 LF，裸 `\n` 会在其中
+  一边静默匹配不到。
+
+## 两套布局的缝
+
+`/h5` 与 `/desktop` 共用 `MusicApp` 的全部播放状态，但**各自渲染自己的列表和自己的控件**。
+这个缝不会报错 —— 少接一个 prop、少一个入口，另一套布局只是「没有这个功能」而已。
+已经有三次都是这样漏的：`置顶` / `移入不喜欢` 只接在手机端；桌面端列表用 Google token
+（`connected`）而不是「有没有曲库」（`hasLibrary`）判断空状态，导致公共曲库明明加载好了
+却显示「曲库里还没有歌曲」；`回到正在播放` 长在手机端的迷你条上，桌面端根本没有。
+所以：**改一套布局时，先想另一套**；共用的东西（抽屉、面板、`rowMenu`）都在 `MusicApp`
+里渲染，一套布局通常只差一个**入口**，不需要新状态。
 
 ## 迁移时替换了什么
 
@@ -77,7 +127,12 @@
 
 - `npm run dev` — 本地开发
 - `npm run build` — 构建，产物在 `out/`
+- `for s in scripts/check-*.js; do node $s || break; done` — 跑全部检查（推之前必跑）
+- `node scripts/preview-desktop-list.js` — 生成列表面板的可量尺寸预览页（先 `npm run build`）
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
+
+> 本仓库的工作区是 **CRLF**、CI 是 **LF**，且 `core.autocrlf=true`（仓库内一律 LF）。
+> 用脚本批量改源码时注意别把文件写成混合行尾（Node 里 `split('\n')` 会留下 `\r`）。
 
 ## 部署
 

@@ -54,10 +54,15 @@ export const audioCacheKey = function (track) {
 /**
  * Reads the cached list for a library.
  *
- * The list is kept forever (`expiresAt: NEVER_EXPIRES`), so a cached library is
- * always usable — that is what makes the app open with no network. A refresh
- * replaces it, it is never invalidated by time. `forceRefresh` in the fetch
- * helpers is how fresh data gets in, not this.
+ * The list is kept forever (`expiresAt: NEVER_EXPIRES`), so the library is on
+ * screen from the first paint instead of after the fetch resolves — and a failed
+ * fetch does not wipe what the visitor already had. A refresh replaces it, it is
+ * never invalidated by time. `forceRefresh` in the fetch helpers is how fresh
+ * data gets in, not this.
+ *
+ * It is **not** an offline shell: with no service worker the site cannot open
+ * without a network at all. What survives offline is the audio cache, and only
+ * for a page that is already open.
  *
  * Lists written before this became permanent still carry a real `expiresAt`,
  * and those are still honoured so an old entry cannot outlive its intent.
@@ -85,7 +90,8 @@ export const readListCache = function (source, clientId) {
 export const writeListCache = function (source, clientId, { tracks, folders = [], folderId = '' }) {
     storageSet(listCacheKey(source, clientId), JSON.stringify({
         savedAt: Date.now(),
-        // Kept forever: the offline app opens straight into the library.
+        // Kept forever: the library paints from this instead of waiting for the
+        // network, and a failed fetch leaves it in place.
         expiresAt: NEVER_EXPIRES,
         clientId: clientId || '',
         folderId,

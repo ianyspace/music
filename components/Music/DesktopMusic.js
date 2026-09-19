@@ -704,7 +704,13 @@ const DesktopMusic = function ({
                 </div>
 
                 <footer className={styles['panel-foot']}>
-                    <span>{cached ? '离线可用' : '在线'}</span>
+                    {/* What this reports is where the *list* came from, not
+                        whether the app works offline — with no service worker
+                        it does not, so 「离线可用」 claimed something the site
+                        cannot do. `cached` is `listCacheAvailable`: the library
+                        was rendered from localStorage instead of a fresh
+                        fetch. */}
+                    <span>{cached ? '列表已缓存' : '在线'}</span>
                     <span className={styles['foot-sep']} aria-hidden="true">·</span>
                     <button type="button" className={styles['foot-link']} onClick={onToggleTheme}>
                         {theme === 'dark' ? '浅色' : '深色'}

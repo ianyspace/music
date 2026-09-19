@@ -203,6 +203,15 @@ check('the desktop no longer claims the cache is permanent',
 check('the desktop states the real cache policy',
     /30 天过期/.test(deskJs) && /30 天没播放过才会清除/.test(deskJs), '30 days');
 
+// Same trap, different claim. The footer chip used to read 「离线可用」 when the
+// library list came from localStorage — but with no service worker the site
+// cannot open without a network at all, so that promised something the app does
+// not do. It reports where the *list* came from instead.
+check('the desktop footer does not claim the app works offline',
+    !/离线可用/.test(deskCopy), 'no 离线可用');
+check('the desktop footer says what it actually knows',
+    /列表已缓存/.test(deskJs), '列表已缓存 / 在线');
+
 /* --- 5. the new markup has styles --------------------------------------- */
 
 const classNames = ['track-row', 'item-more', 'item-more-on'];

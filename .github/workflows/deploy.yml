@@ -127,6 +127,14 @@ jobs:
           # was linked — and 「回到正在播放」 lived on the phone's mini bar, which
           # the desktop does not have.
           node scripts/check-desktop-parity.js
+          # The two documents are read by people (and agents) who then act on
+          # them, so a stale line is worse than a missing one. Both kept
+          # describing the service worker's offline shell after it was removed,
+          # and AGENTS.md kept forbidding a cache TTL two commits after one
+          # shipped — a note like that gets a working feature deleted. It also
+          # asserts that every check script here is registered and run, so a new
+          # one cannot be written and forgotten.
+          node scripts/check-docs.js
           echo "build output verified"
 
       - name: Setup Pages

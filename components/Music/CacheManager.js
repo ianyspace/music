@@ -189,7 +189,8 @@ const CacheManager = function ({
                             <p className={styles['empty-title']}>还没有缓存</p>
                             <p className={styles['empty-sub']}>
                                 播放一首歌就会把它存到本地；也可以用上面的「全部缓存」
-                                把整个列表一次存下来，之后离线也能听。
+                                把整个列表一次存下来。存下来的歌从本机播放、不用再下载，
+                                页面开着的时候断网也照样听。
                             </p>
                         </div>
                     )}
