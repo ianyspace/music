@@ -852,18 +852,6 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     list-style: none;
-    /* The list is a display surface, not a panel, so its scrollbar stays out
-       of sight until the pointer is actually in the list.
-
-       `thin` rather than `none` is the important half: the gutter stays
-       reserved, so revealing the thumb cannot shift a single row sideways.
-       Both spellings below are set to the same behaviour on purpose — an
-       engine may honour the standard properties *or* the `::-webkit-scrollbar`
-       pseudo-elements, and either way the result is "invisible, then visible
-       on hover". `:focus-within` rides along so a keyboard visitor who tabs
-       into a row gets the same affordance the mouse does. */
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
     /* Rows dissolve at the bottom instead of being sliced in half by the
        scroller's edge — the list is floating over the stage, so a hard cut
        reads as a clipped panel and the fade reads as "there is more". */
@@ -871,39 +859,59 @@
     -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 36px), transparent 100%);
 }
 
-.list::-webkit-scrollbar {
-    width: 8px;
-}
+/* --- the quiet scroller ---------------------------------------------------
+   Two surfaces on this page scroll: the song list and the settings body. Both
+   are display surfaces rather than panels, so their scrollbars stay out of
+   sight until the surface is actually in use.
 
-.list::-webkit-scrollbar-track {
-    background: transparent;
-}
+   `thin` rather than `none` is the important half: the gutter stays reserved,
+   so revealing the thumb cannot shift anything sideways — measured with the
+   rows at `x 18 -> 288` both with the thumb hidden and with it showing.
 
-.list::-webkit-scrollbar-thumb {
-    background: transparent;
-    border-radius: 999px;
-}
+   Both spellings are set to the same behaviour on purpose. An engine may
+   honour the standard properties *or* the `::-webkit-scrollbar` pseudo-
+   elements (Chrome takes the geometry from `scrollbar-width` and the painting
+   from the pseudo-element), and with both saying the same thing it does not
+   matter which one wins. */
+.list,
+.settings-body {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
 
-/* Behind the hover query, like every other hover affordance in this file: on
-   a touch screen `:hover` can stick to the last thing tapped, and a scrollbar
-   pinned open by a tap is worse than no scrollbar at all. */
-@media (hover: hover) {
-    .list:hover {
+    &::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: transparent;
+        border-radius: 999px;
+    }
+
+    /* Behind the hover query, like every other hover affordance in this file:
+       on a touch screen `:hover` can stick to the last thing tapped, and a
+       scrollbar pinned open by a tap is worse than no scrollbar at all. */
+    @media (hover: hover) {
+        &:hover {
+            scrollbar-color: var(--track) transparent;
+
+            &::-webkit-scrollbar-thumb {
+                background: var(--track);
+            }
+        }
+    }
+
+    /* The keyboard gets the same affordance as the mouse. Not behind the hover
+       query, because there is no pointer involved in tabbing into the list. */
+    &:focus-within {
         scrollbar-color: var(--track) transparent;
 
         &::-webkit-scrollbar-thumb {
             background: var(--track);
         }
-    }
-}
-
-/* The keyboard gets the same affordance as the mouse. Not behind the hover
-   query, because there is no pointer involved in tabbing to a row. */
-.list:focus-within {
-    scrollbar-color: var(--track) transparent;
-
-    &::-webkit-scrollbar-thumb {
-        background: var(--track);
     }
 }
 
@@ -942,6 +950,16 @@
 
     &:hover:not(:disabled) {
         background: var(--hover);
+    }
+
+    /* The row's own focus ring, the same accent hairline `.disc` and
+       `.item-more` use — without it a keyboard visitor gets the browser's
+       default double ring, which is the one thing on this page that does not
+       belong to the design. Inset rather than outset because rows sit flush
+       against each other and an outset ring would paint over the row above. */
+    &:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
     }
 
     &:active:not(:disabled) {
@@ -1541,15 +1559,16 @@
 /* `DesktopSheetChrome` owns the scrim, the card and the header; all this adds
    is the part that scrolls. The card is a flex column with a `max-height`, so
    `flex: 1; min-height: 0` here is what actually produces a scroller — without
-   both, the body would grow and push the card past the viewport. */
+   both, the body would grow and push the card past the viewport.
+
+   Its scrollbar is the shared "quiet scroller" rule next to `.list`, which is
+   what keeps the dialog from having a permanent bar down its side. */
 .settings-body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 0 22px 24px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--track) transparent;
 }
 
 .group {
