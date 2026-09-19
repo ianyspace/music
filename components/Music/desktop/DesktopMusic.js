@@ -4,6 +4,7 @@ import {
     IconArchive,
     IconChevronRight,
     IconCloud,
+    IconCube,
     IconDislike,
     IconFolder,
     IconGear,
@@ -184,6 +185,10 @@ const DesktopMusic = function ({
     onOpenCache,
     onOpenDisliked,
     dislikedCount = 0,
+    // Leaving for `/3d`. A callback rather than a `<Link>` here for the same
+    // reason as the two above: this component renders the workspace and asks
+    // for things, and the shell is what knows about routes.
+    onOpen3D,
     // The library *before* the list preferences and the search ran — the only
     // way to tell "this library is empty" from "this library is all hidden".
     // See `emptyListMessage`.
@@ -974,6 +979,27 @@ const DesktopMusic = function ({
                                 <span className={styles['row-icon']}><IconDislike /></span>
                                 <span className={styles['row-label']}>不喜欢歌曲</span>
                                 <span className={styles['row-value']}>{dislikedCount} 首</span>
+                            </button>
+                        </section>
+
+                        <section className={styles.group}>
+                            <div className={styles['group-label']}>沉浸模式</div>
+                            {/* The 3D room is a different route, not a mode of
+                                this one, so this is a plain navigation: the
+                                back button returns here and the wide-screen
+                                page keeps its own state while it is away. */}
+                            <p className={styles.hint}>
+                                用 three.js 搭的唱片机：可拖拽的机位、随节拍跳动的唱盘、站在房间里的歌词。
+                                它是一个独立页面，只有深色一种样子。
+                            </p>
+                            <button
+                                type="button"
+                                className={`${styles.row} ${styles['row-btn']} ${styles['row-btn-last']}`}
+                                onClick={onOpen3D}
+                            >
+                                <span className={styles['row-icon']}><IconCube /></span>
+                                <span className={styles['row-label']}>进入 3D 沉浸模式</span>
+                                <span className={styles['row-value']}>打开</span>
                             </button>
                         </section>
 

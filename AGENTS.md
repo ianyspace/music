@@ -6,20 +6,22 @@
 代码从博客仓库 `space` 的 `components/Music/` + `pages/music/` 整体切出，
 播放逻辑一行没改，只替换了三个博客专有的依赖（见下方「迁移时替换了什么」）。
 
-**`/h5` 与 `/desktop` 是两棵完全独立的组件树**：彼此不 import 任何一个文件，
+**`/h5`、`/desktop`、`/3d` 是三棵完全独立的组件树**：彼此不 import 任何一个文件，
 只共用 `components/Music/core/`（状态机 + 数据层 + 面板内容）和它旁边的纯函数。
-桌面端的每一个面都是**纯 CSS 毛玻璃**（`backdrop-filter` + `--glass-*` token），
-没有任何 WebGL / 玻璃库依赖。详见下方「两套布局」。
+桌面端的每一个面都是**纯 CSS 毛玻璃**（`backdrop-filter` + `--glass-*` token）；
+3D 版是唯一有 WebGL 的树（`three` + 自有的 `--t-*` token，只深色）。
+详见下方「三套布局」。
 
 ## 目录
 
 | 路径 | 作用 |
 | --- | --- |
 | `pages/index.js` | 入口路由，按屏宽决定跳 `/h5` 还是 `/desktop` |
-| `pages/h5.js` / `pages/desktop.js` | 两个薄路由，各自只渲染一棵树，互不相干 |
+| `pages/h5.js` / `pages/desktop.js` / `pages/3d.js` | 三个薄路由，各自只渲染一棵树，互不相干 |
 | `components/Music/h5/` | 手机端：`MusicApp` 外壳 + 列表/播放页/迷你条/我的 + 三个底部面板 |
 | `components/Music/desktop/` | 宽屏端：`DesktopApp` 外壳 + 沉浸式舞台（`DesktopMusic`）+ 玻璃弹窗 + 行抽屉 |
-| `components/Music/core/` | 两套布局共用的中性核心（见下方「两套布局」） |
+| `components/Music/three/` | 3D 版：`ThreeApp` 外壳 + `ThreeStage`（canvas/rAF/指针）+ `ThreeHud` + `scene/`（纯 three.js，不含 React） |
+| `components/Music/core/` | 三套布局共用的中性核心（见下方「三套布局」） |
 | `components/Music/`（根） | 只放共享件：`Cover` / `Marquee` / `icons` / `shared` / `audioCache` / `librarySource` |
 | `lib/cache/indexedDb.js` | IndexedDB 薄封装（缓存存储层） |
 | `utils/retireServiceWorker.js` | 注销旧 Service Worker 的过渡代码，可删 |
@@ -39,8 +41,9 @@
   kebab-case 类名必须写 `styles['foo-bar']`。
   CSS Modules 生成的类名是 `[文件名]__[类名]__[hash]`，**目录不进名字** ——
   所以把文件挪进子目录不会改类名（这次拆分正是靠这一点）。
-- **两棵树不许互相 import**：`components/Music/h5/**` 里不许出现 `desktop`，
-  反之亦然。共用的东西只能落在 `components/Music/core/` 或 `components/Music/` 根下。
+- **三棵树不许互相 import**：`components/Music/h5/**` 里不许出现 `desktop` 或 `three`，
+  其余同理。共用的东西只能落在 `components/Music/core/` 或 `components/Music/` 根下
+  （根下的 `icons.js` 是共享图标集；`three/icons.js` 是 3D 版**自己的**一套，两边不通用）。
   这条没有脚本兜底（见「检查脚本已删除」），改完请自己 `grep` 一遍。
 - **basePath**：`config/index.js` 的 `site.pathPrefix = '/music'` 是唯一来源（`next.config.js` 读它）。
   `next/link`、`next/image`、`_next/*` 会自动带上，其余绝对路径目前没有需要手工拼接的地方
@@ -154,22 +157,24 @@
   报成 `SyntaxError: Unexpected identifier`，而且指到的行离真正的错误很远。这个坑踩过两次
   （`locate-in`、`pointer-events: none`），照常写 `pointer-events:none` 就行。
 
-## 两套布局
+## 三套布局
 
 ```
-pages/h5.js ──────▶ components/Music/h5/MusicApp.js ─────┐
-                                                          ├─▶ components/Music/core/
-pages/desktop.js ─▶ components/Music/desktop/DesktopApp.js ┘   + Cover/Marquee/icons/
-                                                                shared/audioCache/librarySource
+pages/h5.js ───────▶ components/Music/h5/MusicApp.js ────────┐
+                                                              │
+pages/desktop.js ──▶ components/Music/desktop/DesktopApp.js ─┼─▶ components/Music/core/
+                                                              │   + Cover/Marquee/icons/
+pages/3d.js ───────▶ components/Music/three/ThreeApp.js ─────┘   shared/audioCache/librarySource
 ```
 
-两棵树之间**没有任何 import**。`/h5` 里没有一行代码知道桌面端存在，反之亦然。
+三棵树之间**没有任何 import**。`/h5` 里没有一行代码知道桌面端存在，反之亦然；
+`/3d` 也不 import 另外两棵树里的任何一个文件。
 共用部分按职责分三块：
 
 | `core/` 文件 | 是什么 | 为什么放这儿 |
 | --- | --- | --- |
-| `usePlayer.js` | 全部播放状态：曲库、缓存、歌词、Google、主题、抽屉开关 | 两套布局要共享**行为**，且必须逐字一致 |
-| `PageHead.js` | `<Head>` 标题 + GSI `<Script>` | 两个页面都要有同样的 title 和同一份 GSI 加载错误文案 |
+| `usePlayer.js` | 全部播放状态：曲库、缓存、歌词、Google、主题、抽屉开关 | 三套布局要共享**行为**，且必须逐字一致 |
+| `PageHead.js` | `<Head>` 标题 + GSI `<Script>` | 两个页面都要有同样的 title 和同一份 GSI 加载错误文案（3D 版**不用**它，见下） |
 | `PlayerAudio.js` | 那唯一一个 `<audio>` | 六种 handler 由 `usePlayer` 统一返回，少接一个就是「进度条永远不动」且不报错 |
 | `CacheContent.js` / `DislikedContent.js` | 缓存管理 / 不喜欢歌曲的**内容** | 两个面板的**外壳**不同（底部抽屉 vs 玻璃卡片），内容相同 |
 | `sheetBase.module.scss` | `.body` / `.state` | 面板内容共用的滚动容器与加载文案 |
@@ -182,8 +187,9 @@ pages/desktop.js ─▶ components/Music/desktop/DesktopApp.js ┘   + Cover/Mar
 `usePlayer` 返回一个扁平的 ~80 字段对象（而不是拆成几个小 hook），就是为了让这次拆分
 能**逐字搬迁**手机端的行为 —— 拆 hook 会顺手改掉依赖数组和执行顺序。
 
-`lyricsAutoOpen` 是两套布局**唯一**真正分歧的地方：桌面端的舞台就是歌词，
-有歌词就展开是对的；手机端则会平白盖住自己的列表。
+`lyricsAutoOpen` 是各套布局**唯一**真正分歧的地方：桌面端的舞台就是歌词，
+有歌词就展开是对的；手机端则会平白盖住自己的列表；3D 版传 `false` 再自己接管，
+原因见「3D 版」一节。
 
 桌面端列表还有一条手机端没有的规则：**有歌在放、鼠标又不在列表上，3 秒后列表自己收起**
 （`LIST_HIDE_MS`）。它折的是 `autoHidden`，不是 `listOpen` —— 后者是访客的选择、
@@ -351,6 +357,81 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
   而一枚缩到看不见的唱片比一枚稍微探到列表下面的唱片更糟。下限在 ~880px 宽以下
   才开始生效，已经在 `pages/index.js` 把访客送去 `/h5` 的 900px 之下 ——
   所以桌面布局真正服务的每个宽度都还是正间距（900×1000 是 32px）。
+
+## 3D 版
+
+`/3d` 是第三棵树，入口只有一处：`/desktop` 右上角设置弹窗里的「进入 3D 沉浸模式」
+（`DesktopApp` 用 `router.push('/3d')`，`DesktopMusic` 只收一个 `onOpen3D` 回调 ——
+和缓存管理、不喜欢歌曲一样，路由的事留在外壳）。手机端**没有任何入口**：
+一个可拖拽机位的 WebGL 场景不是手机体验。
+
+```
+components/Music/three/
+  ThreeApp.js         外壳：usePlayer(只读子集) + 两个局部视图开关 + PlayerAudio
+  ThreeApp.module.scss 这一页唯一的 token 根（--t-*，只深色）+ 全部 chrome
+  ThreeStage.js       唯一有副作用的 React 文件：canvas、rAF、指针、ResizeObserver
+  ThreeHud.js         全部浮层 DOM（顶栏 / 列表 / 胶囊条 / 提示 / toast）
+  icons.js            自己的 13 个图标，stroke 1.7（共享集是 2）
+  scene/              纯 three.js，**不含任何 React**
+    index.js          装配：renderer / 雾 / PMREM 环境 / 四盏灯 / 机位 / 主循环 frame()
+    camera.js         四机位 rig + 拖拽 + 7 秒后自动漂移 + 节拍推进
+    record.js         唱盘 + 唱片 + 倒影 + 光池 + 光环
+    tonearm.js        真解算的唱臂（正弦定理，随播放进度内移）
+    particles.js      1500 粒尘埃（additive points）
+    lyrics.js         canvas 贴图歌词平面
+    textures.js       六种程序化 canvas 贴图，**零资源文件**
+    analyzer.js       Web Audio 分析 + 合成节拍回退
+```
+
+几条不能随手改的：
+
+- **只复用 `core/`，不复用任何组件。** `three/` 里出现 `../h5/` 或 `../desktop/`
+  就是错的。`core/usePlayer` 只取播放 / 曲库 / 歌词 / toast 这一读子集：行抽屉、
+  缓存管理、不喜欢、Google 授权全都留在 `/desktop` —— 3D 版**没有能力改曲库**，这是故意的。
+- **`usePlayer({ lyricsAutoOpen: false })` 不等于「不显示歌词」。** 3D 版自己接管：
+  `lyricsWanted`（默认 true）+ 一个 effect，在有歌词的歌到达时补一次 `toggleLyrics()`。
+  之所以不能直接传 `true`：hook 在每次换歌时都会 `setLyricsVisible(lyricsAutoOpen && withLyrics)`，
+  传 `true` 会让访客的「关掉歌词」在下一首就失效。传 `false` 再自己补，关掉才关得住。
+- **3D 版不用 `core/PageHead`**，只写自己的 `<Head>`：那个组件会顺带加载 Google
+  Identity Services 脚本，而这一页没有任何地方能用上它。
+- **token 前缀是 `--t-`，且不引入任何 `--glass-*`。** 这一页只有深色，没有 `theme-dark`。
+  `grep -n '\-\-glass' components/Music/three/` 必须是空的。
+- **毛玻璃面板只能有三个**（徽标 / 列表 / 胶囊条）。桌面端的毛玻璃糊的是画好的色彩场，
+  这里糊的是 **WebGL canvas** —— 每块都是对上一帧的回读，所以不能铺满全屏，也不能包住 canvas。
+- **canvas 必须是浮层的兄弟，不能是它们的父节点。** 任何带 `backdrop-filter` 的元素
+  包住 canvas，就会把 60fps 变成 20fps。
+- **`.page::after`（暗角）必须 `pointer-events: none`**，否则它会变成光标下最上面那个元素，
+  唱片就再也拖不动了。同理 `.top` 整条也是 `pointer-events: none` + 两个端点 `auto`。
+- **`frame()` 读的是 ref，不是 props。** `ThreeStage` 把 state 塞进 `stateRef`，
+  渲染循环每帧读它 —— 否则每 250ms 一次的 `timeupdate` 都会重建 renderer。
+  `delta` 上限 50ms：切标签页回来那一帧的 `delta` 是秒级的，不夹住会让相机瞬移。
+- **`row-active` 依旧只能叠加在 `row` 上**，不能二选一（同桌面端那条，布局全在 `.row` 上）。
+- **唱片是平躺的**（桌面端是竖立的），所以倒影靠 `scale.y = -1` 的镜像 clone +
+  一张 16×16 的光池遮住硬边，不用 `Reflector`：后者每帧为一张面重渲整个场景，
+  而这个场景只有一件东西值得反射。镜像会**反转三角形绕序**，材质必须 `DoubleSide`。
+- **倒影的 label 要单独上一次封面**：`mirror` 是在 `setCover` 之前 clone 的，
+  所以 `record.js` 里有 `applyLabel()` 同时喂 `label` 和 `mirrorLabel`。
+- **唱臂角度是解出来的，不是调的**：pivot `(0.9, -0.9)`、臂长 `0.78`，
+  `|stylus|² = 1.273² + 0.78² − 2·1.273·0.78·cos θ`；θ=55° 是静止（出唱片）、
+  42° 是导入槽、16° 是导出槽。改 `PIVOT` / `LENGTH` 就要重算这三个角。
+- **封面必须走 canvas + `crossOrigin='anonymous'`**，不能用 `TextureLoader`：
+  库里的封面是可能不存在的同名文件、Drive 缩略图会过期、R2 桶不一定带 CORS 头。
+  `coverTexture(url, { fallback })` 会**先试真封面、失败再试渐变**（`makeArtwork`），
+  两步都失败才返回 `null` —— 只试 fallback 不试原图，会让「有封面但加载失败」显示成黑标签。
+- **歌词材质 `fog: false` + `toneMapped: false`**：它是被**读**的东西，
+  雾会随距离压暗它、ACES 会把白色压成灰。别的材质都照常吃雾和色调映射。
+- **`analyzer.js` 用的是裸 Web Audio，不是 `THREE.Audio`。** `THREE.Audio` 自带播放，
+  而播放必须归 `core/PlayerAudio` 那个唯一 `<audio>` 所有（只有它能播 blob、
+  报 `timeupdate`、跨路由存活）。这里要的是「接一根线」，对应的节点就是
+  `MediaElementAudioSourceNode`。**一个元素只能建一次 source**（第二次抛
+  `InvalidStateError`），所以图按元素存在模块级 `WeakMap` 里，重挂载时取回。
+  挂不上（浏览器不支持 / 上下文起不来）就退到合成节拍（1.3Hz + 2.1Hz 两条正弦）——
+  一个因为音频图失败而彻底僵住的场景看起来是坏的，一个按假节拍脉动的场景看起来是可视化。
+- **`AudioContext` 延迟到第一次播放才建**，并 `resume()`：页面加载就建会以 suspended 起步
+  且浏览器会告警，而从不按播放的访客根本不需要它。
+- 从 `/desktop` 进 `/3d` 会**换一个 `<audio>` 元素**，歌会停一下；但 `usePlayer`
+  会用 `LAST_TRACK_KEY` / `LAST_PROGRESS_KEY` 把同一首按原位置**重新载入**（不自动播放）。
+  这条链路依赖列表缓存，所以第一次访问、列表还没落盘时不要期待能续上。
 
 ## 迁移时替换了什么
 
