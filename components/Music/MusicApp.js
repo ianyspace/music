@@ -16,6 +16,9 @@ import {
     LAST_TRACK_KEY,
     LAST_PROGRESS_KEY,
     RIPPLES_KEY,
+    SHUFFLE_KEY,
+    REPEAT_KEY,
+    REPEAT_MODES,
     DISLIKED_KEY,
     ORDER_KEY,
     storageGet,
@@ -321,6 +324,47 @@ const MusicApp = function ({ variant = 'h5' }) {
             return !on;
         });
     }, []);
+
+    /* --- playback mode: shuffle + repeat --------------------------------- */
+
+    // Restored on mount and written back on every change, from one effect.
+    //
+    // One effect rather than a read-effect plus a write-effect: the two would
+    // race on the mount commit (the writer would see the pre-restore defaults
+    // and store them over the visitor's choice), and nothing in the code would
+    // look wrong. The `ref` is what makes the first run a read and every later
+    // run a write, in that order and in one place.
+    //
+    // Restoring here rather than in `useState` is deliberate: this is a static
+    // export, so an initialiser that touches localStorage would also run during
+    // prerender and hand the client markup that disagrees with what it reads.
+    //
+    // Both values are matched explicitly. A key holding anything else — a
+    // half-written value, an edit from devtools, a mode a future build drops —
+    // leaves the default in place, so a corrupt preference can never put the
+    // player into a mode the visitor did not choose. And because nothing is
+    // written until the visitor actually changes something, "no value saved
+    // yet" stays a state of its own rather than becoming a stored default.
+    //
+    // The mode is changed by three controls (the phone's combined button, and
+    // the wide-screen shuffle and repeat buttons) and they all go through
+    // `setShuffle`/`setRepeat`, so syncing here means no control can move the
+    // mode without persisting it — which is the bug this fixes: the mode used
+    // to reset to 关闭 on every reload.
+    const modeSyncedRef = useRef(false);
+    useEffect(() => {
+        if (!modeSyncedRef.current) {
+            modeSyncedRef.current = true;
+            const savedShuffle = storageGet(SHUFFLE_KEY);
+            if (savedShuffle === 'on') setShuffle(true);
+            else if (savedShuffle === 'off') setShuffle(false);
+            const savedRepeat = storageGet(REPEAT_KEY);
+            if (REPEAT_MODES.includes(savedRepeat)) setRepeat(savedRepeat);
+            return;
+        }
+        storageSet(SHUFFLE_KEY, shuffle ? 'on' : 'off');
+        storageSet(REPEAT_KEY, repeat);
+    }, [shuffle, repeat]);
 
     /* --- list preferences: hidden songs + pinned order --- */
 

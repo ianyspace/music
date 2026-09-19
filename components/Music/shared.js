@@ -16,6 +16,19 @@ export const TRACK_LIST_CACHE_KEY = 'music:trackListCache';
 // app-wide one, and apart from the playback keys because it is a preference
 // the visitor chose rather than state the app restored.
 export const RIPPLES_KEY = 'music:setting:ripples';
+// Playback mode. Shuffle and repeat are two independent states — the phone
+// player folds them into one cycling button, the wide-screen layout shows two
+// buttons — so they get one key each rather than one packed value, and the
+// phone's four modes (关闭 / 列表循环 / 单曲循环 / 随机) are simply the four
+// combinations of the pair.
+//
+// `shuffle` is stored as 'on'/'off' like the ripples switch. `repeat` is stored
+// as one of `REPEAT_MODES`; the mode is the payload here, so there is no
+// "absent" value to encode and an unrecognised string must fall back to the
+// default rather than be coerced into a mode nobody picked.
+export const SHUFFLE_KEY = 'music:setting:shuffle';
+export const REPEAT_KEY = 'music:setting:repeat';
+export const REPEAT_MODES = ['off', 'all', 'one'];
 // The two list preferences. Both are *sets/orders of track keys* — the same
 // `<source>:<id>` form `audioCacheKey` builds — held as a JSON array in
 // localStorage rather than in IndexedDB: they are small, they are read on
