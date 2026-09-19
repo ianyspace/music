@@ -158,7 +158,13 @@ const TrackList = function ({
                 </div>
             </header>
 
-            {!connected ? (
+            {/* The "connect a drive" prompt is for a library that is genuinely
+                empty, not for one that is still arriving. Without the
+                `listLoading` guard a first visit — no list cache yet — showed
+                「曲库里还没有歌曲」 for as long as the public library took to
+                load, which reads as "there is nothing here" rather than as a
+                page still working. */}
+            {!connected && !listLoading ? (
                 <section className={styles.connect}>
                     <span className={styles['connect-icon']}><IconNoteList /></span>
                     <h2 className={styles['connect-title']}>曲库里还没有歌曲</h2>

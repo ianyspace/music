@@ -5,6 +5,7 @@ import {
     IconChevronRight,
     IconCloud,
     IconClose,
+    IconDislike,
     IconFolder,
     IconGear,
     IconGoogleDrive,
@@ -143,7 +144,6 @@ const DesktopMusic = function ({
     onFolderChange,
     onRefresh,
     listLoading,
-    tracks,
     visibleTracks,
     // Count the badge and the folder row show. `visibleTracks` is the list
     // after the visitor's preferences, so this is what agrees with what they
@@ -170,6 +170,19 @@ const DesktopMusic = function ({
     onToggleLyrics,
     ripples = true,
     onToggleRipples,
+    onDislikeTrack,
+    onPinTrack,
+    // Id of the row whose actions are open. The drawer itself belongs to the
+    // shell (same one the phone layout opens), so all this needs is the id to
+    // report which row's button is expanded.
+    rowMenuId,
+    onOpenRowMenu,
+    // The cache manager and the disliked-songs screen are shell-owned too —
+    // they are rendered beside the layout, not inside it — so the desktop
+    // layout only has to be able to ask for them.
+    onOpenCache,
+    onOpenDisliked,
+    dislikedCount = 0,
 }) {
     const rootRef = useRef(null);
     const searchInputRef = useRef(null);
@@ -181,7 +194,9 @@ const DesktopMusic = function ({
     // `false` = folded away, only the rail button remains. Defaults to open.
     const [listOpen, setListOpen] = useState(true);
     const [searchOpen, setSearchOpen] = useState(false);
-    // The three-dots menu in the list header: 'drive' | 'cache' | ''.
+    // The list header's three-dots popover: 'more' | ''. It is only ever the
+    // popover itself — the entries inside it open the shell-owned sheets
+    // (settings, cache manager, disliked songs) and close this again.
     const [menu, setMenu] = useState('');
     // Playback mode announce, centred on the stage for a moment — same
     // behaviour as the phone player's mode toast.
@@ -445,25 +460,57 @@ const DesktopMusic = function ({
                                     </span>
                                     <IconChevronRight />
                                 </button>
+                                {/* The cache manager and the disliked-songs
+                                    screen are shell-owned sheets, the same ones
+                                    the phone layout opens — so these entries
+                                    raise them rather than dropping the visitor
+                                    into the settings drawer, which only ever
+                                    reported a count. */}
                                 <button
                                     type="button"
                                     className={styles['menu-item']}
                                     role="menuitem"
-                                    onClick={() => { setMenu(''); setSettingsOpen(true); }}
+                                    onClick={() => { setMenu(''); onOpenCache(); }}
                                 >
                                     <span className={styles['menu-icon']} aria-hidden="true"><IconArchive size={20} /></span>
                                     <span className={styles['menu-text']}>
                                         <span className={styles['menu-title']}>缓存管理</span>
-                                        <span className={styles['menu-sub']}>歌曲与清单都是永久缓存，只在本地保存</span>
+                                        <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
                                     </span>
                                     <IconChevronRight />
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles['menu-item']}
+                                    role="menuitem"
+                                    onClick={() => { setMenu(''); onOpenDisliked(); }}
+                                >
+                                    <span className={styles['menu-icon']} aria-hidden="true"><IconDislike size={20} /></span>
+                                    <span className={styles['menu-text']}>
+                                        <span className={styles['menu-title']}>不喜欢歌曲</span>
+                                        <span className={styles['menu-sub']}>查看已隐藏的歌曲，可移出让它回到列表</span>
+                                    </span>
+                                    <span className={styles['menu-value']}>
+                                        {dislikedCount > 0 ? `${dislikedCount} 首` : ''}
+                                    </span>
                                 </button>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {!connected ? (
+                {/* `hasLibrary` — not `connected` — decides whether there is a
+                    library to show. The public library needs no authorization,
+                    so gating on the Google token meant the panel showed
+                    「曲库里还没有歌曲 / 去连接」 on top of a fully loaded public
+                    list and only revealed the songs once a drive was linked.
+                    `connected` still drives the drive-specific rows further
+                    down, which is what it actually means.
+
+                    The `listLoading` guard keeps a first visit — no list cache
+                    yet — from reading as "nothing here" while the public
+                    library is still arriving. */}
+                {!hasLibrary && !listLoading ? (
                     <section className={styles.connect}>
                         <span className={styles['connect-icon']}><IconQueue /></span>
                         <h2 className={styles['connect-title']}>曲库里还没有歌曲</h2>
@@ -479,11 +526,9 @@ const DesktopMusic = function ({
                     <p className={styles['list-empty']}>
                         {listLoading
                             ? '加载中…'
-                            : !hasLibrary
-                                ? '曲库还没有歌曲，去设置里连接自己的云盘'
-                                : keyword
-                                    ? `没有匹配「${keyword}」的歌曲`
-                                    : '没有找到音频文件，去设置里换个文件夹试试？'}
+                            : keyword
+                                ? `没有匹配「${keyword}」的歌曲`
+                                : '没有找到音频文件，去设置里换个文件夹试试？'}
                     </p>
                 ) : (
                     <ul className={styles.list}>
@@ -491,8 +536,16 @@ const DesktopMusic = function ({
                             const item = parseTrackName(track.name);
                             const active = track.id === currentId;
                             const loading = loadingId === track.id;
+                            const rowMenuOpen = rowMenuId === track.id;
                             return (
-                                <li key={track.id}>
+                                // Two sibling controls rather than a button
+                                // wrapping another button — the nested one is
+                                // invalid HTML and gets torn out of the
+                                // accessibility tree. The play target keeps the
+                                // row's width; the three-dots button sits beside
+                                // it and raises the same row drawer the phone
+                                // layout opens (置顶 / 移入不喜欢).
+                                <li key={track.id} className={styles['track-row']}>
                                     <button
                                         type="button"
                                         className={active ? styles['item-active'] : styles.item}
@@ -524,6 +577,19 @@ const DesktopMusic = function ({
                                         ) : active ? (
                                             <span className={eqClass} aria-hidden="true"><i /><i /><i /></span>
                                         ) : null}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={rowMenuOpen
+                                            ? `${styles['item-more']} ${styles['item-more-on']}`
+                                            : styles['item-more']}
+                                        title="更多操作"
+                                        aria-label={`${item.title} 的更多操作`}
+                                        aria-haspopup="menu"
+                                        aria-expanded={rowMenuOpen}
+                                        onClick={() => onOpenRowMenu(track)}
+                                    >
+                                        <IconMoreVertical />
                                     </button>
                                 </li>
                             );
@@ -889,20 +955,29 @@ const DesktopMusic = function ({
 
                         <section className={styles.group}>
                             <div className={styles['group-label']}>缓存</div>
-                            <div className={styles.row}>
+                            {/* Same sheet the phone layout opens, so the two
+                                layouts cannot disagree about what is cached or
+                                what deleting it does. */}
+                            <button
+                                type="button"
+                                className={`${styles.row} ${styles['row-btn']}`}
+                                onClick={onOpenCache}
+                            >
                                 <span className={styles['row-icon']}><IconArchive size={18} /></span>
-                                <span className={styles['row-label']}>已缓存歌曲</span>
+                                <span className={styles['row-label']}>缓存管理</span>
                                 <span className={styles['row-value']}>{cacheCount} 首</span>
-                            </div>
+                            </button>
+                            {/* Used to read 「永久」, which stopped being true
+                                when the 30-day expiry landed. */}
                             <div className={`${styles.row} ${styles['row-btn-last']}`}>
                                 <span className={styles['row-icon']}><IconRefresh /></span>
                                 <span className={styles['row-label']}>缓存策略</span>
-                                <span className={styles['row-value']}>永久</span>
+                                <span className={styles['row-value']}>30 天过期</span>
                             </div>
                         </section>
 
                         <p className={styles.footnote}>
-                            歌曲与曲库清单都永久保存在本机，不手动清除就不会失效；
+                            歌曲缓存在本机保留 30 天，期间每播一次就自动续期，30 天没播放过才会清除；
                             公共曲库来自 Cloudflare R2，无需登录即可播放。
                             <br />
                             {glassReady

@@ -427,6 +427,16 @@
     line-height: 1.5;
 }
 
+/* A trailing count, e.g. how many songs are hidden. `.menu-text` takes the
+   remaining width, so this stays pinned to the right edge. */
+.menu-value {
+    flex-shrink: 0;
+    margin-left: 6px;
+    color: var(--text-2);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
 /* --- track rows --- */
 
 .list {
@@ -441,12 +451,27 @@
     scrollbar-color: var(--track) transparent;
 }
 
+/* A list row is two sibling controls, not a button wrapping another button —
+   the nested one is invalid HTML and gets torn out of the accessibility tree.
+   The play target takes the row's width, the three-dots button sits beside it
+   and stays quiet until the row is hovered or its menu is open, so a long list
+   does not turn into a column of dots.
+
+   Named `track-row`, not `row`: `.row` is the settings drawer's row and is
+   declared further down, so a second `.row` here would be silently overridden. */
+.track-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
 .item,
 .item-active {
     display: flex;
     align-items: center;
     gap: 11px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     padding: 8px 10px;
     border: 0;
     border-radius: 14px;
@@ -469,6 +494,44 @@
         cursor: wait;
         opacity: 0.62;
     }
+}
+
+.item-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text);
+    opacity: 0.4;
+    cursor: pointer;
+    transition: opacity 0.16s, background-color 0.16s;
+
+    &:hover {
+        opacity: 0.9;
+        background: var(--hover);
+    }
+
+    &:focus-visible {
+        opacity: 0.9;
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+    }
+}
+
+/* `:not` so this never outranks the open state below — both would be opacity
+   changes on the same element and the hover rule is the more specific one. */
+.track-row:hover .item-more:not(.item-more-on) {
+    opacity: 0.7;
+}
+
+.item-more-on {
+    opacity: 1;
+    background: var(--hover);
 }
 
 .item-active {

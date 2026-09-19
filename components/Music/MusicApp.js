@@ -1486,7 +1486,6 @@ const MusicApp = function ({ variant = 'h5' }) {
                     onFolderChange={handleFolderChange}
                     onRefresh={refreshTracks}
                     listLoading={listLoading}
-                    tracks={tracks}
                     visibleTracks={visibleTracks}
                     disliked={disliked}
                     trackCount={visibleTracks.length}
@@ -1519,6 +1518,11 @@ const MusicApp = function ({ variant = 'h5' }) {
                     onToggleRipples={toggleRipples}
                     onDislikeTrack={dislikeTrack}
                     onPinTrack={pinTrack}
+                    rowMenuId={rowMenu ? rowMenu.id : ''}
+                    onOpenRowMenu={openRowMenu}
+                    onOpenCache={goCacheManager}
+                    onOpenDisliked={openDislikedManager}
+                    dislikedCount={disliked.length}
                 />
             ) : (
                 <>

@@ -118,6 +118,14 @@ jobs:
           # flips and simply reverts on the next reload. The playback mode
           # shipped that way once already, so the whole inventory is walked.
           node scripts/check-settings-persistence.js
+          # Parity between the phone and wide-screen layouts. They share all
+          # playback state but render their own lists, and that seam is where a
+          # feature goes missing without erroring: 置顶 / 移入不喜欢 were wired to
+          # the phone only, and the desktop list gated its empty state on the
+          # Google token instead of on whether a library exists — so a fully
+          # loaded public library rendered as 「曲库里还没有歌曲」 until a drive
+          # was linked.
+          node scripts/check-desktop-parity.js
           echo "build output verified"
 
       - name: Setup Pages
