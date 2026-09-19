@@ -4,13 +4,12 @@ import {
     IconArchive,
     IconChevronRight,
     IconCloud,
-    IconClose,
     IconDislike,
     IconFolder,
     IconGear,
     IconGoogleDrive,
-    IconLogout,
     IconLocate,
+    IconLogout,
     IconMoon,
     IconMoreVertical,
     IconMusicSpace,
@@ -32,16 +31,15 @@ import {
 import {
     DESKTOP_LIST_KEY,
     emptyListMessage,
-    formatSize,
     formatTime,
     parseTrackName,
     storageGet,
     storageSet,
     trackGradient,
 } from '../shared';
-import { DRIVE_SOURCE } from '../librarySource';
 import Cover from '../Cover';
 import Marquee from '../Marquee';
+import DesktopSheetChrome from './DesktopSheetChrome';
 
 import styles from './DesktopMusic.module.scss';
 
@@ -61,6 +59,10 @@ const MODES = {
 const PULSE_MS = 1100;
 const PULSE_MS_REDUCED = 400;
 const SETTLE_MS = 700;
+
+// How long the list waits, once music is playing and the pointer is elsewhere,
+// before folding itself away. See the effect that owns this.
+const LIST_HIDE_MS = 3000;
 
 /**
  * Decorative tonearm, drawn in the record rig's own coordinate space
@@ -101,22 +103,21 @@ const Tonearm = function ({ playing }) {
 /**
  * Wide-screen (desktop) music workspace, used by `/desktop`.
  *
- * Layout follows the brief: the *player* owns the centre and gets the most
- * space, the *bottom bar* is the second most important surface (it is the
- * transport and is always reachable), and the *song list* lives on the left
- * where it can be folded away entirely.
+ * One idea: **the record owns the screen.**
  *
- * ┌──────────┬──────────────────────────────────────────┐
- * │ 列表(可藏) │               播放器(主题)                │
- * │          ├──────────────────────────────────────────┤
- * │          │              底部播放条(次要)              │
- * └──────────┴──────────────────────────────────────────┘
+ * The stage fills the viewport and is the only block with a layout of its own.
+ * Everything else — the song list, the capsule play bar, the settings button —
+ * is absolutely positioned *over* it, so nothing a visitor does to them can
+ * move the record by a pixel: folding the list away, opening the settings
+ * dialog, or swapping in the lyrics all happen in boxes the stage never sees.
  *
- * Every feature of the phone layout is reproduced here: the same track list
- * (thumb + gradient cover, spinning loader, equalizer bars, search, refresh),
- * the same record rig (tonearm that drops onto the groove, ripples, lyrics
- * that swap in over the disc), the same single cycling playback-mode button
- * and the same settings (source, Drive connection, folder, theme, cache info).
+ * The stage holds the record, the lyrics when they are shown, and is where any
+ * future audio-visual surface goes — it is the one block with room for it.
+ *
+ * That is the deliberate difference from the phone layout, where the list *is*
+ * the page and the player is a screen pushed on top of it. The two layouts
+ * share the playback state (`core/usePlayer`) and the pure helpers, and
+ * nothing else.
  *
  * Glass is CSS, not WebGL: every surface is a `backdrop-filter` over the
  * `.backdrop` colour field, styled by `DesktopMusic.module.scss` from the
@@ -127,10 +128,7 @@ const DesktopMusic = function ({
     theme,
     onToggleTheme,
     connected,
-    source,
     sourceName,
-    hasLibrary,
-    cached,
     gsiReady,
     clientIdDraft,
     onClientIdDraft,
@@ -140,12 +138,11 @@ const DesktopMusic = function ({
     folderId,
     folderName,
     onFolderChange,
-    onRefresh,
     listLoading,
     visibleTracks,
-    // Count the badge and the folder row show. `visibleTracks` is the list
-    // after the visitor's preferences, so this is what agrees with what they
-    // can actually see — a hidden song must not stay in the total.
+    // Count the settings dialog and the library card show. `visibleTracks` is
+    // the list after the visitor's preferences, so this is what agrees with
+    // what they can actually see — a hidden song must not stay in the total.
     trackCount,
     search,
     onSearch,
@@ -188,7 +185,8 @@ const DesktopMusic = function ({
     const activeLyricRef = useRef(null);
     const pressYRef = useRef(0);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    // `false` = folded away, only the rail button remains. Defaults to open.
+    const [settingsClosing, setSettingsClosing] = useState(false);
+    // `false` = folded away, only the toggle button remains. Defaults to open.
     const [listOpen, setListOpen] = useState(true);
     const [searchOpen, setSearchOpen] = useState(false);
     // The list header's three-dots popover: 'more' | ''. It is only ever the
@@ -203,25 +201,66 @@ const DesktopMusic = function ({
     const menuRef = useRef(null);
     const [cacheCount, setCacheCount] = useState(0);
 
-    // --- "jump to the playing track" ---------------------------------------
+    const meta = current ? parseTrackName(current.track.name) : null;
+    const title = meta ? meta.title : '还没有播放中的歌曲';
+    const artist = meta ? meta.artist : `${sourceName} · 从左侧列表挑一首开始`;
+    const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
+    const percent = progress.duration > 0
+        ? Math.min(100, Math.max(0, (progress.time / progress.duration) * 100))
+        : 0;
+    const keyword = search.trim();
+    const currentId = current ? current.track.id : '';
+    const eqClass = `${styles.eq}${isPlaying ? '' : ` ${styles['eq-paused']}`}`;
+
+    // The phone layout folds shuffle and repeat into one cycling button; so
+    // does this one, so the two layouts share the same interaction.
+    const mode = shuffle ? 'shuffle' : repeat;
+    const playback = MODES[mode] || MODES.off;
+
+    const activeLyric = lyrics && lyrics.timed
+        ? lyrics.lines.reduce((index, line, lineIndex) => (line.time <= progress.time ? lineIndex : index), -1)
+        : -1;
+    const canToggleLyrics = Boolean(lyrics) || lyricsLoading;
+    const lyricsShown = Boolean(lyricsVisible && canToggleLyrics);
+
+    const visibleCount = visibleTracks.length;
+
+    // --- the list steps aside while the music plays -------------------------
     //
-    // The phone layout puts this button on the mini bar's shoulder, because the
-    // bar is the one fixed thing there. The desktop has no bar over the list —
-    // its equivalent fixed edge is the panel itself — so the button is pinned to
-    // the scroller's bottom corner instead, and the row lookup runs against this
-    // component's own ref rather than through the phone layout's list id.
-    const listRef = useRef(null);
-    // Hidden while the playing row is on screen: the button is a nudge back, not
-    // a permanent fixture. Starts false so it cannot flash before the first
-    // measurement lands, and is re-measured whenever the row might have moved
-    // (song change, filtering, list reload).
-    const [rowOffScreen, setRowOffScreen] = useState(false);
-    // True for the length of a jump — the scroll is already on its way and the
-    // list is about to move underneath, so the button is the wrong thing to
-    // leave under the pointer.
-    const [jumping, setJumping] = useState(false);
-    const settleRef = useRef(null);
-    const pulseRef = useRef(null);
+    // Three seconds after playback starts, and only while the pointer is
+    // nowhere near the list, the list folds itself away: the record is the
+    // point of the screen and the list is one click from the toggle button.
+    //
+    // It is a *fold*, not a preference. `listOpen` is what the visitor chose
+    // and what gets stored; `autoHidden` is what the player then did about it.
+    // That split is why nothing below writes to localStorage, and why pausing,
+    // searching, opening the menu or hovering brings the list straight back —
+    // none of those are a decision to put it away.
+    const [autoHidden, setAutoHidden] = useState(false);
+    const [listHover, setListHover] = useState(false);
+    const hideTimerRef = useRef(0);
+    const listVisible = listOpen && !autoHidden;
+
+    // Anything the visitor is *doing* with the list counts as being in range,
+    // not just the pointer: a half-typed search or an open popover must not
+    // vanish under them either.
+    const listBusy = listHover || Boolean(menu) || searchOpen || keyword !== '';
+    // Booleans, not `current` itself: the effect below arms a timer, and a
+    // dependency that changed identity on every render would clear and re-arm
+    // it forever — the list would simply never fold.
+    const hasCurrent = Boolean(current);
+
+    useEffect(() => {
+        window.clearTimeout(hideTimerRef.current);
+        if (!hasCurrent || !isPlaying || !listOpen || listBusy) {
+            setAutoHidden(false);
+            return undefined;
+        }
+        hideTimerRef.current = window.setTimeout(() => setAutoHidden(true), LIST_HIDE_MS);
+        return () => window.clearTimeout(hideTimerRef.current);
+    }, [hasCurrent, isPlaying, listOpen, listBusy]);
+
+    useEffect(() => () => window.clearTimeout(hideTimerRef.current), []);
 
     // Restored on mount and written back on every change, from one effect.
     //
@@ -249,30 +288,6 @@ const DesktopMusic = function ({
         storageSet(DESKTOP_LIST_KEY, listOpen ? 'on' : 'off');
     }, [listOpen]);
 
-    const meta = current ? parseTrackName(current.track.name) : null;
-    const title = meta ? meta.title : '还没有播放中的歌曲';
-    const artist = meta ? meta.artist : `${sourceName} · 从左侧列表挑一首开始`;
-    const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
-    const percent = progress.duration > 0
-        ? Math.min(100, Math.max(0, (progress.time / progress.duration) * 100))
-        : 0;
-    const keyword = search.trim();
-    const currentId = current ? current.track.id : '';
-    const eqClass = `${styles.eq}${isPlaying ? '' : ` ${styles['eq-paused']}`}`;
-
-    // The phone layout folds shuffle and repeat into one cycling button; so
-    // does this one, so the two layouts share the same interaction.
-    const mode = shuffle ? 'shuffle' : repeat;
-    const playback = MODES[mode] || MODES.off;
-
-    const activeLyric = lyrics && lyrics.timed
-        ? lyrics.lines.reduce((index, line, lineIndex) => (line.time <= progress.time ? lineIndex : index), -1)
-        : -1;
-    const canToggleLyrics = Boolean(lyrics) || lyricsLoading;
-    const lyricsShown = Boolean(lyricsVisible && canToggleLyrics);
-
-    const visibleCount = visibleTracks.length;
-
     useEffect(() => {
         if (activeLyric >= 0 && activeLyricRef.current) {
             activeLyricRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -298,12 +313,23 @@ const DesktopMusic = function ({
         return () => window.clearTimeout(modeTimerRef.current);
     }, [mode, current]);
 
+    // Escape backs out of the dialog, which is the only thing here that traps
+    // the visitor. The list is not a layer to escape from: it is one button.
+    const closeSettings = useCallback(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setSettingsOpen(false);
+            setSettingsClosing(false);
+            return;
+        }
+        setSettingsClosing(true);
+    }, []);
+
     useEffect(() => {
         if (!settingsOpen) return undefined;
-        const onKeyDown = (event) => { if (event.key === 'Escape') setSettingsOpen(false); };
+        const onKeyDown = (event) => { if (event.key === 'Escape') closeSettings(); };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [settingsOpen]);
+    }, [settingsOpen, closeSettings]);
 
     // The three-dots menu closes on any outside click / Escape.
     useEffect(() => {
@@ -320,7 +346,7 @@ const DesktopMusic = function ({
         };
     }, [menu]);
 
-    // How many tracks are already cached locally — the settings drawer reports
+    // How many tracks are already cached locally — the settings dialog reports
     // it the way the phone's cache manager does, so the number is honest.
     useEffect(() => {
         if (!settingsOpen) return undefined;
@@ -341,7 +367,25 @@ const DesktopMusic = function ({
         onSearch('');
     };
 
-    // --- the jump button's bookkeeping -------------------------------------
+    // --- "jump to the playing track" ---------------------------------------
+    //
+    // The phone layout puts this button on the mini bar's shoulder, because the
+    // bar is the one fixed thing there. The desktop has no bar over the list —
+    // its equivalent fixed edge is the list itself — so the button is pinned to
+    // the list's bottom corner instead, and the row lookup runs against this
+    // component's own ref rather than through the phone layout's list id.
+    const listRef = useRef(null);
+    // Hidden while the playing row is on screen: the button is a nudge back, not
+    // a permanent fixture. Starts false so it cannot flash before the first
+    // measurement lands, and is re-measured whenever the row might have moved
+    // (song change, filtering, list reload).
+    const [rowOffScreen, setRowOffScreen] = useState(false);
+    // True for the length of a jump — the scroll is already on its way and the
+    // list is about to move underneath, so the button is the wrong thing to
+    // leave under the pointer.
+    const [jumping, setJumping] = useState(false);
+    const settleRef = useRef(null);
+    const pulseRef = useRef(null);
 
     // `currentId` itself is declared with the other derived values above — the
     // row lookup reads the same one the list marks its rows with.
@@ -352,10 +396,10 @@ const DesktopMusic = function ({
             : null;
     }, [currentId]);
 
-    // The scroller *is* the list here — the panel's header and footer are its
-    // siblings, not overlays — so the plain viewport of `.list` is already the
-    // right frame and no inset is needed (the phone layout needs its insets
-    // because a floating header and the mini bar cover its list's ends).
+    // The scroller *is* the list here — the tool row is its sibling, not an
+    // overlay — so the plain viewport of `.list` is already the right frame and
+    // no inset is needed (the phone layout needs its insets because a floating
+    // header and the mini bar cover its list's ends).
     //
     // `visibleCount` is in the deps for the case where the playing row stops
     // being rendered at all — a search that filters it out. A removed node
@@ -412,301 +456,335 @@ const DesktopMusic = function ({
     };
 
     return (
-        <div
-            className={`${styles.root}${listOpen ? '' : ` ${styles['list-collapsed']}`}`}
-        >
+        <div className={styles.root}>
             {/* The colour field the frosted surfaces sample — the root's own
                 background is never blurred by its children, so the gradients
                 have to be painted by a layer *behind* them. */}
             <div className={styles.backdrop} aria-hidden="true" />
 
-            {/* --- left: the song list (hideable) -------------------------- */}
+            {/* The song's own colours, blooming behind the record. A radial
+                mask rather than a blur: the same soft edge, one paint. */}
+            <div className={styles.glow} style={{ background: gradient }} aria-hidden="true" />
 
-            <aside className={`${styles.panel}${listOpen ? ` ${styles['panel-open']}` : ''}`}>
-                <header className={styles['panel-head']}>
-                    <div className={styles.brand}>
-                        <span className={styles['brand-mark']}>
-                            {source === DRIVE_SOURCE
-                                ? <IconGoogleDrive size={22} />
-                                : <IconMusicSpace size={24} />}
-                        </span>
-                        <span className={styles['brand-text']}>
-                            <span className={styles['brand-name']}>
-                                {source === DRIVE_SOURCE ? 'Google Drive' : 'Music Space'}
+            {/* --- the theme: the record, the lyrics, and whatever comes
+                next (a visualiser, a spectrum) — the stage is the one block
+                with room for it -------------------------------------------- */}
+            <div className={`${styles.stage}${lyricsShown ? ` ${styles['stage-lyrics']}` : ''}`}>
+                {/* The record stays mounted under the lyrics rather than being
+                    swapped out: the rotor keeps its angle, so coming back from
+                    the words is coming back to the same groove, not to a record
+                    that restarted. */}
+                <div className={styles['stage-record']}>
+                    <div className={styles.rig}>
+                        <Tonearm playing={isPlaying} />
+
+                        <button
+                            type="button"
+                            className={`${styles.disc}${isPlaying ? ` ${styles['disc-playing']}` : ''}`}
+                            onClick={canToggleLyrics ? onToggleLyrics : onTogglePlay}
+                            disabled={!current}
+                            aria-hidden={lyricsShown || undefined}
+                            tabIndex={lyricsShown ? -1 : 0}
+                            title={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
+                            aria-label={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
+                        >
+                            {/* The `ripples` preference governs both layouts — it
+                                is one display setting, not one per screen. */}
+                            {ripples && (
+                                <span className={styles.ripples} aria-hidden="true">
+                                    <span className={styles.ripple} />
+                                    <span className={styles.ripple} />
+                                    <span className={styles.ripple} />
+                                </span>
+                            )}
+                            <span className={styles.rotor} aria-hidden="true">
+                                <span className={styles['disc-grooves']} />
+                                <span className={styles['disc-label']} style={{ background: gradient }}>
+                                    <Cover track={current ? current.track : null} />
+                                    {current ? <IconNote /> : <IconMusicSpace size={34} />}
+                                </span>
+                                <span className={styles['disc-sheen']} />
                             </span>
-                            <span className={styles['brand-sub']}>
-                                {listLoading ? '同步中…' : `${trackCount} 首`}
-                                {folderName ? ` · ${folderName}` : ''}
-                            </span>
-                        </span>
+                        </button>
                     </div>
-                    <button
-                        type="button"
-                        className={`${styles['rail-btn']}${listLoading ? ` ${styles.spin}` : ''}`}
-                        title="刷新列表"
-                        aria-label="刷新列表"
-                        disabled={listLoading}
-                        onClick={onRefresh}
-                    >
-                        <IconRefresh />
-                    </button>
-                </header>
 
-                <div className={styles['panel-tools']}>
-                    {searchOpen ? (
-                        <label className={styles.search}>
-                            <span className={styles['search-icon']}><IconSearch /></span>
-                            <input
-                                ref={searchInputRef}
-                                type="search"
-                                value={search}
-                                onChange={(event) => onSearch(event.target.value)}
-                                onKeyDown={(event) => { if (event.key === 'Escape') closeSearch(); }}
-                                placeholder="搜索歌曲或歌手"
-                                aria-label="搜索歌曲或歌手"
-                            />
+                    <div className={styles.head}>
+                        <Marquee text={`${title} - ${artist}`} className={styles['head-label']} center>
+                            <span className={styles['head-title']}>{title}</span>
+                            <span className={styles['head-artist']}> - {artist}</span>
+                        </Marquee>
+                    </div>
+                </div>
+
+                {modeToast && (
+                    <span className={styles['mode-toast']} role="status">{modeToast}</span>
+                )}
+
+                {lyricsShown && (
+                    <div
+                        className={styles.lyrics}
+                        role="button"
+                        tabIndex={0}
+                        aria-label="歌词，点击返回唱片"
+                        title="返回唱片"
+                        onPointerDown={(event) => { pressYRef.current = event.clientY; }}
+                        onClick={handleLyricsClick}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                onToggleLyrics();
+                            }
+                        }}
+                    >
+                        {lyrics ? lyrics.lines.map((line, index) => (
+                            <p
+                                key={`${line.time}-${index}`}
+                                ref={index === activeLyric ? activeLyricRef : null}
+                                className={index === activeLyric ? styles['lyric-active'] : styles.lyric}
+                            >
+                                {line.text}
+                            </p>
+                        )) : (
+                            <p className={styles['lyrics-empty']}>歌词加载中…</p>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* --- left: the song list, floating over the stage -------------- */}
+
+            {/* The column is a hover region and a home for two controls, not a
+                surface — hence `pointer-events: none` on it and `auto` on the
+                two things inside. Without that the empty half of the column
+                would swallow clicks meant for the record behind it. */}
+            <div className={`${styles.side}${listVisible ? '' : ` ${styles['side-folded']}`}`}>
+                <button
+                    type="button"
+                    className={styles['side-toggle']}
+                    onClick={() => setListOpen((open) => !open)}
+                    onPointerEnter={() => setListHover(true)}
+                    onPointerLeave={() => setListHover(false)}
+                    aria-expanded={listVisible}
+                    aria-label={listVisible ? '收起列表' : '展开列表'}
+                    title={listVisible ? '收起列表' : '展开列表'}
+                >
+                    <IconPanel />
+                </button>
+
+                <div
+                    className={styles.panel}
+                    onPointerEnter={() => setListHover(true)}
+                    onPointerLeave={() => setListHover(false)}
+                >
+                    <div className={styles.tools}>
+                        {searchOpen ? (
+                            <label className={styles.search}>
+                                <span className={styles['search-icon']}><IconSearch /></span>
+                                <input
+                                    ref={searchInputRef}
+                                    type="search"
+                                    value={search}
+                                    onChange={(event) => onSearch(event.target.value)}
+                                    onKeyDown={(event) => { if (event.key === 'Escape') closeSearch(); }}
+                                    placeholder="搜索歌曲或歌手"
+                                    aria-label="搜索歌曲或歌手"
+                                />
+                                <button
+                                    type="button"
+                                    className={styles['search-close']}
+                                    title="关闭搜索"
+                                    aria-label="关闭搜索"
+                                    onClick={closeSearch}
+                                >
+                                    ×
+                                </button>
+                            </label>
+                        ) : (
                             <button
                                 type="button"
-                                className={styles['search-close']}
-                                title="关闭搜索"
-                                aria-label="关闭搜索"
-                                onClick={closeSearch}
+                                className={styles['tool-btn']}
+                                title="搜索"
+                                aria-label="搜索"
+                                onClick={() => setSearchOpen(true)}
                             >
-                                ×
+                                <IconSearch />
+                                <span>搜索歌曲</span>
                             </button>
-                        </label>
-                    ) : (
-                        <button
-                            type="button"
-                            className={styles['tool-btn']}
-                            title="搜索"
-                            aria-label="搜索"
-                            onClick={() => setSearchOpen(true)}
-                        >
-                            <IconSearch />
-                            <span>搜索歌曲</span>
-                        </button>
-                    )}
-                    <div className={styles['menu-wrap']} ref={menuRef}>
-                        <button
-                            type="button"
-                            className={`${styles['rail-btn']}${menu ? ` ${styles['rail-btn-on']}` : ''}`}
-                            title="更多"
-                            aria-label="更多"
-                            aria-haspopup="menu"
-                            aria-expanded={Boolean(menu)}
-                            onClick={() => openMenu('more')}
-                        >
-                            <IconMoreVertical />
-                        </button>
-                        {menu && (
-                            <div className={styles.menu} role="menu" aria-label="更多功能">
-                                <button
-                                    type="button"
-                                    className={styles['menu-item']}
-                                    role="menuitem"
-                                    onClick={() => { setMenu(''); setSettingsOpen(true); }}
-                                >
-                                    <span className={styles['menu-icon']} aria-hidden="true"><IconGoogleDrive size={20} /></span>
-                                    <span className={styles['menu-text']}>
-                                        <span className={styles['menu-title']}>谷歌云盘链接</span>
-                                        <span className={styles['menu-sub']}>
-                                            {connected ? '已连接，可在设置里切换或断开' : '连接或切换自己的云盘曲库'}
+                        )}
+                        <div className={styles['menu-wrap']} ref={menuRef}>
+                            <button
+                                type="button"
+                                className={`${styles['tool-icon']}${menu ? ` ${styles['tool-icon-on']}` : ''}`}
+                                title="更多"
+                                aria-label="更多"
+                                aria-haspopup="menu"
+                                aria-expanded={Boolean(menu)}
+                                onClick={() => openMenu('more')}
+                            >
+                                <IconMoreVertical />
+                            </button>
+                            {menu && (
+                                <div className={styles.menu} role="menu" aria-label="更多功能">
+                                    <button
+                                        type="button"
+                                        className={styles['menu-item']}
+                                        role="menuitem"
+                                        onClick={() => { setMenu(''); setSettingsOpen(true); }}
+                                    >
+                                        <span className={styles['menu-icon']} aria-hidden="true"><IconGoogleDrive size={20} /></span>
+                                        <span className={styles['menu-text']}>
+                                            <span className={styles['menu-title']}>谷歌云盘链接</span>
+                                            <span className={styles['menu-sub']}>
+                                                {connected ? '已连接，可在设置里切换或断开' : '连接或切换自己的云盘曲库'}
+                                            </span>
                                         </span>
-                                    </span>
-                                    <IconChevronRight />
-                                </button>
-                                {/* The cache manager and the disliked-songs
-                                    screen are shell-owned sheets, the same ones
-                                    the phone layout opens — so these entries
-                                    raise them rather than dropping the visitor
-                                    into the settings drawer, which only ever
-                                    reported a count. */}
-                                <button
-                                    type="button"
-                                    className={styles['menu-item']}
-                                    role="menuitem"
-                                    onClick={() => { setMenu(''); onOpenCache(); }}
-                                >
-                                    <span className={styles['menu-icon']} aria-hidden="true"><IconArchive size={20} /></span>
-                                    <span className={styles['menu-text']}>
-                                        <span className={styles['menu-title']}>缓存管理</span>
-                                        <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
-                                    </span>
-                                    <IconChevronRight />
-                                </button>
-                                <button
-                                    type="button"
-                                    className={styles['menu-item']}
-                                    role="menuitem"
-                                    onClick={() => { setMenu(''); onOpenDisliked(); }}
-                                >
-                                    <span className={styles['menu-icon']} aria-hidden="true"><IconDislike size={20} /></span>
-                                    <span className={styles['menu-text']}>
-                                        <span className={styles['menu-title']}>不喜欢歌曲</span>
-                                        <span className={styles['menu-sub']}>查看已隐藏的歌曲，可移出让它回到列表</span>
-                                    </span>
-                                    <span className={styles['menu-value']}>
-                                        {dislikedCount > 0 ? `${dislikedCount} 首` : ''}
-                                    </span>
-                                </button>
-                            </div>
+                                        <IconChevronRight />
+                                    </button>
+                                    {/* The cache manager and the disliked-songs
+                                        screen are shell-owned sheets, the same ones
+                                        the phone layout opens — so these entries
+                                        raise them rather than dropping the visitor
+                                        into the settings dialog, which only ever
+                                        reported a count. */}
+                                    <button
+                                        type="button"
+                                        className={styles['menu-item']}
+                                        role="menuitem"
+                                        onClick={() => { setMenu(''); onOpenCache(); }}
+                                    >
+                                        <span className={styles['menu-icon']} aria-hidden="true"><IconArchive size={20} /></span>
+                                        <span className={styles['menu-text']}>
+                                            <span className={styles['menu-title']}>缓存管理</span>
+                                            <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
+                                        </span>
+                                        <IconChevronRight />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={styles['menu-item']}
+                                        role="menuitem"
+                                        onClick={() => { setMenu(''); onOpenDisliked(); }}
+                                    >
+                                        <span className={styles['menu-icon']} aria-hidden="true"><IconDislike size={20} /></span>
+                                        <span className={styles['menu-text']}>
+                                            <span className={styles['menu-title']}>不喜欢歌曲</span>
+                                            <span className={styles['menu-sub']}>查看已隐藏的歌曲，可移出让它回到列表</span>
+                                        </span>
+                                        <span className={styles['menu-value']}>
+                                            {dislikedCount > 0 ? `${dislikedCount} 首` : ''}
+                                        </span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* The list is the only content here: no library card, no
+                        source badge, no panel of its own. It scrolls straight
+                        over the colour field, and a row only paints itself —
+                        background, and its own actions — under the pointer. */}
+                    <div className={styles['list-wrap']}>
+                        {visibleCount === 0 ? (
+                            <p className={styles['list-empty']}>
+                                {emptyListMessage({
+                                    listLoading,
+                                    keyword,
+                                    libraryCount,
+                                    folderHint: '设置',
+                                })}
+                            </p>
+                        ) : (
+                            <ul className={styles.list} ref={listRef}>
+                                {visibleTracks.map((track) => {
+                                    const item = parseTrackName(track.name);
+                                    const active = track.id === currentId;
+                                    const loading = loadingId === track.id;
+                                    const rowMenuOpen = rowMenuId === track.id;
+                                    return (
+                                        // Two sibling controls rather than a button
+                                        // wrapping another button — the nested one is
+                                        // invalid HTML and gets torn out of the
+                                        // accessibility tree. The play target keeps the
+                                        // row's width; the three-dots button sits beside
+                                        // it and only exists under the pointer, so a
+                                        // long list does not turn into a column of dots.
+                                        <li key={track.id} data-track-id={track.id} className={styles['track-row']}>
+                                            <button
+                                                type="button"
+                                                className={active ? styles['item-active'] : styles.item}
+                                                disabled={loading}
+                                                onClick={() => onToggleTrack(track)}
+                                                title={`${item.title} - ${item.artist}`}
+                                            >
+                                                <span
+                                                    className={styles['item-thumb']}
+                                                    style={{ background: trackGradient(track.name) }}
+                                                    aria-hidden="true"
+                                                >
+                                                    {/* First child on purpose: the
+                                                        cover swallows the note glyph
+                                                        underneath it, but the
+                                                        play/pause scrim below has to
+                                                        land on top of the photo. */}
+                                                    <Cover track={track} />
+                                                    {active && !loading ? (
+                                                        <span className={styles['thumb-overlay']}>
+                                                            {isPlaying ? <IconPause /> : <IconPlay />}
+                                                        </span>
+                                                    ) : (
+                                                        <IconNote />
+                                                    )}
+                                                </span>
+                                                <span className={styles['item-text']}>
+                                                    <span className={styles['item-title']}>{item.title}</span>
+                                                    <span className={styles['item-artist']}>{item.artist}</span>
+                                                </span>
+                                                {loading ? (
+                                                    <span className={`${styles['item-flag']} ${styles.spin}`} aria-hidden="true">
+                                                        <IconRefresh />
+                                                    </span>
+                                                ) : active ? (
+                                                    <span className={eqClass} aria-hidden="true"><i /><i /><i /></span>
+                                                ) : null}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={rowMenuOpen
+                                                    ? `${styles['item-more']} ${styles['item-more-on']}`
+                                                    : styles['item-more']}
+                                                title="更多操作"
+                                                aria-label={`${item.title} 的更多操作`}
+                                                aria-haspopup="menu"
+                                                aria-expanded={rowMenuOpen}
+                                                onClick={() => onOpenRowMenu(track)}
+                                            >
+                                                <IconMoreVertical />
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+
+                        {/* Pinned to the list's bottom corner, not to a row: it
+                            has to stay put while the list moves under it. The
+                            phone bar carries the same button on its shoulder. */}
+                        {!listLoading && rowOffScreen && !jumping && (
+                            <button
+                                type="button"
+                                className={styles['locate-btn']}
+                                title="回到正在播放"
+                                aria-label="回到正在播放"
+                                onClick={jumpToCurrent}
+                            >
+                                <IconLocate />
+                            </button>
                         )}
                     </div>
                 </div>
+            </div>
 
-                {/* `hasLibrary` — not `connected` — decides whether there is a
-                    library to show. The public library needs no authorization,
-                    so gating on the Google token meant the panel showed
-                    「曲库里还没有歌曲 / 去连接」 on top of a fully loaded public
-                    list and only revealed the songs once a drive was linked.
-                    `connected` still drives the drive-specific rows further
-                    down, which is what it actually means.
-
-                    The `listLoading` guard keeps a first visit — no list cache
-                    yet — from reading as "nothing here" while the public
-                    library is still arriving. */}
-                <div className={styles['list-wrap']}>
-                    {!hasLibrary && !listLoading ? (
-                        <section className={styles.connect}>
-                            <span className={styles['connect-icon']}><IconQueue /></span>
-                            <h2 className={styles['connect-title']}>曲库里还没有歌曲</h2>
-                            <p className={styles['connect-sub']}>
-                                公共曲库暂时是空的；也可以连接 Google 云盘，
-                                播放你自己云盘里的音乐。
-                            </p>
-                            <button type="button" className={styles['connect-btn']} onClick={() => setSettingsOpen(true)}>
-                                去连接
-                            </button>
-                        </section>
-                    ) : visibleCount === 0 ? (
-                        <p className={styles['list-empty']}>
-                            {emptyListMessage({
-                                listLoading,
-                                keyword,
-                                libraryCount,
-                                folderHint: '设置',
-                            })}
-                        </p>
-                    ) : (
-                        <ul className={styles.list} ref={listRef}>
-                            {visibleTracks.map((track) => {
-                                const item = parseTrackName(track.name);
-                                const active = track.id === currentId;
-                                const loading = loadingId === track.id;
-                                const rowMenuOpen = rowMenuId === track.id;
-                                return (
-                                    // Two sibling controls rather than a button
-                                    // wrapping another button — the nested one is
-                                    // invalid HTML and gets torn out of the
-                                    // accessibility tree. The play target keeps the
-                                    // row's width; the three-dots button sits beside
-                                    // it and raises the same row drawer the phone
-                                    // layout opens (置顶 / 移入不喜欢).
-                                    <li key={track.id} data-track-id={track.id} className={styles['track-row']}>
-                                        <button
-                                            type="button"
-                                            className={active ? styles['item-active'] : styles.item}
-                                            disabled={loading}
-                                            onClick={() => onToggleTrack(track)}
-                                            title={`${item.title} - ${item.artist}`}
-                                        >
-                                            <span
-                                                className={styles['item-thumb']}
-                                                style={{ background: trackGradient(track.name) }}
-                                                aria-hidden="true"
-                                            >
-                                                {/* First child on purpose: the
-                                                    cover swallows the note glyph
-                                                    underneath it, but the
-                                                    play/pause scrim below has to
-                                                    land on top of the photo. */}
-                                                <Cover track={track} />
-                                                {active && !loading ? (
-                                                    <span className={styles['thumb-overlay']}>
-                                                        {isPlaying ? <IconPause /> : <IconPlay />}
-                                                    </span>
-                                                ) : (
-                                                    <IconNote />
-                                                )}
-                                            </span>
-                                            <span className={styles['item-text']}>
-                                                <span className={styles['item-title']}>{item.title}</span>
-                                                <span className={styles['item-artist']}>{item.artist}</span>
-                                            </span>
-                                            {loading ? (
-                                                <span className={`${styles['item-flag']} ${styles.spin}`} aria-hidden="true">
-                                                    <IconRefresh />
-                                                </span>
-                                            ) : active ? (
-                                                <span className={eqClass} aria-hidden="true"><i /><i /><i /></span>
-                                            ) : null}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={rowMenuOpen
-                                                ? `${styles['item-more']} ${styles['item-more-on']}`
-                                                : styles['item-more']}
-                                            title="更多操作"
-                                            aria-label={`${item.title} 的更多操作`}
-                                            aria-haspopup="menu"
-                                            aria-expanded={rowMenuOpen}
-                                            onClick={() => onOpenRowMenu(track)}
-                                        >
-                                            <IconMoreVertical />
-                                        </button>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-
-                    {/* Pinned to the scroller's bottom corner, not to a row:
-                        it has to stay put while the list moves under it. The
-                        phone bar carries the same button on its shoulder. */}
-                    {!listLoading && rowOffScreen && !jumping && (
-                        <button
-                            type="button"
-                            className={styles['locate-btn']}
-                            title="回到正在播放"
-                            aria-label="回到正在播放"
-                            onClick={jumpToCurrent}
-                        >
-                            <IconLocate />
-                        </button>
-                    )}
-                </div>
-
-                <footer className={styles['panel-foot']}>
-                    {/* What this reports is where the *list* came from, not
-                        whether the app works offline — with no service worker
-                        it does not, so 「离线可用」 claimed something the site
-                        cannot do. `cached` is `listCacheAvailable`: the library
-                        was rendered from localStorage instead of a fresh
-                        fetch. */}
-                    <span>{cached ? '列表已缓存' : '在线'}</span>
-                    <span className={styles['foot-sep']} aria-hidden="true">·</span>
-                    <button type="button" className={styles['foot-link']} onClick={onToggleTheme}>
-                        {theme === 'dark' ? '浅色' : '深色'}
-                    </button>
-                </footer>
-            </aside>
-
-            {/* Folded to a rail; the button is the way back. */}
-            <button
-                type="button"
-                className={styles['rail-toggle']}
-                onClick={() => setListOpen((open) => !open)}
-                aria-expanded={listOpen}
-                aria-label={listOpen ? '隐藏列表' : '显示列表'}
-                title={listOpen ? '隐藏列表' : '显示列表'}
-            >
-                <IconPanel />
-            </button>
-
-            {/* --- centre: the player (the theme of the workspace) --------- */}
-
-            {/* 1/4 — settings entry, top-right */}
+            {/* --- top right: the settings entry --------------------------- */}
             <button
                 type="button"
                 className={styles['settings-btn']}
@@ -717,89 +795,11 @@ const DesktopMusic = function ({
                 <IconGear />
             </button>
 
-            {/* 2/4 — the record (glass) */}
-            <div className={styles.stage}>
-                <div className={styles.rig}>
-                    <Tonearm playing={isPlaying} />
-                    <button
-                        type="button"
-                        className={`${styles.disc}${isPlaying ? ` ${styles['disc-playing']}` : ''}`}
-                        onClick={canToggleLyrics ? onToggleLyrics : onTogglePlay}
-                        disabled={!current}
-                        title={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
-                        aria-label={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
-                    >
-                        {/* The `ripples` preference governs both layouts — it is
-                            one display setting, not one per screen. */}
-                        {ripples && (
-                            <span className={styles.ripples} aria-hidden="true">
-                                <span className={styles.ripple} />
-                                <span className={styles.ripple} />
-                                <span className={styles.ripple} />
-                            </span>
-                        )}
-                        <span className={styles.rotor} aria-hidden="true">
-                            <span className={styles['disc-grooves']} />
-                            <span className={styles['disc-label']} style={{ background: gradient }}>
-                                <Cover track={current ? current.track : null} />
-                                {current ? <IconNote /> : <IconMusicSpace size={34} />}
-                            </span>
-                            <span className={styles['disc-sheen']} />
-                        </span>
-                    </button>
-                </div>
-
-                {modeToast && (
-                    <span className={styles['mode-toast']} role="status">{modeToast}</span>
-                )}
-
-                <div className={styles.head}>
-                    <Marquee text={`${title} - ${artist}`} className={styles['head-label']} center>
-                        <span className={styles['head-title']}>{title}</span>
-                        <span className={styles['head-artist']}> - {artist}</span>
-                    </Marquee>
-                    <span
-                        className={styles['head-state']}
-                        aria-hidden="true"
-                    >
-                        {current ? `${sourceName} · ${formatSize(current.track.size)}` : ''}
-                    </span>
-                </div>
-            </div>
-
-            {/* 3/4 — lyrics card, floats over the record's lower half */}
-            {lyricsShown && (
-                <div
-                    className={styles.lyrics}
-                    role="button"
-                    tabIndex={0}
-                    aria-label="歌词，点击返回唱片"
-                    title="返回唱片"
-                    onPointerDown={(event) => { pressYRef.current = event.clientY; }}
-                    onClick={handleLyricsClick}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            onToggleLyrics();
-                        }
-                    }}
-                >
-                    {lyrics ? lyrics.lines.map((line, index) => (
-                        <p
-                            key={`${line.time}-${index}`}
-                            ref={index === activeLyric ? activeLyricRef : null}
-                            className={index === activeLyric ? styles['lyric-active'] : styles.lyric}
-                        >
-                            {line.text}
-                        </p>
-                    )) : (
-                        <p className={styles['lyrics-empty']}>歌词加载中…</p>
-                    )}
-                </div>
-            )}
-
-            {/* 4/4 — the bottom play bar (glass) */}
+            {/* --- bottom: the capsule play bar ---------------------------- */}
             <div className={styles.bar}>
+                {/* The progress rides the capsule's own lower edge instead of
+                    taking a row of its own: the pill keeps one line of content
+                    and still has a real, draggable seek target. */}
                 <input
                     className={styles.seek}
                     type="range"
@@ -897,29 +897,20 @@ const DesktopMusic = function ({
                 </div>
             </div>
 
-            {/* --- settings drawer (glass, slides in from the right) ------- */}
-
+            {/* --- settings, as a dialog -----------------------------------
+                The same chrome the cache and disliked panels use: a centred
+                glass card over a dimmed scrim. It used to slide in from the
+                right edge, which on a screen whose whole point is the record
+                read as a second app docked to the side. */}
             {settingsOpen && (
-                <div className={styles['settings-scrim']} onClick={() => setSettingsOpen(false)} role="presentation">
-                    <div
-                        className={styles.settings}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label="设置"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <header className={styles['settings-head']}>
-                            <h2>设置</h2>
-                            <button
-                                type="button"
-                                className={`${styles['rail-btn']} ${styles['rail-btn-plain']}`}
-                                onClick={() => setSettingsOpen(false)}
-                                aria-label="关闭设置"
-                            >
-                                <IconClose />
-                            </button>
-                        </header>
-
+                <DesktopSheetChrome
+                    title="设置"
+                    closing={settingsClosing}
+                    onClosed={() => { setSettingsOpen(false); setSettingsClosing(false); }}
+                    onCancelClose={() => setSettingsClosing(false)}
+                    onClose={closeSettings}
+                >
+                    <div className={styles['settings-body']}>
                         <section className={styles.group}>
                             <div className={styles['group-label']}>当前曲库</div>
                             <div className={styles.account}>
@@ -1062,10 +1053,11 @@ const DesktopMusic = function ({
                             歌曲缓存在本机保留 30 天，期间每播一次就自动续期，30 天没播放过才会清除；
                             公共曲库来自 Cloudflare R2，无需登录即可播放。
                             <br />
-                            界面为毛玻璃风格，浏览器不支持 backdrop-filter 时会自动回退为半透明底色。
+                            浮层（胶囊播放条、列表、这个弹窗）为毛玻璃风格，浏览器不支持 backdrop-filter
+                            时会自动回退为半透明底色。
                         </p>
                     </div>
-                </div>
+                </DesktopSheetChrome>
             )}
         </div>
     );

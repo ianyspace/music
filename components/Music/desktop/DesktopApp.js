@@ -55,16 +55,12 @@ const DesktopApp = function () {
         pinTrack,
         tracks,
         visibleTracks,
-        librarySource,
         sourceName,
         folderName,
         folders,
         folderId,
         handleFolderChange,
         listLoading,
-        refreshTracks,
-        hasLibrary,
-        listCacheAvailable,
         search,
         setSearch,
         current,
@@ -139,10 +135,7 @@ const DesktopApp = function () {
                 theme={theme}
                 onToggleTheme={toggleTheme}
                 connected={!!token}
-                source={librarySource}
                 sourceName={sourceName}
-                hasLibrary={hasLibrary}
-                cached={listCacheAvailable}
                 gsiReady={gsiReady}
                 clientIdDraft={clientIdDraft}
                 onClientIdDraft={setClientIdDraft}
@@ -152,7 +145,6 @@ const DesktopApp = function () {
                 folderId={folderId}
                 folderName={folderName}
                 onFolderChange={handleFolderChange}
-                onRefresh={refreshTracks}
                 listLoading={listLoading}
                 visibleTracks={visibleTracks}
                 // Not `trackCount` (which is what the panel displays): this is

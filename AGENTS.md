@@ -18,7 +18,7 @@
 | `pages/index.js` | 入口路由，按屏宽决定跳 `/h5` 还是 `/desktop` |
 | `pages/h5.js` / `pages/desktop.js` | 两个薄路由，各自只渲染一棵树，互不相干 |
 | `components/Music/h5/` | 手机端：`MusicApp` 外壳 + 列表/播放页/迷你条/我的 + 三个底部面板 |
-| `components/Music/desktop/` | 宽屏端：`DesktopApp` 外壳 + 工作台 + 玻璃面板 + 行抽屉 |
+| `components/Music/desktop/` | 宽屏端：`DesktopApp` 外壳 + 沉浸式舞台（`DesktopMusic`）+ 玻璃弹窗 + 行抽屉 |
 | `components/Music/core/` | 两套布局共用的中性核心（见下方「两套布局」） |
 | `components/Music/`（根） | 只放共享件：`Cover` / `Marquee` / `icons` / `shared` / `audioCache` / `librarySource` |
 | `lib/cache/indexedDb.js` | IndexedDB 薄封装（缓存存储层） |
@@ -182,8 +182,15 @@ pages/desktop.js ─▶ components/Music/desktop/DesktopApp.js ┘   + Cover/Mar
 `usePlayer` 返回一个扁平的 ~80 字段对象（而不是拆成几个小 hook），就是为了让这次拆分
 能**逐字搬迁**手机端的行为 —— 拆 hook 会顺手改掉依赖数组和执行顺序。
 
-`lyricsAutoOpen` 是两套布局**唯一**真正分歧的地方：桌面端的舞台就是歌词卡，
+`lyricsAutoOpen` 是两套布局**唯一**真正分歧的地方：桌面端的舞台就是歌词，
 有歌词就展开是对的；手机端则会平白盖住自己的列表。
+
+桌面端列表还有一条手机端没有的规则：**有歌在放、鼠标又不在列表上，3 秒后列表自己收起**
+（`LIST_HIDE_MS`）。它折的是 `autoHidden`，不是 `listOpen` —— 后者是访客的选择、
+是要存进 localStorage 的那个；前者只是播放器替访客做的临时决定，所以暂停、搜索、
+开着菜单、鼠标回到列表上都会立刻把它放回来。写这个 effect 时依赖必须是**布尔量**
+（`hasCurrent` 而不是 `current`）：`current` 每次渲染换身份的话，定时器会被反复
+清掉重设，列表就永远不会收起。
 
 **改一套布局时先想另一套**。以前这个缝漏过三次：`置顶` / `移入不喜欢` 只接在手机端；
 桌面端用 Google token 而不是 `hasLibrary` 判空状态，导致公共曲库明明加载好了却显示
@@ -202,19 +209,51 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 | token | 用途 |
 | --- | --- |
 | `--glass-blur` / `--glass-sat` | `backdrop-filter: blur() saturate()` 的两个参数 |
-| `--glass-bg` | 常规面：列表面板、唱片、歌词卡、播放条、设置按钮 |
-| `--glass-bg-soft` | 玻璃**之上**的凹陷（搜索框、输入框、`connect` 卡片） |
-| `--glass-bg-strong` | 要压住繁忙内容的面：菜单、设置抽屉、面板卡片、toast |
+| `--glass-bg` | 常规面：胶囊播放条、设置按钮、折叠后的列表开关 |
+| `--glass-bg-soft` | 玻璃**之上**的凹陷（搜索框、输入框、设置里的曲库卡片） |
+| `--glass-bg-strong` | 要压住繁忙内容的面：菜单、设置弹窗、面板卡片、toast、定位按钮 |
 | `--glass-border` / `--glass-inset` / `--glass-shadow` | 描边、内高光、投影 |
 
 `.backdrop` 是**独立的兄弟层**（不是 `.root` 自己的背景）：`backdrop-filter` 只采样
 它**背后**已经画好的东西，把四团色晕放在自己那一格里，模糊才有东西可糊。
+`.glow` 是它上面再一层、用当前歌曲的 `trackGradient` 做的圆形色晕（`mask-image`
+抠出来的软边，不是 `filter: blur()` —— 同样的边缘，一次绘制，没有离屏大缓冲）。
 
 **不支持 `backdrop-filter` 的浏览器**由 `DesktopApp.module.scss` 里一个
 `@supports not (…)` 兜住：它只把三个 `--glass-*` 的 alpha 提到接近不透明，
 布局、描边、投影一律不动 —— 所以没有任何东西会移位，只是不再透。
 那段必须和 token 声明在同一个文件里，否则会被 `.page` 的浅色值按源码顺序盖掉
 （所以里面写的是 `.page.theme-dark` 而不是 `.theme-dark`）。
+
+### 桌面端：舞台占满全屏，别的东西都浮在上面
+
+```
+.root  (100vh，overflow: hidden —— 整页不滚动)
+├── .backdrop / .glow          色场，铺满
+├── .stage  (absolute; inset: 0)   ← 唯一有自己布局的块
+│     ├── .stage-record         唱片 + 歌名（有歌词时 opacity: 0，不卸载）
+│     └── .lyrics               歌词，absolute 铺在 stage 上
+├── .side    (absolute)  列表：无面板背景，直接滚动
+├── .settings-btn (absolute)
+└── .bar     (absolute)  胶囊播放条
+```
+
+**这是桌面端最容易改坏的一条约定**：舞台是 `position: absolute; inset: 0`，
+其余全是它的**兄弟**、绝对定位在它上面 —— 所以折叠列表、开设置弹窗、切歌词
+都不可能让唱片挪一个像素。想让某个新控件「浮着」，就绝对定位；一旦把它塞进
+`.stage` 的流里，它就会开始推唱片。
+
+几条随之而来的硬约束：
+
+- **`.root` 不能有 `transform` / `filter`**：那会让 `position: fixed` 的
+  面板 / 弹窗以它为包含块，`overflow: hidden` 就会把它们裁掉。
+- **`.side` 是 `pointer-events: none`**，只有里面的开关和 `.panel` 是 `auto` ——
+  否则列表那一列空白会把本该落到唱片上的点击吃掉。
+- **胶囊播放条的几何写在 `.root` 上**（`--bar-h` / `--bar-bottom`），
+  因为 `.side` 的底边要用它来让开播放条。改一个数字，两处一起动。
+- **`.seek` 是绝对定位在胶囊内部的**（贴着下沿、左右各让开 34px）：
+  胶囊的圆角是 999px，行内边距小于 34px 时内容会跑到填充外面去。
+- 列表的 `.list` 带 `mask-image` 下沿渐隐 —— 它是浮在色场上的，硬切会被读成「面板被裁了」。
 
 ## 迁移时替换了什么
 
