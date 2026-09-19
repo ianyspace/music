@@ -6,7 +6,7 @@ import {
     IconFolder,
     IconNoteList,
     IconRefresh,
-} from './icons';
+} from '../icons';
 
 import styles from './Profile.module.scss';
 

@@ -10,10 +10,10 @@ import {
     IconSearch,
     IconMusicSpace,
     IconGoogleDrive,
-} from './icons';
-import { emptyListMessage, parseTrackName, trackGradient } from './shared';
-import { DRIVE_SOURCE } from './librarySource';
-import Cover from './Cover';
+} from '../icons';
+import { emptyListMessage, parseTrackName, trackGradient } from '../shared';
+import { DRIVE_SOURCE } from '../librarySource';
+import Cover from '../Cover';
 
 import styles from './TrackList.module.scss';
 

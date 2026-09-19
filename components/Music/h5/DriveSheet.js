@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
 import {
-    IconChevronDown,
     IconChevronRight,
     IconCloud,
     IconFolder,
@@ -9,14 +8,15 @@ import {
     IconLogout,
     IconNoteList,
     IconRefresh,
-} from './icons';
+} from '../icons';
 
+import SheetChrome from './SheetChrome';
 import styles from './DriveSheet.module.scss';
 
 /**
  * Google Drive connection — a full-height sheet opened from the song list's
- * drawer, built on the same chrome as the cache manager (`Sheet.module.scss`):
- * same column width, same rise-and-scale entrance, same collapse button.
+ * drawer, built on the same chrome as the cache manager (`SheetChrome`): same
+ * column width, same rise-and-scale entrance, same collapse button.
  *
  * It deliberately holds nothing but Drive: the library card up top, then
  * either the "connect your own drive" steps or the folder picker and the
@@ -65,32 +65,22 @@ const DriveSheet = function ({
     };
 
     return (
-        <div
-            className={closing ? `${styles.veil} ${styles['veil-out']}` : styles.veil}
-            onAnimationEnd={() => { if (closing) onClosed(); }}
-            onPointerDown={() => { if (closing) onCancelClose(); }}
+        <SheetChrome
+            title="谷歌云盘链接"
+            closing={closing}
+            onClosed={onClosed}
+            onCancelClose={onCancelClose}
+            onClose={onClose}
+            /* Equal-width twin of the collapse button: it keeps the title
+               centred and re-reads the folder list. */
+            action={{
+                onClick: onRefresh,
+                disabled: !driveConnected || loading,
+                title: '刷新',
+                icon: <IconRefresh />,
+            }}
         >
-            <div className={closing ? `${styles.page} ${styles['page-out']}` : styles.page}>
-                <div className={styles.topbar}>
-                    <button type="button" className={styles['top-btn']} title="收起" aria-label="收起" onClick={onClose}>
-                        <IconChevronDown />
-                    </button>
-                    <h2 className={styles['top-title']}>谷歌云盘链接</h2>
-                    {/* Equal-width twin of the collapse button: it keeps the
-                        title centred and re-reads the folder list. */}
-                    <button
-                        type="button"
-                        className={styles['top-btn']}
-                        title="刷新"
-                        aria-label="刷新"
-                        onClick={onRefresh}
-                        disabled={!driveConnected || loading}
-                    >
-                        <IconRefresh />
-                    </button>
-                </div>
-
-                <div className={styles.body}>
+            <div className={styles.body}>
                     <div className={styles.account}>
                         <span className={styles['account-icon']}>
                             <IconCloud />
@@ -204,9 +194,8 @@ const DriveSheet = function ({
                         授权令牌与客户端 ID 只保存在本机浏览器，不会上传到任何服务器；
                         音频缓存同样只存在本地。
                     </p>
-                </div>
             </div>
-        </div>
+        </SheetChrome>
     );
 };
 

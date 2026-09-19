@@ -1,41 +1,18 @@
-// Cache manager — the sheet lists every audio blob held in IndexedDB with its
-// size and freshness, and offers "全部缓存" / "全部删除".
+// Cache manager — the content half: three summary tiles, the two bulk actions,
+// the progress rail and the entry list.
 //
-// Its chrome (scrim, column, top bar, motion) is composed in from
-// Sheet.module.scss so it opens exactly like the Drive connection screen.
-// Everything below is specific to this screen: the three summary tiles, the
-// two bulk actions, the progress rail and the entry list.
+// Everything here is laid out as direct children of the panel's flex column
+// (`CacheContent` returns a fragment on purpose, so its `<div>`s *are* the
+// column's children and keep their `flex-shrink: 0`). The chrome that decides
+// whether that column rises from the bottom or floats in the middle belongs to
+// each layout and is not this file's business.
+//
+// The `.list` is the scroller, which is why it composes the shared `.body`.
 
-.veil {
-    composes: veil from './Sheet.module.scss';
-}
-
-.veil-out {
-    composes: veil-out from './Sheet.module.scss';
-}
-
-.page {
-    composes: page from './Sheet.module.scss';
-}
-
-.page-out {
-    composes: page-out from './Sheet.module.scss';
-}
-
-.topbar {
-    composes: topbar from './Sheet.module.scss';
-}
-
-.top-btn {
-    composes: top-btn from './Sheet.module.scss';
-}
-
-.top-title {
-    composes: top-title from './Sheet.module.scss';
-}
-
+/* The loading line and the scroller come from the shared panel base, so the
+   two content components below cannot disagree about what "a panel body" is. */
 .state {
-    composes: state from './Sheet.module.scss';
+    composes: state from './sheetBase.module.scss';
 }
 
 /* --- summary --- */
@@ -149,7 +126,7 @@
 /* --- list --- */
 
 .list {
-    composes: body from './Sheet.module.scss';
+    composes: body from './sheetBase.module.scss';
 
     margin-top: 12px;
 }

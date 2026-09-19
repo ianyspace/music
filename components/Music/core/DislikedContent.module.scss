@@ -1,45 +1,16 @@
-// 不喜欢歌曲 — the manager for the keep-out list.
+// 不喜欢歌曲 — the content half: two summary tiles, the explanatory line and
+// the list of hidden songs.
 //
-// Chrome (scrim, column, top bar, motion) comes from Sheet.module.scss, so this
-// screen opens exactly like 缓存管理 and the Drive connection screen. What is
-// specific here: the two summary tiles, the explanatory line, and rows whose
-// action is a word ("移出") rather than the cache manager's red X — this list
-// is reversible by design, so it must not wear a destructive mark.
+// Rendered by both layouts inside their own chrome (the phone's bottom sheet,
+// the desktop's glass card), which is why nothing here mentions a scrim or an
+// entrance animation and why `DislikedContent` returns a fragment: these blocks
+// are direct children of the panel's flex column and keep their own sizing.
+//
+// The row action is a word ("移出") rather than the cache manager's red X —
+// this list is reversible by design, so it must not wear a destructive mark.
 
-.veil {
-    composes: veil from './Sheet.module.scss';
-}
-
-.veil-out {
-    composes: veil-out from './Sheet.module.scss';
-}
-
-.page {
-    composes: page from './Sheet.module.scss';
-}
-
-.page-out {
-    composes: page-out from './Sheet.module.scss';
-}
-
-.topbar {
-    composes: topbar from './Sheet.module.scss';
-}
-
-.top-btn {
-    composes: top-btn from './Sheet.module.scss';
-}
-
-.top-title {
-    composes: top-title from './Sheet.module.scss';
-}
-
-/* Stands in for the trailing action button the other sheets have, keeping the
-   title centred without pretending there is something to press. */
-.top-spacer {
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
+.state {
+    composes: state from './sheetBase.module.scss';
 }
 
 /* --- summary --- */
@@ -88,7 +59,7 @@
 /* --- list --- */
 
 .list {
-    composes: body from './Sheet.module.scss';
+    composes: body from './sheetBase.module.scss';
 
     margin-top: 6px;
 }

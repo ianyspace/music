@@ -1,0 +1,33 @@
+// Layout-neutral pieces shared by the panels both layouts render.
+//
+// A panel is two things: **chrome** (scrim, column, top bar, entrance/exit
+// motion) and **content** (the summary tiles, the action row, the entry list).
+// The chrome is genuinely different per layout — the phone raises a sheet from
+// the bottom edge, the desktop lifts a glass card off the workspace — but the
+// content is the same on both, so it lives in `core/` and the two shells wrap
+// it in their own chrome.
+//
+// This file holds the only two pieces that belong to neither: the scrolling
+// body every content component hangs its list off, and the loading line. Both
+// are shaped by theme tokens (`--text`, `--text-2`) supplied by whichever shell
+// is rendering, so one definition follows both palettes.
+
+.body {
+    flex: 1;
+    min-height: 0;
+    padding: 0 20px calc(18px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.body::-webkit-scrollbar {
+    display: none;
+}
+
+.state {
+    margin: 32px 0;
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--text-2);
+}

@@ -6,8 +6,9 @@ import styles from './index.module.scss';
 
 /**
  * Entry route. `/` and `/music/` both land here and only decide which layout to
- * open, so the phone and desktop experiences can stay completely independent
- * while sharing every piece of playback state through `components/Music/MusicApp`.
+ * open, so the phone and desktop experiences can stay completely independent —
+ * separate component trees, separate stylesheets — while still sharing every
+ * piece of playback state through `components/Music/core`.
  *
  * The old blog served the player at `/music/`, so this route keeps working there
  * too (Next rewrites `/` → the same component under `basePath: '/music'`).

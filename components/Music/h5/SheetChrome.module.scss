@@ -1,19 +1,15 @@
-// Shared chrome for the app's full-height sheets — the cache manager and the
-// Google Drive connection screen.
+// The phone's panel chrome — the scrim, the column, the top bar and the motion
+// that all three of its panels (缓存管理 / 不喜欢歌曲 / 谷歌云盘链接) share.
 //
-// Both open the same way (a centred phone-width column over a blurred scrim,
-// rising and scaling in from below) and dismiss the same way (`closing` flips
-// them to the reverse animation, and the owner unmounts once it ends). Keeping
-// the surface here rather than in each module is what makes the two screens
-// read as one system: same width, same motion curve, same top bar.
+// It is deliberately *only* chrome: the bodies it wraps live in
+// `components/Music/core/` (the two managers) or beside it (`DriveSheet`), and
+// the desktop layout builds its own chrome out of the same bodies. Keeping the
+// surface here rather than in each panel is what makes the three screens read
+// as one system: same width, same motion curve, same top bar.
 //
 // The palette is entirely theme tokens (`--text`, `--field`, `--hairline`,
-// `--sheet-bg`, …) defined by `MusicApp.module.scss`, so every sheet follows
+// `--sheet-bg`, …) defined by `MusicApp.module.scss`, so every panel follows
 // the light/dark switch without knowing about it.
-//
-// Styles shared by both screens are composed into each module with
-// `composes: … from './Sheet.module.scss'`, which is why the class names here
-// are unprefixed.
 
 .veil {
     position: fixed;
@@ -147,26 +143,12 @@
     letter-spacing: 0.3px;
 }
 
-/* --- scrolling body --- */
-
-.body {
-    flex: 1;
-    min-height: 0;
-    padding: 0 20px calc(18px + env(safe-area-inset-bottom, 0px));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
-}
-
-.body::-webkit-scrollbar {
-    display: none;
-}
-
-.state {
-    margin: 32px 0;
-    text-align: center;
-    font-size: 13.5px;
-    color: var(--text-2);
+/* Stands in for the trailing action button on a panel that has none, keeping
+   the title centred without pretending there is something to press. */
+.top-spacer {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
 }
 
 @media (prefers-reduced-motion: reduce) {

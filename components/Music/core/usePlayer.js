@@ -1,11 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Head from 'next/head';
-import Script from 'next/script';
-
-import { site } from 'config';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-    GSI_SRC,
     DRIVE_FILES_URL,
     DRIVE_SCOPE,
     FOLDER_MIME,
@@ -33,8 +28,7 @@ import {
     mediaArtwork,
     listAllFiles,
     parseLyrics,
-    trackGradient,
-} from 'components/Music/shared';
+} from '../shared';
 import {
     getCachedAudio,
     touchCachedAudio,
@@ -43,7 +37,7 @@ import {
     listCachedAudio,
     deleteCachedAudio,
     deleteCachedAudioMany,
-} from 'components/Music/audioCache';
+} from '../audioCache';
 import {
     CLOUD_SOURCE,
     DRIVE_SOURCE,
@@ -58,45 +52,35 @@ import {
     readListCache,
     sourceLabel,
     writeListCache,
-} from 'components/Music/librarySource';
-import TrackList from 'components/Music/TrackList';
-import NowPlaying from 'components/Music/NowPlaying';
-import Cover from 'components/Music/Cover';
-import CacheManager from 'components/Music/CacheManager';
-import DislikedSheet from 'components/Music/DislikedSheet';
-import DriveSheet from 'components/Music/DriveSheet';
-import Profile from 'components/Music/Profile';
-import MiniPlayer from 'components/Music/MiniPlayer';
-import DesktopMusic from 'components/Music/DesktopMusic';
-import {
-    IconArchive,
-    IconDislike,
-    IconGoogleDrive,
-    IconMoon,
-    IconNote,
-    IconPin,
-    IconSun,
-} from 'components/Music/icons';
-
-import styles from './MusicApp.module.scss';
+} from '../librarySource';
 
 /**
- * Shared music app shell, rendered by both routes:
+ * Every stateful piece of the music player, in one hook.
  *
- * - `/h5`      → `variant="h5"` (phone-width: list, profile, player sheet)
- * - `/desktop` → `variant="desktop"` (wide-screen workspace)
- *
- * Every stateful piece lives here exactly once — library sources (public R2 +
+ * Both layouts call this and get the same player: library sources (public R2 +
  * optional Google Drive), the permanent local caches, playback, lyrics and
- * Media Session — and `variant` only swaps the rendered UI. Authorization never
- * happens on its own: the public library needs none, and Google is only
- * contacted when the visitor asks for it.
+ * Media Session. It exists so the phone and the desktop can be *independent
+ * trees* — neither imports the other, and this is the only thing they share
+ * besides the pure helpers next door.
  *
- * Playback lives here (single <audio> element, so music keeps running while
- * screens switch): transport controls, shuffle/repeat, seek, in-list search,
- * background auto-advance and Media Session integration. There is
- * deliberately no volume control. The OAuth client ID is the only setup:
- * entered once, kept in localStorage, nothing secret committed.
+ * It returns one flat object rather than several focused hooks on purpose. The
+ * pieces are heavily entangled (the visible list feeds playback, which feeds
+ * Media Session, which feeds the prefetcher), and splitting them would mean
+ * re-ordering hooks and threading setters between them — the kind of change
+ * that alters behaviour in places nothing reports. Keeping it whole means the
+ * body below is the original state machine, moved rather than rewritten.
+ *
+ * `lyricsAutoOpen` is the one thing the two layouts disagree about: the
+ * wide-screen workspace shows the lyrics beside the cover and has no toggle, so
+ * it opens on them, while the phone player opens on the record and reveals the
+ * lyrics when the record is tapped. It is an option rather than a `variant`
+ * string so this hook never has to know which layout is asking.
+ *
+ * Playback lives here (a single <audio> element, owned by `PlayerAudio`, so
+ * music keeps running while screens switch): transport controls, shuffle/repeat,
+ * seek, in-list search, background auto-advance and Media Session integration.
+ * There is deliberately no volume control. The OAuth client ID is the only
+ * setup: entered once, kept in localStorage, nothing secret committed.
  */
 
 // How many audio downloads "全部缓存" keeps in flight. Three is the sweet spot
@@ -107,7 +91,7 @@ import styles from './MusicApp.module.scss';
 // bottleneck is bandwidth and IndexedDB writes, not the request count.
 const CACHE_ALL_CONCURRENCY = 3;
 
-const MusicApp = function ({ variant = 'h5' }) {
+const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     const [theme, setTheme] = useState('light');
     // Display preference of the now-playing page: the ripples travelling out
     // from the record. On unless the visitor turned them off — a decorative
@@ -130,24 +114,6 @@ const MusicApp = function ({ variant = 'h5' }) {
     // rendering them while it plays its exit animation.
     const [rowMenu, setRowMenu] = useState(null);
     const [rowMenuClosing, setRowMenuClosing] = useState(false);
-    // 'list' | 'profile' — which tab page is showing; the full-screen
-    // now-playing page floats above it while `playerOpen` is true.
-    const [tab, setTab] = useState('list');
-    // Scroll the body back to top whenever the active tab changes, so the
-    // visitor does not land in the middle of a page they have never seen.
-    // The scroll position of the *hidden* tab is implicitly preserved because
-    // its DOM stays mounted and the browser remembers the scroll offset of
-    // elements that are removed from layout and later restored.
-    useEffect(() => {
-        // `scrollTo(x, y)` rather than an options object: `behavior: 'instant'`
-        // is a newer enum member and an unrecognised value there is a TypeError
-        // on older mobile browsers, which would take the whole page down.
-        window.scrollTo(0, 0);
-    }, [tab]);
-    const [playerOpen, setPlayerOpen] = useState(false);
-    // While true the sheet plays its slide-down exit animation and only
-    // unmounts when that finishes (`onClosed`).
-    const [playerClosing, setPlayerClosing] = useState(false);
     const [gsiReady, setGsiReady] = useState(false);
     const [clientId, setClientId] = useState('');
     const [clientIdDraft, setClientIdDraft] = useState('');
@@ -186,13 +152,6 @@ const MusicApp = function ({ variant = 'h5' }) {
     const [lyrics, setLyrics] = useState(null);
     const [lyricsLoading, setLyricsLoading] = useState(false);
     const [lyricsVisible, setLyricsVisible] = useState(false);
-    // The song list's three-dots drawer. It is owned by this shell — not by
-    // `TrackList` — because the list column sits under a `transform`ed
-    // ancestor, which would break `position: fixed` inside it (see the drawer
-    // note in MusicApp.module.scss). `open` mounts it, `closing` plays the exit
-    // animation first (the sheet-unmount-via-animation-end trick).
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [menuClosing, setMenuClosing] = useState(false);
     // Cache manager sheet: `open` mounts it, `closing` plays its exit first.
     // `entries` comes from IndexedDB and is re-read after every action, so the
     // list always reflects the store rather than a locally patched guess.
@@ -449,12 +408,6 @@ const MusicApp = function ({ variant = 'h5' }) {
         setNotice(`已置顶：${parseTrackName(track.name).title}`);
     }, []);
 
-    const clearPinnedOrder = useCallback(function () {
-        setOrder([]);
-        writeKeyList(ORDER_KEY, []);
-        setNotice('已恢复默认顺序');
-    }, []);
-
     /* --- row drawer (cover + 置顶 / 移入不喜欢) --- */
 
     const openRowMenu = useCallback(function (track) {
@@ -478,30 +431,6 @@ const MusicApp = function ({ variant = 'h5' }) {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [rowMenu, closeRowMenu]);
 
-    /* --- three-dots drawer --- */
-
-    const closeMenu = useCallback(function () {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            setMenuOpen(false);
-            setMenuClosing(false);
-            return;
-        }
-        setMenuClosing(true);
-    }, []);
-
-    const openMenu = useCallback(function () {
-        setMenuClosing(false);
-        setMenuOpen(true);
-    }, []);
-
-    // Escape closes the drawer while it is open.
-    useEffect(() => {
-        if (!menuOpen) return undefined;
-        const onKeyDown = (event) => { if (event.key === 'Escape') closeMenu(); };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [menuOpen, closeMenu]);
-
     // 谷歌云盘链接 — leaves the list for 「我的」, where the Google Drive
     // connection lives.
     /* --- drive sheet --- */
@@ -511,10 +440,9 @@ const MusicApp = function ({ variant = 'h5' }) {
     // own for this. Connecting stays the only action here that may raise
     // Google's UI.
     const openDriveSheet = useCallback(function () {
-        closeMenu();
         setDriveClosing(false);
         setDriveOpen(true);
-    }, [closeMenu]);
+    }, []);
 
     const closeDriveSheet = useCallback(function () {
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -553,11 +481,10 @@ const MusicApp = function ({ variant = 'h5' }) {
     }, []);
 
     const openCacheManager = useCallback(function () {
-        closeMenu();
         setCacheClosing(false);
         setCacheOpen(true);
         readCache();
-    }, [closeMenu, readCache]);
+    }, [readCache]);
 
     const closeCacheManager = useCallback(function () {
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -581,10 +508,9 @@ const MusicApp = function ({ variant = 'h5' }) {
     // `disliked` straight off state — that list *is* the store, so there is
     // nothing to re-read on open the way the cache manager has to.
     const openDislikedManager = useCallback(function () {
-        closeMenu();
         setDislikedClosing(false);
         setDislikedOpen(true);
-    }, [closeMenu]);
+    }, []);
 
     const closeDislikedManager = useCallback(function () {
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -1010,7 +936,7 @@ const MusicApp = function ({ variant = 'h5' }) {
         // The wide-screen layout shows the lyrics next to the cover and has no
         // toggle, so it opens on them; the phone player opens on the record and
         // reveals the lyrics when that record is tapped.
-        setLyricsVisible(variant === 'desktop' && withLyrics);
+        setLyricsVisible(lyricsAutoOpen && withLyrics);
         if (!withLyrics) return undefined;
         let cancelled = false;
         setLyricsLoading(true);
@@ -1023,7 +949,7 @@ const MusicApp = function ({ variant = 'h5' }) {
                 if (!cancelled) setLyricsLoading(false);
             });
         return () => { cancelled = true; };
-    }, [current, token, variant]);
+    }, [current, token, lyricsAutoOpen]);
 
     const handleFolderChange = useCallback(function (event) {
         if (librarySource !== DRIVE_SOURCE) {
@@ -1237,36 +1163,6 @@ const MusicApp = function ({ variant = 'h5' }) {
         setRepeat(repeat === 'off' ? 'all' : 'one');
     }, [shuffle, repeat]);
 
-    /* --- now-playing transitions (mini bar ⇄ sheet) --- */
-
-    const openPlayer = useCallback(function () {
-        setPlayerClosing(false);
-        setPlayerOpen(true);
-    }, []);
-
-    // Dismiss = slide the sheet back down; it unmounts via `onClosed`.
-    // With reduced motion the CSS animation never fires an end event, so
-    // unmount immediately instead.
-    const closePlayer = useCallback(function (nextTab) {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            setPlayerOpen(false);
-            setPlayerClosing(false);
-        } else {
-            setPlayerClosing(true);
-        }
-        if (nextTab) setTab(nextTab);
-    }, []);
-
-    const finishClosePlayer = useCallback(function () {
-        setPlayerOpen(false);
-        setPlayerClosing(false);
-    }, []);
-
-    // A new tap while the exit animation runs — bring the sheet back.
-    const cancelClosePlayer = useCallback(function () {
-        setPlayerClosing(false);
-    }, []);
-
     // Draw the song shuffle will play after this one, once per song.
     //
     // Drawn here rather than inside `upcomingTrack` so the pick is stable: a
@@ -1453,8 +1349,46 @@ const MusicApp = function ({ variant = 'h5' }) {
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [current]);
+    /* --- shared controls, and what the layouts read off the player --- */
 
-    /* --- render --- */
+    // Seeking is the same operation on both layouts — the phone's sheet slider
+    // and the wide-screen progress bar — so it lives here rather than being
+    // written out again at each call site.
+    const seek = useCallback(function (value) {
+        const audio = audioRef.current;
+        if (audio && Number.isFinite(value)) {
+            audio.currentTime = value;
+            setProgress((state) => ({ ...state, time: value }));
+        }
+    }, []);
+
+    const toggleLyrics = useCallback(function () {
+        setLyricsVisible((visible) => !visible);
+    }, []);
+
+    // The <audio> element's own handlers. Both layouts mount that element
+    // through `PlayerAudio`, and these are handed over ready-made so the two
+    // cannot end up wiring a different set of six.
+    const onAudioPlay = useCallback(function () {
+        setIsPlaying(true);
+    }, []);
+
+    const onAudioPause = useCallback(function () {
+        setIsPlaying(false);
+    }, []);
+
+    const onAudioTimeUpdate = useCallback(function (event) {
+        setProgress((state) => ({ ...state, time: event.target.currentTime }));
+    }, []);
+
+    // `loadedmetadata` and `durationchange` report the same thing and both are
+    // needed: the first for a normal load, the second for a stream whose
+    // duration only settles once the file is open.
+    const onAudioMetadata = useCallback(function (event) {
+        setProgress((state) => ({ ...state, duration: event.target.duration || 0 }));
+    }, []);
+
+    const sourceName = sourceLabel(librarySource);
 
     const folderName = librarySource === CLOUD_SOURCE
         ? sourceLabel(CLOUD_SOURCE)
@@ -1466,459 +1400,131 @@ const MusicApp = function ({ variant = 'h5' }) {
     // is authorized": the public R2 library needs no authorization at all.
     const hasLibrary = tracks.length > 0 || listCacheAvailable || Boolean(token);
 
-    return (
-        <div className={`${styles.page} ${theme === 'dark' ? styles['theme-dark'] : ''}`}>
-            <Head>
-                <title>{`音乐 | ${site.title}`}</title>
-                <meta name="description" content={site.description} />
-            </Head>
+    // Lyrics belong to the song that is playing; a fetch that lands after a skip
+    // must not paint over the new song's panel.
+    const currentLyrics = lyrics && current && lyrics.trackId === current.track.id ? lyrics : null;
 
-            <Script
-                src={GSI_SRC}
-                strategy="afterInteractive"
-                onLoad={() => setGsiReady(true)}
-                onError={() => setError('Google 登录组件加载失败，请检查网络')}
-            />
+    return {
+        /* appearance */
+        theme,
+        toggleTheme,
+        ripples,
+        toggleRipples,
 
-            {/* Ambient blobs belong to the phone layout only — the desktop
-                workspace paints its own flat background. */}
-            {variant !== 'desktop' && (
-                <div className={styles.bg} aria-hidden="true">
-                    <span className={`${styles.blob} ${styles['blob-1']}`} />
-                    <span className={`${styles.blob} ${styles['blob-2']}`} />
-                    <span className={`${styles.blob} ${styles['blob-3']}`} />
-                </div>
-            )}
+        /* list preferences */
+        disliked,
+        dislikedCount: disliked.length,
+        dislikeTrack,
+        restoreTrack,
+        pinTrack,
 
-            {variant === 'desktop' ? (
-                <DesktopMusic
-                    theme={theme}
-                    onToggleTheme={toggleTheme}
-                    connected={!!token}
-                    source={librarySource}
-                    sourceName={sourceLabel(librarySource)}
-                    hasLibrary={hasLibrary}
-                    cached={listCacheAvailable}
-                    gsiReady={gsiReady}
-                    clientIdDraft={clientIdDraft}
-                    onClientIdDraft={setClientIdDraft}
-                    onConnect={connect}
-                    onDisconnect={disconnect}
-                    folders={folders}
-                    folderId={folderId}
-                    folderName={folderName}
-                    onFolderChange={handleFolderChange}
-                    onRefresh={refreshTracks}
-                    listLoading={listLoading}
-                    visibleTracks={visibleTracks}
-                    // Not `trackCount` (which is what the panel displays):
-                    // this is the library *before* the list preferences ran, so
-                    // the empty state can tell "no songs" from "all hidden".
-                    libraryCount={tracks.length}
-                    disliked={disliked}
-                    trackCount={visibleTracks.length}
-                    search={search}
-                    onSearch={setSearch}
-                    current={current}
-                    loadingId={loadingId}
-                    isPlaying={isPlaying}
-                    onToggleTrack={toggleTrack}
-                    onTogglePlay={togglePlay}
-                    onPrev={playPrev}
-                    onNext={playNext}
-                    onSeek={(value) => {
-                        const audio = audioRef.current;
-                        if (audio && Number.isFinite(value)) {
-                            audio.currentTime = value;
-                            setProgress((state) => ({ ...state, time: value }));
-                        }
-                    }}
-                    progress={progress}
-                    shuffle={shuffle}
-                    repeat={repeat}
-                    onToggleShuffle={() => setShuffle((on) => !on)}
-                    onCycleRepeat={cycleRepeat}
-                    lyrics={lyrics && current && lyrics.trackId === current.track.id ? lyrics : null}
-                    lyricsLoading={lyricsLoading}
-                    lyricsVisible={lyricsVisible}
-                    onToggleLyrics={() => setLyricsVisible((visible) => !visible)}
-                    ripples={ripples}
-                    onToggleRipples={toggleRipples}
-                    onDislikeTrack={dislikeTrack}
-                    onPinTrack={pinTrack}
-                    rowMenuId={rowMenu ? rowMenu.id : ''}
-                    onOpenRowMenu={openRowMenu}
-                    onOpenCache={goCacheManager}
-                    onOpenDisliked={openDislikedManager}
-                    dislikedCount={disliked.length}
-                />
-            ) : (
-                <>
-                    <div className={styles.app}>
-                        {/* Both tab pages stay mounted (scroll position survives the
-                    switch); the shown one replays its enter transition. */}
-                        <div
-                            className={`${styles.view}${tab === 'list' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
-                        >
-                            <TrackList
-                                connected={hasLibrary}
-                                source={librarySource}
-                                listLoading={listLoading}
-                                visibleTracks={visibleTracks}
-                                // The library *before* the list preferences ran
-                                // — see `emptyListMessage`.
-                                libraryCount={tracks.length}
-                                search={search}
-                                onSearch={setSearch}
-                                current={current}
-                                loadingId={loadingId}
-                                isPlaying={isPlaying}
-                                onToggleTrack={toggleTrack}
-                                onGoProfile={() => setTab('profile')}
-                                menuOpen={menuOpen && !menuClosing}
-                                onOpenMenu={openMenu}
-                                rowMenuId={rowMenu ? rowMenu.id : ''}
-                                onOpenRowMenu={openRowMenu}
-                            />
-                        </div>
-                        <div
-                            className={`${styles.view}${tab === 'profile' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
-                        >
-                            <Profile
-                                sourceName={sourceLabel(librarySource)}
-                                driveConnected={!!token}
-                                folders={folders}
-                                folderId={folderId}
-                                folderName={folderName}
-                                onFolderChange={handleFolderChange}
-                                onRefresh={refreshTracks}
-                                loading={listLoading}
-                                trackCount={tracks.length}
-                                onGoList={() => setTab('list')}
-                            />
-                        </div>
-                    </div>
+        /* library */
+        tracks,
+        libraryCount: tracks.length,
+        visibleTracks,
+        trackCount: visibleTracks.length,
+        listCacheAvailable,
+        librarySource,
+        sourceName,
+        folderName,
+        folders,
+        folderId,
+        handleFolderChange,
+        listLoading,
+        refreshTracks,
+        hasLibrary,
+        search,
+        setSearch,
 
-                    {/* Mini bar belongs to the song list only — the profile page
-                shows settings, not playback UI. It also carries the jump-to-
-                the-playing-track button, which is why it is the one place the
-                list's loading state is still needed. */}
-                    {tab === 'list' && current && !playerOpen && (
-                        <MiniPlayer
-                            current={current}
-                            isPlaying={isPlaying}
-                            progress={progress}
-                            listLoading={listLoading}
-                            trackCount={visibleTracks.length}
-                            onTogglePlay={togglePlay}
-                            onNext={playNext}
-                            onOpenPlayer={openPlayer}
-                        />
-                    )}
+        /* playback */
+        current,
+        loadingId,
+        isPlaying,
+        progress,
+        shuffle,
+        repeat,
+        playbackMode,
+        toggleTrack,
+        togglePlay,
+        playPrev,
+        playNext,
+        cycleRepeat,
+        cyclePlaybackMode,
+        seek,
 
-                    {playerOpen && current && (
-                        <NowPlaying
-                            track={current.track}
-                            isPlaying={isPlaying}
-                            progress={progress}
-                            mode={playbackMode}
-                            listLoading={listLoading}
-                            closing={playerClosing}
-                            onClosed={finishClosePlayer}
-                            onCancelClose={cancelClosePlayer}
-                            onCycleMode={cyclePlaybackMode}
-                            onTogglePlay={togglePlay}
-                            onPrev={playPrev}
-                            onNext={playNext}
-                            onSeek={(value) => {
-                                const audio = audioRef.current;
-                                if (audio && Number.isFinite(value)) {
-                                    audio.currentTime = value;
-                                    setProgress((state) => ({ ...state, time: value }));
-                                }
-                            }}
-                            onClose={() => closePlayer()}
-                            onOpenList={() => closePlayer('list')}
-                            lyrics={lyrics && lyrics.trackId === current.track.id ? lyrics : null}
-                            lyricsLoading={lyricsLoading}
-                            lyricsVisible={lyricsVisible}
-                            onToggleLyrics={() => setLyricsVisible((visible) => !visible)}
-                            ripples={ripples}
-                            onToggleRipples={toggleRipples}
-                        />
-                    )}
-                </>
-            )}
+        /* lyrics */
+        lyrics: currentLyrics,
+        lyricsLoading,
+        lyricsVisible,
+        toggleLyrics,
 
-            {/* Bottom drawer opened by the song list's three-dots button. It
-                belongs to the shell, so on a wide screen it stays centred over
-                the phone column instead of hanging off the list. */}
-            {menuOpen && (
-                <div
-                    className={menuClosing
-                        ? `${styles['menu-scrim']} ${styles['menu-scrim-out']}`
-                        : styles['menu-scrim']}
-                    role="presentation"
-                    onClick={closeMenu}
-                    onAnimationEnd={(event) => {
-                        // Only the scrim's own fade ends the drawer; the sheet
-                        // and its children animate independently.
-                        if (menuClosing && event.target === event.currentTarget) {
-                            setMenuOpen(false);
-                            setMenuClosing(false);
-                        }
-                    }}
-                >
-                    <div
-                        className={menuClosing
-                            ? `${styles.menu} ${styles['menu-out']}`
-                            : styles.menu}
-                        role="menu"
-                        aria-label="更多功能"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <span className={styles['menu-grip']} aria-hidden="true" />
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={openDriveSheet}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconGoogleDrive size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>谷歌云盘链接</span>
-                                <span className={styles['menu-sub']}>连接或切换自己的云盘曲库</span>
-                            </span>
-                        </button>
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={goCacheManager}
-                        >                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconArchive size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>缓存管理</span>
-                                <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
-                            </span>
-                        </button>
-                        {/* Sits under the cache entry because the two are the
-                            same kind of screen — a list of songs the visitor
-                            acted on, each row undoable — and above 外观, which
-                            is a display preference rather than app content. */}
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={openDislikedManager}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconDislike size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>不喜欢歌曲</span>
-                                <span className={styles['menu-sub']}>
-                                    查看已隐藏的歌曲，可移出让它回到列表
-                                </span>
-                            </span>
-                            <span className={styles['menu-value']}>
-                                {disliked.length > 0 ? `${disliked.length} 首` : ''}
-                            </span>
-                        </button>
-                        {/* Appearance sits below the cache entry so the drawer
-                            reads as app actions first, display preference last. */}
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={toggleTheme}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                {theme === 'dark' ? <IconSun size={20} /> : <IconMoon size={20} />}
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>切换外观</span>
-                                <span className={styles['menu-sub']}>
-                                    {theme === 'dark' ? '当前深色模式，点击切换到浅色' : '当前浅色模式，点击切换到深色'}
-                                </span>
-                            </span>
-                            <span className={styles['menu-value']}>
-                                {theme === 'dark' ? '深色' : '浅色'}
-                            </span>
-                        </button>
-                    </div>
-                </div>
-            )}
+        /* the row drawer (cover + 置顶 / 移入不喜欢) */
+        rowMenu,
+        rowMenuClosing,
+        rowMenuId: rowMenu ? rowMenu.id : '',
+        openRowMenu,
+        closeRowMenu,
+        setRowMenu,
+        setRowMenuClosing,
 
-            {/* The row drawer, opened by a row's own three-dots button. It gets
-                the same treatment as the drawer above — the cover, the title
-                and the two actions — but nothing else: the song's playback
-                state is already legible from the row under the scrim. */}
-            {rowMenu && (
-                <div
-                    className={rowMenuClosing
-                        ? `${styles['menu-scrim']} ${styles['menu-scrim-out']}`
-                        : styles['menu-scrim']}
-                    role="presentation"
-                    onClick={closeRowMenu}
-                    onAnimationEnd={(event) => {
-                        if (rowMenuClosing && event.target === event.currentTarget) {
-                            setRowMenu(null);
-                            setRowMenuClosing(false);
-                        }
-                    }}
-                >
-                    <div
-                        className={rowMenuClosing
-                            ? `${styles.menu} ${styles['menu-out']}`
-                            : styles.menu}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label="歌曲操作"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <span className={styles['menu-grip']} aria-hidden="true" />
-                        <div className={styles['row-head']}>
-                            <span
-                                className={styles['row-cover']}
-                                style={{ background: trackGradient(rowMenu.name) }}
-                                aria-hidden="true"
-                            >
-                                <Cover track={rowMenu} />
-                                <IconNote size={22} />
-                            </span>
-                            <span className={styles['row-meta']}>
-                                <span className={styles['row-title']}>
-                                    {parseTrackName(rowMenu.name).title}
-                                </span>
-                                <span className={styles['row-artist']}>
-                                    {parseTrackName(rowMenu.name).artist}
-                                </span>
-                            </span>
-                        </div>
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={() => {
-                                pinTrack(rowMenu);
-                                closeRowMenu();
-                            }}
-                            disabled={visibleTracks[0] && visibleTracks[0].id === rowMenu.id}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconPin size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>置顶</span>
-                                <span className={styles['menu-sub']}>
-                                    {visibleTracks[0] && visibleTracks[0].id === rowMenu.id
-                                        ? '已经在列表第一位'
-                                        : '把这首歌移到列表第一位'}
-                                </span>
-                            </span>
-                        </button>
-                        <button
-                            type="button"
-                            className={`${styles['menu-item']} ${styles['menu-item-danger']}`}
-                            role="menuitem"
-                            onClick={() => {
-                                dislikeTrack(rowMenu);
-                                closeRowMenu();
-                            }}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconDislike size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>移入不喜欢</span>
-                                <span className={styles['menu-sub']}>
-                                    从列表隐藏并删除本地缓存，可在「不喜欢歌曲」里找回
-                                </span>
-                            </span>
-                        </button>
-                    </div>
-                </div>
-            )}
+        /* cache manager */
+        cacheOpen,
+        cacheClosing,
+        setCacheOpen,
+        setCacheClosing,
+        cacheEntries,
+        cacheLoading,
+        cacheBusyId,
+        cacheAllRunning,
+        cacheProgress,
+        goCacheManager,
+        closeCacheManager,
+        readCache,
+        deleteCacheEntries,
+        cacheAllTracks,
 
-            {cacheOpen && (
-                <CacheManager
-                    entries={cacheEntries}
-                    tracks={tracks}
-                    loading={cacheLoading}
-                    busyId={cacheBusyId}
-                    caching={cacheAllRunning}
-                    cacheProgress={cacheProgress}
-                    closing={cacheClosing}
-                    onClosed={() => { setCacheOpen(false); setCacheClosing(false); }}
-                    onCancelClose={() => setCacheClosing(false)}
-                    onClose={closeCacheManager}
-                    onRefresh={readCache}
-                    onDelete={deleteCacheEntries}
-                    onCacheAll={cacheAllTracks}
-                />
-            )}
+        /* 不喜欢歌曲 manager */
+        dislikedOpen,
+        dislikedClosing,
+        setDislikedOpen,
+        setDislikedClosing,
+        openDislikedManager,
+        closeDislikedManager,
 
-            {dislikedOpen && (
-                <DislikedSheet
-                    keys={disliked}
-                    tracks={tracks}
-                    closing={dislikedClosing}
-                    onClosed={() => { setDislikedOpen(false); setDislikedClosing(false); }}
-                    onCancelClose={() => setDislikedClosing(false)}
-                    onClose={closeDislikedManager}
-                    onRestore={restoreTrack}
-                />
-            )}
+        /* Google Drive connection sheet */
+        driveOpen,
+        driveClosing,
+        setDriveOpen,
+        setDriveClosing,
+        openDriveSheet,
+        closeDriveSheet,
 
-            {driveOpen && (
-                <DriveSheet
-                    driveConnected={!!token}
-                    sourceName={sourceLabel(librarySource)}
-                    gsiReady={gsiReady}
-                    clientId={clientId}
-                    clientIdDraft={clientIdDraft}
-                    onClientIdDraft={setClientIdDraft}
-                    onConnect={connect}
-                    onDisconnect={disconnect}
-                    folders={folders}
-                    folderId={folderId}
-                    onFolderChange={handleFolderChange}
-                    loading={listLoading}
-                    trackCount={tracks.length}
-                    closing={driveClosing}
-                    onClosed={() => { setDriveOpen(false); setDriveClosing(false); }}
-                    onCancelClose={() => setDriveClosing(false)}
-                    onClose={closeDriveSheet}
-                    onRefresh={refreshTracks}
-                    onGoList={() => { closeDriveSheet(); setTab('list'); }}
-                />
-            )}
+        /* Google */
+        gsiReady,
+        setGsiReady,
+        clientId,
+        clientIdDraft,
+        setClientIdDraft,
+        token,
+        connect,
+        disconnect,
 
-            {(error || notice) && (
-                <div className={`${styles.toast}${error ? ` ${styles['toast-error']}` : ''}`} role="status">
-                    {error || notice}
-                </div>
-            )}
+        /* feedback */
+        error,
+        notice,
+        setError,
 
-            <audio
-                ref={audioRef}
-                preload="auto"
-                playsInline
-                onEnded={handleEnded}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                onTimeUpdate={(event) => setProgress((state) => ({ ...state, time: event.target.currentTime }))}
-                onLoadedMetadata={(event) => setProgress((state) => ({ ...state, duration: event.target.duration || 0 }))}
-                onDurationChange={(event) => setProgress((state) => ({ ...state, duration: event.target.duration || 0 }))}
-            >
-                <track kind="captions" />
-            </audio>
-        </div>
-    );
+        /* the one <audio> element, and the handlers that go on it.
+           Named after the props `core/PlayerAudio` takes, so a shell can hand
+           them straight over instead of remapping five names — a typo in a
+           remap is a handler that silently never fires. */
+        audioRef,
+        onEnded: handleEnded,
+        onPlay: onAudioPlay,
+        onPause: onAudioPause,
+        onTimeUpdate: onAudioTimeUpdate,
+        onMetadata: onAudioMetadata,
+    };
 };
 
-export default MusicApp;
+export default usePlayer;

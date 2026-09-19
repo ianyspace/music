@@ -28,7 +28,7 @@ import {
     IconSearch,
     IconShuffle,
     IconSun,
-} from './icons';
+} from '../icons';
 import {
     DESKTOP_LIST_KEY,
     emptyListMessage,
@@ -38,10 +38,10 @@ import {
     storageGet,
     storageSet,
     trackGradient,
-} from './shared';
-import { DRIVE_SOURCE } from './librarySource';
-import Cover from './Cover';
-import Marquee from './Marquee';
+} from '../shared';
+import { DRIVE_SOURCE } from '../librarySource';
+import Cover from '../Cover';
+import Marquee from '../Marquee';
 
 import styles from './DesktopMusic.module.scss';
 
@@ -118,23 +118,11 @@ const Tonearm = function ({ playing }) {
  * that swap in over the disc), the same single cycling playback-mode button
  * and the same settings (source, Drive connection, folder, theme, cache info).
  *
- * Liquid Glass is used on four surfaces: the settings button, the record, the
- * bottom bar and the lyrics card. The library's one hard constraint is that
- * glass elements must be **direct children of the root**, which is why they
- * are positioned with grid areas instead of being nested in wrappers.
+ * Glass is CSS, not WebGL: every surface is a `backdrop-filter` over the
+ * `.backdrop` colour field, styled by `DesktopMusic.module.scss` from the
+ * `--glass-*` tokens. There is no glass library, no `data-glass` attribute and
+ * nothing to initialise — which also means nothing can fail to initialise.
  */
-// Glass configuration follows the examples published on
-// https://liquid-glass.ybouane.com and nothing else — "Frosted Panel"
-// (`{ blurAmount: 0.25, cornerRadius: 30 }`) and "Button Mode"
-// (`{ button: true, cornerRadius: 24 }`). No hand-invented parameter combos,
-// and no extra CSS pretending to be glass: anything the library owns
-// (refraction, bevel, shadow, corner radius) is left to its own config.
-const SETTINGS_GLASS = JSON.stringify({ button: true, cornerRadius: 27, blurAmount: 0.25 });
-// Same preset, at the radius that makes the record a circle (360px wide).
-const DISC_GLASS = JSON.stringify({ button: true, cornerRadius: 180, blurAmount: 0.25 });
-const BAR_GLASS = JSON.stringify({ blurAmount: 0.25, cornerRadius: 30 });
-const LYRICS_GLASS = JSON.stringify({ blurAmount: 0.25, cornerRadius: 30 });
-
 const DesktopMusic = function ({
     theme,
     onToggleTheme,
@@ -172,7 +160,6 @@ const DesktopMusic = function ({
     progress,
     shuffle,
     repeat,
-    onToggleShuffle,
     onCycleRepeat,
     lyrics,
     lyricsLoading,
@@ -180,11 +167,10 @@ const DesktopMusic = function ({
     onToggleLyrics,
     ripples = true,
     onToggleRipples,
-    onDislikeTrack,
-    onPinTrack,
     // Id of the row whose actions are open. The drawer itself belongs to the
-    // shell (same one the phone layout opens), so all this needs is the id to
-    // report which row's button is expanded.
+    // shell (the same one the phone layout opens, in its own desktop dress), so
+    // all this needs is the id to report which row's button is expanded — the
+    // 置顶 / 移入不喜欢 callbacks live there, not here.
     rowMenuId,
     onOpenRowMenu,
     // The cache manager and the disliked-songs screen are shell-owned too —
@@ -198,12 +184,9 @@ const DesktopMusic = function ({
     // See `emptyListMessage`.
     libraryCount = 0,
 }) {
-    const rootRef = useRef(null);
     const searchInputRef = useRef(null);
     const activeLyricRef = useRef(null);
     const pressYRef = useRef(0);
-    const [glassReady, setGlassReady] = useState(false);
-    const [glassFailed, setGlassFailed] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     // `false` = folded away, only the rail button remains. Defaults to open.
     const [listOpen, setListOpen] = useState(true);
@@ -265,29 +248,6 @@ const DesktopMusic = function ({
         }
         storageSet(DESKTOP_LIST_KEY, listOpen ? 'on' : 'off');
     }, [listOpen]);
-
-    useEffect(() => {
-        let instance;
-        let cancelled = false;
-        if (!rootRef.current) return undefined;
-        (async function initGlass() {
-            try {
-                const module = await import('@ybouane/liquidglass');
-                if (cancelled || !rootRef.current) return;
-                instance = await module.LiquidGlass.init({
-                    root: rootRef.current,
-                    glassElements: rootRef.current.querySelectorAll('[data-glass]'),
-                });
-                if (!cancelled) setGlassReady(true);
-            } catch (err) {
-                if (!cancelled) setGlassFailed(true);
-            }
-        }());
-        return () => {
-            cancelled = true;
-            if (instance && typeof instance.destroy === 'function') instance.destroy();
-        };
-    }, []);
 
     const meta = current ? parseTrackName(current.track.name) : null;
     const title = meta ? meta.title : '还没有播放中的歌曲';
@@ -367,7 +327,7 @@ const DesktopMusic = function ({
         let alive = true;
         const run = async function () {
             try {
-                const { listCachedAudio } = await import('./audioCache');
+                const { listCachedAudio } = await import('../audioCache');
                 const entries = await listCachedAudio();
                 if (alive) setCacheCount(Array.isArray(entries) ? entries.length : 0);
             } catch (err) { /* cache layer is best-effort */ }
@@ -453,10 +413,11 @@ const DesktopMusic = function ({
 
     return (
         <div
-            ref={rootRef}
-            className={`${styles.root}${theme === 'dark' ? ` ${styles['theme-dark']}` : ''}${listOpen ? '' : ` ${styles['list-collapsed']}`}${glassFailed ? ` ${styles['glass-fallback']}` : ''}`}
+            className={`${styles.root}${listOpen ? '' : ` ${styles['list-collapsed']}`}`}
         >
-            {/* Sampled by the glass shader; the root's own background is not. */}
+            {/* The colour field the frosted surfaces sample — the root's own
+                background is never blurred by its children, so the gradients
+                have to be painted by a layer *behind* them. */}
             <div className={styles.backdrop} aria-hidden="true" />
 
             {/* --- left: the song list (hideable) -------------------------- */}
@@ -749,8 +710,6 @@ const DesktopMusic = function ({
             <button
                 type="button"
                 className={styles['settings-btn']}
-                data-glass
-                data-config={SETTINGS_GLASS}
                 onClick={() => setSettingsOpen(true)}
                 aria-label="打开设置"
                 title="设置"
@@ -765,8 +724,6 @@ const DesktopMusic = function ({
                     <button
                         type="button"
                         className={`${styles.disc}${isPlaying ? ` ${styles['disc-playing']}` : ''}`}
-                        data-glass
-                        data-config={DISC_GLASS}
                         onClick={canToggleLyrics ? onToggleLyrics : onTogglePlay}
                         disabled={!current}
                         title={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
@@ -814,8 +771,6 @@ const DesktopMusic = function ({
             {lyricsShown && (
                 <div
                     className={styles.lyrics}
-                    data-glass
-                    data-config={LYRICS_GLASS}
                     role="button"
                     tabIndex={0}
                     aria-label="歌词，点击返回唱片"
@@ -844,7 +799,7 @@ const DesktopMusic = function ({
             )}
 
             {/* 4/4 — the bottom play bar (glass) */}
-            <div className={styles.bar} data-glass data-config={BAR_GLASS}>
+            <div className={styles.bar}>
                 <input
                     className={styles.seek}
                     type="range"
@@ -942,7 +897,7 @@ const DesktopMusic = function ({
                 </div>
             </div>
 
-            {/* --- settings drawer (flat, no glass) ----------------------- */}
+            {/* --- settings drawer (glass, slides in from the right) ------- */}
 
             {settingsOpen && (
                 <div className={styles['settings-scrim']} onClick={() => setSettingsOpen(false)} role="presentation">
@@ -1107,11 +1062,7 @@ const DesktopMusic = function ({
                             歌曲缓存在本机保留 30 天，期间每播一次就自动续期，30 天没播放过才会清除；
                             公共曲库来自 Cloudflare R2，无需登录即可播放。
                             <br />
-                            {glassReady
-                                ? '液态玻璃已启用'
-                                : glassFailed
-                                    ? '液态玻璃不可用，已回退为普通样式'
-                                    : '正在初始化液态玻璃…'}
+                            界面为毛玻璃风格，浏览器不支持 backdrop-filter 时会自动回退为半透明底色。
                         </p>
                     </div>
                 </div>

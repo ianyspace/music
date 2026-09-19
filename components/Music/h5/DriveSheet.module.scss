@@ -1,40 +1,14 @@
-// Google Drive connection sheet — same chrome as the cache manager
-// (composed in from Sheet.module.scss), but only Drive content inside: the
-// library card, then the connect steps or the folder picker.
+// Google Drive connection sheet — the chrome comes from `SheetChrome` (the same
+// bottom sheet the cache manager uses), so this file only holds what is Drive:
+// the library card, then the connect steps or the folder picker.
 //
 // Colours are theme tokens only, so the light/dark switch applies here exactly
-// as it does on the rest of the app.
-
-.veil {
-    composes: veil from './Sheet.module.scss';
-}
-
-.veil-out {
-    composes: veil-out from './Sheet.module.scss';
-}
-
-.page {
-    composes: page from './Sheet.module.scss';
-}
-
-.page-out {
-    composes: page-out from './Sheet.module.scss';
-}
-
-.topbar {
-    composes: topbar from './Sheet.module.scss';
-}
-
-.top-btn {
-    composes: top-btn from './Sheet.module.scss';
-}
-
-.top-title {
-    composes: top-title from './Sheet.module.scss';
-}
+// as it does on the rest of the app. The one shared piece is `.body`, composed
+// in from `core/sheetBase.module.scss` so this panel scrolls exactly like the
+// two content components do.
 
 .body {
-    composes: body from './Sheet.module.scss';
+    composes: body from '../core/sheetBase.module.scss';
 
     padding-top: 14px;
 }

@@ -13,10 +13,10 @@ import {
     IconChevronDown,
     IconMoreVertical,
     IconRipple,
-} from './icons';
-import { parseTrackName, trackGradient, formatTime } from './shared';
-import Cover from './Cover';
-import Marquee from './Marquee';
+} from '../icons';
+import { parseTrackName, trackGradient, formatTime } from '../shared';
+import Cover from '../Cover';
+import Marquee from '../Marquee';
 
 import styles from './NowPlaying.module.scss';
 

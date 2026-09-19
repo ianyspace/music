@@ -6,10 +6,10 @@ import {
     IconPause,
     IconNext,
     IconLocate,
-} from './icons';
-import { parseTrackName, trackGradient } from './shared';
-import Cover from './Cover';
-import Marquee from './Marquee';
+} from '../icons';
+import { parseTrackName, trackGradient } from '../shared';
+import Cover from '../Cover';
+import Marquee from '../Marquee';
 
 import styles from './MiniPlayer.module.scss';
 

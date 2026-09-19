@@ -6,10 +6,10 @@ import { retireServiceWorker } from 'utils/retireServiceWorker';
 import 'styles/index.scss';
 
 /**
- * The music module has no MDX, no i18n and no shared layout: both routes render
- * the same `MusicApp` and only the `variant` differs, so `_app.js` exists to
- * load the global stylesheet (Next's pages router only allows global CSS
- * imports from here) and pin the viewport.
+ * The music module has no MDX, no i18n and no shared layout: `/h5` and
+ * `/desktop` are two independent component trees, so `_app.js` exists to load
+ * the global stylesheet (Next's pages router only allows global CSS imports
+ * from here) and pin the viewport.
  *
  * There is deliberately no service worker. One used to precache the app shell,
  * and it caused more problems than it solved: a stale shell could keep serving
