@@ -31,6 +31,7 @@ import {
 } from './icons';
 import {
     DESKTOP_LIST_KEY,
+    emptyListMessage,
     formatSize,
     formatTime,
     parseTrackName,
@@ -192,6 +193,10 @@ const DesktopMusic = function ({
     onOpenCache,
     onOpenDisliked,
     dislikedCount = 0,
+    // The library *before* the list preferences and the search ran — the only
+    // way to tell "this library is empty" from "this library is all hidden".
+    // See `emptyListMessage`.
+    libraryCount = 0,
 }) {
     const rootRef = useRef(null);
     const searchInputRef = useRef(null);
@@ -615,11 +620,12 @@ const DesktopMusic = function ({
                         </section>
                     ) : visibleCount === 0 ? (
                         <p className={styles['list-empty']}>
-                            {listLoading
-                                ? '加载中…'
-                                : keyword
-                                    ? `没有匹配「${keyword}」的歌曲`
-                                    : '没有找到音频文件，去设置里换个文件夹试试？'}
+                            {emptyListMessage({
+                                listLoading,
+                                keyword,
+                                libraryCount,
+                                folderHint: '设置',
+                            })}
                         </p>
                     ) : (
                         <ul className={styles.list} ref={listRef}>

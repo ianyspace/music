@@ -304,6 +304,154 @@ check('the button sits inside that wrapper, after the list',
     deskJs.indexOf("styles['locate-btn']") > deskJs.indexOf('ref={listRef}'),
     'rendered after the scroller');
 
+/* --- 7. the empty list reads the same on both layouts ------------------- */
+
+// The two layouts each render their own list, so each has its own "there is
+// nothing to show" message — and they had drifted three ways at once: different
+// wording, different class names, and the phone's copy wrapped in a `<p>` that
+// sat *inside* the `<ul>`. The last one is invalid HTML that a browser silently
+// tolerates, so nothing ever complained about it.
+const sharedJs = read('components/Music/shared.js');
+const listScss = read('components/Music/TrackList.module.scss');
+
+/** Brace-matched slice starting at an opening brace, by index. */
+const braceFrom = function (text, openIndex) {
+    let depth = 0;
+    for (let i = openIndex; i < text.length; i += 1) {
+        if (text[i] === '{') depth += 1;
+        else if (text[i] === '}') {
+            depth -= 1;
+            if (depth === 0) return text.slice(openIndex, i + 1);
+        }
+    }
+    return '';
+};
+
+/**
+ * The body of a top-level function, by marker.
+ *
+ * The parameter list has to be skipped first: `function ({ listLoading, … })`
+ * opens a brace of its own before the body does, and taking *that* one would
+ * hand `new Function` a destructuring pattern instead of the code.
+ */
+const functionBodyOf = function (text, marker) {
+    const at = text.indexOf(marker);
+    if (at === -1) return '';
+    const params = text.indexOf('(', at + marker.length);
+    if (params === -1) return '';
+    const open = text.indexOf('{', text.indexOf(')', params));
+    return open === -1 ? '' : braceFrom(text, open);
+};
+
+// Driven, not pattern-matched: which branch a given emptiness takes is the
+// whole content of this helper, and "the copy is somewhere in the file" would
+// pass just as happily with the branches in the wrong order.
+const messageBody = functionBodyOf(sharedJs, 'export const emptyListMessage = function');
+check('`emptyListMessage` is exported from shared.js', messageBody !== '',
+    messageBody ? `${messageBody.length} chars` : 'not found');
+const emptyMessage = messageBody
+    ? new Function('args', `const { listLoading, keyword, libraryCount, folderHint } = args;\n${messageBody}`)
+    : null;
+const say = (args) => (emptyMessage ? String(emptyMessage(args)) : '(missing)');
+
+check('both layouts ask shared.js for the message',
+    /emptyListMessage\(\{/.test(listJs) && /emptyListMessage\(\{/.test(deskJs),
+    'one decision, two call sites');
+
+// The argument object, brace-matched, so "it passes the loading flag" cannot be
+// satisfied by a mention somewhere else in the file.
+const callOf = function (text, marker) {
+    const at = text.indexOf(marker);
+    if (at === -1) return '';
+    const open = text.indexOf('{', at);
+    return open === -1 ? '' : braceFrom(text, open);
+};
+const phoneCall = callOf(listJs, 'emptyListMessage({');
+const deskCall = callOf(deskJs, 'emptyListMessage({');
+check('...each passing the loading state, so the list is never blank while it arrives',
+    /listLoading/.test(phoneCall) && /listLoading/.test(deskCall),
+    'listLoading on both');
+check('...and the keyword the visitor typed',
+    /keyword/.test(phoneCall) && /keyword/.test(deskCall), 'keyword on both');
+check('...and the pre-filter count',
+    /libraryCount/.test(phoneCall) && /libraryCount/.test(deskCall), 'libraryCount on both');
+
+check('...and neither carries the copy inline any more',
+    !listJs.includes('没有找到音频文件') && !deskJs.includes('没有找到音频文件'),
+    'the wording lives in shared.js');
+check('each layout names its own folder screen',
+    /folderHint: '我的'/.test(listJs) && /folderHint: '设置'/.test(deskJs),
+    '我的 / 设置');
+
+check('a list that is still loading says so, and does not diagnose',
+    say({ listLoading: true, keyword: '', libraryCount: 0, folderHint: '我的' }) === '加载中…',
+    say({ listLoading: true, keyword: '', libraryCount: 0, folderHint: '我的' }));
+check('loading wins even with a search and a full library',
+    say({ listLoading: true, keyword: 'x', libraryCount: 9, folderHint: '我的' }) === '加载中…',
+    'loading first');
+check('a search that matched nothing names the keyword',
+    say({ listLoading: false, keyword: 'zzz', libraryCount: 9, folderHint: '我的' }).includes('「zzz」'),
+    say({ listLoading: false, keyword: 'zzz', libraryCount: 9, folderHint: '我的' }));
+check('a library with songs but no visible row blames 不喜欢, not the folder',
+    say({ listLoading: false, keyword: '', libraryCount: 9, folderHint: '我的' }).includes('不喜欢')
+    && !say({ listLoading: false, keyword: '', libraryCount: 9, folderHint: '我的' }).includes('文件夹'),
+    say({ listLoading: false, keyword: '', libraryCount: 9, folderHint: '我的' }));
+check('an actually empty library points at the folder screen',
+    say({ listLoading: false, keyword: '', libraryCount: 0, folderHint: '我的' }).includes('「我的」')
+    && say({ listLoading: false, keyword: '', libraryCount: 0, folderHint: '设置' }).includes('「设置」'),
+    'the hint is used');
+
+// `libraryCount` is the library *before* the list preferences ran. Passing the
+// visible count instead would make the 不喜欢 branch unreachable and quietly
+// send every hidden library to the folder picker.
+check('both layouts are given the pre-filter count',
+    /libraryCount=\{tracks\.length\}/.test(appJs)
+    && count(appJs, /libraryCount=\{tracks\.length\}/g) === 2,
+    `${count(appJs, /libraryCount=\{tracks\.length\}/g)} call sites`);
+check('the phone only shows the message when the list is loading or empty',
+    /visibleTracks\.length === 0 \|\| listLoading/.test(listJs), 'gated');
+
+// The invalid-HTML half: a `<ul>` may only contain `<li>`. The message has to
+// be the list's sibling, which is what the wide-screen panel already did.
+//
+// Sliced to the list's own `</ul>` rather than brace-matched: rows are `<li>`s
+// full of `<span>`/`<button>` children but never another list, so the first
+// closing tag after the opening one is this list's.
+const sliceOfList = function (text, openMarker) {
+    const start = text.indexOf(openMarker);
+    if (start === -1) return '';
+    const end = text.indexOf('</ul>', start);
+    return end === -1 ? '' : text.slice(start, end + 5);
+};
+
+const phoneList = sliceOfList(listJs, '<ul className={styles.tracks}');
+check('the phone list element was located', phoneList !== '', 'TrackList <ul>');
+check('nothing but rows is rendered inside the phone <ul>',
+    phoneList !== '' && !/<p/.test(phoneList),
+    phoneList && /<p/.test(phoneList) ? 'a <p> is still inside the <ul>' : 'rows only');
+check('the message is rendered after the list, as its sibling',
+    listJs.indexOf("styles['list-empty']") > listJs.indexOf('</ul>', listJs.indexOf('<ul className={styles.tracks}')),
+    'sibling, not child');
+const desktopList = sliceOfList(deskJs, '<ul className={styles.list}');
+check('the wide-screen list keeps its message outside the <ul> too',
+    desktopList !== '' && !/<p/.test(desktopList), 'rows only');
+check('both layouts use one class name for that message',
+    listScss.includes('.list-empty') && deskScss.includes('.list-empty'),
+    '.list-empty on both');
+check('the phone no longer has a second name for the same line',
+    !/lib-loading|lib-empty/.test(listJs) && !/lib-loading|lib-empty/.test(listScss),
+    'one class, one rule');
+// Phrased as "the branch is there, ungated", not "the wrong gate is absent":
+// a negative pattern has to guess the exact spelling of the mistake, and the
+// next person may well spell it `!listLoading && visibleCount === 0` without
+// the brace this used to look for. `emptyListMessage` already returns 加载中…
+// for a loading list, so gating this branch on `listLoading` would leave the
+// wide-screen panel blank while the library arrives — the same hole the phone
+// layout had.
+check('...and the wide-screen empty branch still covers loading and empty alike',
+    /\)\s*:\s*visibleCount === 0\s*\?\s*\(/.test(deskJs),
+    'the branch is ungated; shared.js decides what it says');
+
 /* --- report ------------------------------------------------------------- */
 
 let failed = 0;

@@ -508,8 +508,11 @@
     }
 }
 
-.lib-loading,
-.lib-empty {
+/* The message shown in place of the rows — loading, an empty search, an empty
+   library. One rule, because it is one line in one place: the wide-screen panel
+   has the same class name and the same appearance, and both get their text from
+   `emptyListMessage` so the two cannot drift. */
+.list-empty {
     margin: 40px 8px;
     text-align: center;
     font-size: 13.5px;

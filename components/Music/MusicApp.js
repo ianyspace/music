@@ -1488,6 +1488,10 @@ const MusicApp = function ({ variant = 'h5' }) {
                     onRefresh={refreshTracks}
                     listLoading={listLoading}
                     visibleTracks={visibleTracks}
+                    // Not `trackCount` (which is what the panel displays):
+                    // this is the library *before* the list preferences ran, so
+                    // the empty state can tell "no songs" from "all hidden".
+                    libraryCount={tracks.length}
                     disliked={disliked}
                     trackCount={visibleTracks.length}
                     search={search}
@@ -1538,6 +1542,9 @@ const MusicApp = function ({ variant = 'h5' }) {
                                 source={librarySource}
                                 listLoading={listLoading}
                                 visibleTracks={visibleTracks}
+                                // The library *before* the list preferences ran
+                                // — see `emptyListMessage`.
+                                libraryCount={tracks.length}
                                 search={search}
                                 onSearch={setSearch}
                                 current={current}

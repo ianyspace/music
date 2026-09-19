@@ -84,6 +84,17 @@
   要放在**第一个子节点**（音符图标被它盖住是对的，行的播放/暂停遮罩必须盖在它上面）；
   ② **公共曲库加封面要重新部署 Worker** 才生效，旧 Worker 不返回 `coverUrl` 时客户端会退回
   按 `.jpg` 猜名字（`guessCoverUrl`，代价是每首没封面的歌一个 404），由 `scripts/check-covers.js` 兜住。
+- **空列表的文案只有一处决策**（`shared.js` 的 `emptyListMessage`），四个分支按顺序判断：
+  还在加载 → 搜了没搜到 → `libraryCount > 0` 说明歌都被移进「不喜欢」了 → 曲库真的空。
+  两个容易搞错的地方：
+  - **`libraryCount` 是过滤前**（`tracks.length`）**的曲库数**，不是 `trackCount` / `visibleTracks.length`。
+    传错这一个值，「全被不喜欢」就会被判成「曲库空」，然后指引访客去换文件夹 —— 一个他照做
+    也解决不了问题的建议（`check-desktop-parity.js` 断言这个传参恰好两处）。
+  - **文案是列表的兄弟节点，不能塞进 `<ul>`**：`<ul>` 里只能有 `<li>`，塞 `<p>` 是无效 HTML，
+    而且读屏会把这句话当成列表的一项念出来。手机端列表**保持挂载**（播放条的「回到正在播放」
+    按 `id="ms-track-list"` 找它），所以消息挂在 `<ul>` 之后；桌面端则是直接把列表换掉。
+    两端共用 `.list-empty` 这一个类名（以前手机端叫 `lib-loading` / `lib-empty`，还共用一条规则）。
+  文案由 `node scripts/preview-empty-list.js` 出图核对，逻辑由 `check-desktop-parity.js` 驱动函数逐分支断言。
 
 ## 检查脚本
 
@@ -145,6 +156,7 @@
 - `for s in scripts/check-*.js; do node $s || break; done` — 跑全部检查（推之前必跑）
 - `node scripts/preview-desktop-list.js` — 生成列表面板的可量尺寸预览页（先 `npm run build`）
 - `node scripts/preview-covers.js` — 生成封面的可量尺寸预览页：列表/抽屉/缓存/唱片四种形状，每种都放了「有封面」和「没封面」两个对照
+- `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 > 本仓库的工作区是 **CRLF**、CI 是 **LF**，且 `core.autocrlf=true`（仓库内一律 LF）。

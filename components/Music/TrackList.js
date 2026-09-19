@@ -11,7 +11,7 @@ import {
     IconMusicSpace,
     IconGoogleDrive,
 } from './icons';
-import { parseTrackName, trackGradient } from './shared';
+import { emptyListMessage, parseTrackName, trackGradient } from './shared';
 import { DRIVE_SOURCE } from './librarySource';
 import Cover from './Cover';
 
@@ -46,6 +46,7 @@ const TrackList = function ({
     source,
     listLoading,
     visibleTracks,
+    libraryCount,
     search,
     onSearch,
     current,
@@ -61,6 +62,12 @@ const TrackList = function ({
     const keyword = search.trim();
     const currentId = current ? current.track.id : '';
     const eqClass = `${styles.eq}${isPlaying ? '' : ` ${styles['eq-paused']}`}`;
+    // `libraryCount` is the library *before* the list preferences and the
+    // search ran, which is the only way to tell "this library is empty" from
+    // "this library is all hidden" — see `emptyListMessage`.
+    const empty = visibleTracks.length === 0 || listLoading
+        ? emptyListMessage({ listLoading, keyword, libraryCount, folderHint: '我的' })
+        : '';
     // The search field only exists while unfolded; a tap on the search button
     // reveals it and puts the caret straight inside.
     const [searchOpen, setSearchOpen] = useState(false);
@@ -175,17 +182,13 @@ const TrackList = function ({
                 </section>
             ) : (
                 <>
+                    {/* The list stays mounted even when there is nothing in it,
+                        because `MiniPlayer`'s jump button looks it up by id —
+                        and the message about the list is its *sibling*, never a
+                        child. A `<ul>` may only contain `<li>`: a stray `<p>`
+                        inside one is invalid HTML, and it makes the list
+                        announce the message as an item of its own. */}
                     <ul className={styles.tracks} id={listId}>
-                        {listLoading && (
-                            <p className={styles['lib-loading']}>加载中…</p>
-                        )}
-                        {!listLoading && visibleTracks.length === 0 && (
-                            <p className={styles['lib-empty']}>
-                                {keyword
-                                    ? `没有匹配「${keyword}」的歌曲`
-                                    : '没有找到音频文件，去「我的」换个文件夹试试？'}
-                            </p>
-                        )}
                         {visibleTracks.map((track) => {
                             const active = track.id === currentId;
                             const loading = loadingId === track.id;
@@ -270,6 +273,9 @@ const TrackList = function ({
                             );
                         })}
                     </ul>
+                    {empty && (
+                        <p className={styles['list-empty']}>{empty}</p>
+                    )}
                 </>
             )}
         </div>

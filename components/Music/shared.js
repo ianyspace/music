@@ -189,6 +189,31 @@ export const applyListPrefs = function (tracks, disliked, order) {
     return pinned.map((entry) => entry[1]).concat(rest);
 };
 
+/**
+ * What to show in place of the list when there is no row to show.
+ *
+ * Both layouts ask this one question, and they have to answer it the same way:
+ * a phone list and a wide-screen panel with the same filters applied must not
+ * word the same emptiness differently. The answer depends on *why* the list is
+ * empty, which "zero rows" alone does not tell you:
+ *
+ * 1. still loading — not empty yet, so say that instead of diagnosing;
+ * 2. a search that matched nothing — name the keyword back;
+ * 3. the library has songs but the list preferences removed them all — they are
+ *    in 不喜欢, and sending the visitor to the folder picker would have them
+ *    hunting for a problem that is not there (the one case where the old copy
+ *    was actively misleading);
+ * 4. otherwise the library itself is empty, and the folder picker *is* the fix
+ *    — `folderHint` names it, because the phone calls that screen 「我的」 and
+ *    the wide-screen layout calls it 「设置」.
+ */
+export const emptyListMessage = function ({ listLoading, keyword, libraryCount, folderHint }) {
+    if (listLoading) return '加载中…';
+    if (keyword) return `没有匹配「${keyword}」的歌曲`;
+    if (libraryCount > 0) return '歌曲都移进「不喜欢」了，从「更多」里可以移回来';
+    return `没有找到音频文件，去「${folderHint}」换个文件夹试试？`;
+};
+
 // iOS (and iOS-only browsers like Alook — they are all WKWebView) needs the
 // audio element to have played once inside a real user gesture before later
 // async `play()` calls (after a Drive blob download) are allowed.
