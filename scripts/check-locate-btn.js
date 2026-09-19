@@ -213,6 +213,17 @@ check('rowOffScreen starts false so the button cannot flash on mount',
 check('the visibility test uses an inset viewport, not the raw one',
     miniJs.includes("rootMargin: '-72px 0px -96px 0px'"),
     "rootMargin: '-72px 0px -96px 0px'");
+// A removed node generates no further IntersectionObserver entries, so the
+// effect has to re-run when the playing row can no longer be rendered — a
+// search that filters it out. Otherwise the last reading sticks and the button
+// offers a jump to a row that is not there.
+check('the phone re-measures when the filtered list changes size',
+    /\[rowOf, listLoading, trackCount\]/.test(miniJs), 'trackCount in the deps');
+check('MiniPlayer takes that count as a prop',
+    /^\s{4}trackCount,$/m.test(miniJs), 'prop declared');
+check('MusicApp feeds it the visible count',
+    /<MiniPlayer[\s\S]{0,400}trackCount=\{visibleTracks\.length\}/.test(appJs),
+    'visibleTracks.length');
 check('the jump respects prefers-reduced-motion',
     miniJs.includes("matchMedia('(prefers-reduced-motion: reduce)')"), 'reduced-motion branch');
 check('the pulse class comes off again on a timer',
@@ -227,6 +238,93 @@ check('MusicApp passes listLoading into MiniPlayer',
     /<MiniPlayer[\s\S]{0,400}listLoading=\{listLoading\}/.test(appJs), 'prop wired');
 check('the mini bar is still list-tab only',
     /\{tab === 'list' && current && !playerOpen && \(/.test(appJs), 'tab gate intact');
+
+/* --- the same button on the wide-screen layout -------------------------- */
+
+// The desktop has no mini bar, so the button had nowhere to live and simply did
+// not exist there — on a long list there was no way back to the playing row.
+// It is pinned to the list panel instead. The numbers differ (a corner inside a
+// scroller rather than a shoulder above a bar), so the invariants are stated
+// separately rather than shared with the block above.
+const deskJs = read('components/Music/DesktopMusic.js');
+const deskScss = read('components/Music/DesktopMusic.module.scss');
+
+const deskBlock = blockOf(deskScss, '.locate-btn');
+check('.locate-btn exists in DesktopMusic.module.scss', deskBlock,
+    deskBlock ? 'found' : 'not found');
+check('the desktop button is the same 32px circle as the phone\'s',
+    new RegExp(`width:\\s*${BTN}px`).test(deskBlock)
+    && new RegExp(`height:\\s*${BTN}px`).test(deskBlock),
+    `${BTN}px — one target, two layouts`);
+check('the desktop icon is the same weight as the phone\'s',
+    new RegExp(`svg\\s*\\{[^}]*width:\\s*${svgMatch ? svgMatch[1] : 15}px`).test(deskBlock),
+    'same glyph size');
+
+// It floats over the rows, so it has to be quiet enough to sit on top of them.
+check('the desktop button is not accent-coloured either',
+    !/var\(--accent/.test(deskBlock), 'no accent');
+check('the desktop button wears the panel\'s glass',
+    /background:\s*var\(--glass-solid\)/.test(deskBlock)
+    && /var\(--hairline\)/.test(deskBlock), 'glass-solid + hairline');
+check('the desktop button icon sits at the mid text weight',
+    /color:\s*var\(--text-2\)/.test(deskBlock), 'color: var(--text-2)');
+check('the desktop button declares its own locate-in keyframes',
+    /@keyframes\s+locate-in/.test(deskScss) && deskBlock.includes('animation: locate-in'),
+    'keyframes + reference together');
+
+// Anchoring: the phone pins to the bar (a box that never scrolls because it is
+// a sibling of the list), the desktop pins to a wrapper around the scroller for
+// the same reason. If the button were ever put *inside* the scroller it would
+// scroll away with the rows, which is exactly what the phone's version was
+// designed not to do.
+const wrapBlock = blockOf(deskScss, '.list-wrap');
+check('.list-wrap is the desktop button\'s containing block',
+    /position: relative/.test(wrapBlock), wrapBlock ? 'position: relative' : 'missing');
+check('the desktop button is absolutely positioned against it',
+    /position:\s*absolute/.test(deskBlock) && !/position:\s*fixed/.test(deskBlock),
+    'absolute, not fixed');
+check('the wrapper does not itself scroll',
+    wrapBlock !== '' && !/overflow/.test(wrapBlock), 'no overflow');
+check('the scroller inside it still does (min-height: 0 keeps flex honest)',
+    /min-height:\s*0/.test(wrapBlock), 'min-height: 0');
+const ulIdx = deskJs.indexOf('ref={listRef}');
+const btnIdx = deskJs.indexOf("styles['locate-btn']");
+check('the button renders after the scroller, not inside it',
+    ulIdx !== -1 && btnIdx > ulIdx && btnIdx > deskJs.indexOf('</ul>', ulIdx),
+    'outside the <ul>');
+check('the button stays clear of the panel footer',
+    deskJs.indexOf("styles['panel-foot']") > btnIdx, 'footer is a later sibling');
+
+// Behaviour has to match the phone's, or one layout would feel broken.
+check('the desktop hides it while the list is loading, off-screen, or mid-jump',
+    /\{!listLoading && rowOffScreen && !jumping && \(/.test(deskJs), 'same gate');
+check('the desktop measures the row against the scroller, not the viewport',
+    /root:\s*listRef\.current/.test(deskJs), 'root: listRef.current');
+check('the desktop re-measures when the filtered list changes size too',
+    /\[rowOf, listLoading, visibleCount\]/.test(deskJs), 'visibleCount in the deps');
+check('the desktop row lookup escapes the id',
+    deskJs.includes('CSS.escape(currentId)'), 'CSS.escape(currentId)');
+// The lookup is only as good as the hook it reads: without the attribute on the
+// rows the query returns null and the button never appears — silently, since
+// "no row found" is also the honest answer when nothing is playing.
+check('the desktop rows carry the attribute the lookup reads',
+    /<li key=\{track\.id\} data-track-id=\{track\.id\}/.test(deskJs), 'data-track-id on the row');
+check('the desktop ref is on the scroller the rows live in',
+    /<ul className=\{styles\.list\} ref=\{listRef\}>/.test(deskJs), 'ref on the <ul>');
+check('the desktop jump respects prefers-reduced-motion',
+    deskJs.includes("matchMedia('(prefers-reduced-motion: reduce)')"), 'reduced-motion branch');
+check('the desktop pulse comes off again on a timer',
+    /classList\.remove\(styles\['track-pulse'\]\)/.test(deskJs), 'remove on timer');
+check('the desktop clears its timers on unmount',
+    /clearTimeout\(settleRef\.current\)/.test(deskJs)
+    && /clearTimeout\(pulseRef\.current\)/.test(deskJs), 'both cleared');
+check('the desktop pulse rule lives where the desktop applies it',
+    /^\.track-pulse \{/m.test(deskScss) && !/\.track-pulse\s*\{/.test(listScss),
+    'DesktopMusic.module.scss, not TrackList');
+check('the desktop pulse carries a radius (the <li> is a bare flex line)',
+    /border-radius:/.test(blockOf(deskScss, '.track-pulse')), 'border-radius');
+check('the phone row got the same radius for the same reason',
+    /\.row \{[\s\S]{0,400}border-radius:\s*12px/.test(listScss), 'radius 12px on .row');
 
 /* --- report --- */
 

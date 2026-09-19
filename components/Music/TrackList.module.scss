@@ -291,6 +291,10 @@
     display: flex;
     align-items: center;
     gap: 2px;
+    /* The row paints nothing of its own at rest, but the jump button flashes
+       `track-pulse` on it (see `MiniPlayer.module.scss`) — without a radius
+       that one-shot tint would land as a rectangle around a 12px-rounded row. */
+    border-radius: 12px;
 }
 
 .track,

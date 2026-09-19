@@ -1578,6 +1578,7 @@ const MusicApp = function ({ variant = 'h5' }) {
                             isPlaying={isPlaying}
                             progress={progress}
                             listLoading={listLoading}
+                            trackCount={visibleTracks.length}
                             onTogglePlay={togglePlay}
                             onNext={playNext}
                             onOpenPlayer={openPlayer}

@@ -121,10 +121,11 @@ jobs:
           # Parity between the phone and wide-screen layouts. They share all
           # playback state but render their own lists, and that seam is where a
           # feature goes missing without erroring: 置顶 / 移入不喜欢 were wired to
-          # the phone only, and the desktop list gated its empty state on the
+          # the phone only, the desktop list gated its empty state on the
           # Google token instead of on whether a library exists — so a fully
           # loaded public library rendered as 「曲库里还没有歌曲」 until a drive
-          # was linked.
+          # was linked — and 「回到正在播放」 lived on the phone's mini bar, which
+          # the desktop does not have.
           node scripts/check-desktop-parity.js
           echo "build output verified"
 

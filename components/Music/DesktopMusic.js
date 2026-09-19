@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     IconArchive,
@@ -10,6 +10,7 @@ import {
     IconGear,
     IconGoogleDrive,
     IconLogout,
+    IconLocate,
     IconMoon,
     IconMoreVertical,
     IconMusicSpace,
@@ -51,6 +52,13 @@ const MODES = {
     one: { icon: <IconRepeatOne />, title: '单曲循环' },
     shuffle: { icon: <IconShuffle />, title: '随机播放' },
 };
+
+// How long the landed row stays tinted after a jump, and how long the button
+// hides itself for while the scroll is still travelling (see `jumpToCurrent`).
+// Same numbers as the phone bar's button — one behaviour, two layouts.
+const PULSE_MS = 1100;
+const PULSE_MS_REDUCED = 400;
+const SETTLE_MS = 700;
 
 /**
  * Decorative tonearm, drawn in the record rig's own coordinate space
@@ -206,6 +214,26 @@ const DesktopMusic = function ({
     const menuRef = useRef(null);
     const [cacheCount, setCacheCount] = useState(0);
 
+    // --- "jump to the playing track" ---------------------------------------
+    //
+    // The phone layout puts this button on the mini bar's shoulder, because the
+    // bar is the one fixed thing there. The desktop has no bar over the list —
+    // its equivalent fixed edge is the panel itself — so the button is pinned to
+    // the scroller's bottom corner instead, and the row lookup runs against this
+    // component's own ref rather than through the phone layout's list id.
+    const listRef = useRef(null);
+    // Hidden while the playing row is on screen: the button is a nudge back, not
+    // a permanent fixture. Starts false so it cannot flash before the first
+    // measurement lands, and is re-measured whenever the row might have moved
+    // (song change, filtering, list reload).
+    const [rowOffScreen, setRowOffScreen] = useState(false);
+    // True for the length of a jump — the scroll is already on its way and the
+    // list is about to move underneath, so the button is the wrong thing to
+    // leave under the pointer.
+    const [jumping, setJumping] = useState(false);
+    const settleRef = useRef(null);
+    const pulseRef = useRef(null);
+
     // Restored on mount and written back on every change, from one effect.
     //
     // One effect rather than a read-effect plus a write-effect: the two would
@@ -346,6 +374,67 @@ const DesktopMusic = function ({
         setSearchOpen(false);
         onSearch('');
     };
+
+    // --- the jump button's bookkeeping -------------------------------------
+
+    // `currentId` itself is declared with the other derived values above — the
+    // row lookup reads the same one the list marks its rows with.
+    const rowOf = useCallback(function () {
+        const list = listRef.current;
+        return list && currentId
+            ? list.querySelector(`[data-track-id="${CSS.escape(currentId)}"]`)
+            : null;
+    }, [currentId]);
+
+    // The scroller *is* the list here — the panel's header and footer are its
+    // siblings, not overlays — so the plain viewport of `.list` is already the
+    // right frame and no inset is needed (the phone layout needs its insets
+    // because a floating header and the mini bar cover its list's ends).
+    //
+    // `visibleCount` is in the deps for the case where the playing row stops
+    // being rendered at all — a search that filters it out. A removed node
+    // generates no further entries, so without re-running here the last reading
+    // would stick and the button would offer a jump to a row that is not there.
+    useEffect(() => {
+        const row = rowOf();
+        if (!row) {
+            setRowOffScreen(false);
+            return undefined;
+        }
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => setRowOffScreen(!entry.isIntersecting));
+            },
+            { root: listRef.current, threshold: 0 },
+        );
+        observer.observe(row);
+        return () => observer.disconnect();
+    }, [rowOf, listLoading, visibleCount]);
+
+    useEffect(() => () => {
+        window.clearTimeout(settleRef.current);
+        window.clearTimeout(pulseRef.current);
+    }, []);
+
+    const jumpToCurrent = useCallback(function () {
+        const row = rowOf();
+        if (!row) return;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        row.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+        // The row was already the playing one, so the flash is what answers
+        // "where did it go?" rather than the accent title the row always had.
+        // It lands on the <li> and shows through the row's own tint — hence the
+        // radius in `.track-pulse`, so the flash follows the row's rounding.
+        row.classList.add(styles['track-pulse']);
+        window.clearTimeout(pulseRef.current);
+        pulseRef.current = window.setTimeout(
+            () => row.classList.remove(styles['track-pulse']),
+            reduced ? PULSE_MS_REDUCED : PULSE_MS,
+        );
+        setJumping(true);
+        window.clearTimeout(settleRef.current);
+        settleRef.current = window.setTimeout(() => setJumping(false), SETTLE_MS);
+    }, [rowOf]);
 
     const openMenu = function (which) {
         setMenu((open) => (open === which ? '' : which));
@@ -510,92 +599,109 @@ const DesktopMusic = function ({
                     The `listLoading` guard keeps a first visit — no list cache
                     yet — from reading as "nothing here" while the public
                     library is still arriving. */}
-                {!hasLibrary && !listLoading ? (
-                    <section className={styles.connect}>
-                        <span className={styles['connect-icon']}><IconQueue /></span>
-                        <h2 className={styles['connect-title']}>曲库里还没有歌曲</h2>
-                        <p className={styles['connect-sub']}>
-                            公共曲库暂时是空的；也可以连接 Google 云盘，
-                            播放你自己云盘里的音乐。
+                <div className={styles['list-wrap']}>
+                    {!hasLibrary && !listLoading ? (
+                        <section className={styles.connect}>
+                            <span className={styles['connect-icon']}><IconQueue /></span>
+                            <h2 className={styles['connect-title']}>曲库里还没有歌曲</h2>
+                            <p className={styles['connect-sub']}>
+                                公共曲库暂时是空的；也可以连接 Google 云盘，
+                                播放你自己云盘里的音乐。
+                            </p>
+                            <button type="button" className={styles['connect-btn']} onClick={() => setSettingsOpen(true)}>
+                                去连接
+                            </button>
+                        </section>
+                    ) : visibleCount === 0 ? (
+                        <p className={styles['list-empty']}>
+                            {listLoading
+                                ? '加载中…'
+                                : keyword
+                                    ? `没有匹配「${keyword}」的歌曲`
+                                    : '没有找到音频文件，去设置里换个文件夹试试？'}
                         </p>
-                        <button type="button" className={styles['connect-btn']} onClick={() => setSettingsOpen(true)}>
-                            去连接
-                        </button>
-                    </section>
-                ) : visibleCount === 0 ? (
-                    <p className={styles['list-empty']}>
-                        {listLoading
-                            ? '加载中…'
-                            : keyword
-                                ? `没有匹配「${keyword}」的歌曲`
-                                : '没有找到音频文件，去设置里换个文件夹试试？'}
-                    </p>
-                ) : (
-                    <ul className={styles.list}>
-                        {visibleTracks.map((track) => {
-                            const item = parseTrackName(track.name);
-                            const active = track.id === currentId;
-                            const loading = loadingId === track.id;
-                            const rowMenuOpen = rowMenuId === track.id;
-                            return (
-                                // Two sibling controls rather than a button
-                                // wrapping another button — the nested one is
-                                // invalid HTML and gets torn out of the
-                                // accessibility tree. The play target keeps the
-                                // row's width; the three-dots button sits beside
-                                // it and raises the same row drawer the phone
-                                // layout opens (置顶 / 移入不喜欢).
-                                <li key={track.id} className={styles['track-row']}>
-                                    <button
-                                        type="button"
-                                        className={active ? styles['item-active'] : styles.item}
-                                        disabled={loading}
-                                        onClick={() => onToggleTrack(track)}
-                                        title={`${item.title} - ${item.artist}`}
-                                    >
-                                        <span
-                                            className={styles['item-thumb']}
-                                            style={{ background: trackGradient(track.name) }}
-                                            aria-hidden="true"
+                    ) : (
+                        <ul className={styles.list} ref={listRef}>
+                            {visibleTracks.map((track) => {
+                                const item = parseTrackName(track.name);
+                                const active = track.id === currentId;
+                                const loading = loadingId === track.id;
+                                const rowMenuOpen = rowMenuId === track.id;
+                                return (
+                                    // Two sibling controls rather than a button
+                                    // wrapping another button — the nested one is
+                                    // invalid HTML and gets torn out of the
+                                    // accessibility tree. The play target keeps the
+                                    // row's width; the three-dots button sits beside
+                                    // it and raises the same row drawer the phone
+                                    // layout opens (置顶 / 移入不喜欢).
+                                    <li key={track.id} data-track-id={track.id} className={styles['track-row']}>
+                                        <button
+                                            type="button"
+                                            className={active ? styles['item-active'] : styles.item}
+                                            disabled={loading}
+                                            onClick={() => onToggleTrack(track)}
+                                            title={`${item.title} - ${item.artist}`}
                                         >
-                                            {active && !loading ? (
-                                                <span className={styles['thumb-overlay']}>
-                                                    {isPlaying ? <IconPause /> : <IconPlay />}
-                                                </span>
-                                            ) : (
-                                                <IconNote />
-                                            )}
-                                        </span>
-                                        <span className={styles['item-text']}>
-                                            <span className={styles['item-title']}>{item.title}</span>
-                                            <span className={styles['item-artist']}>{item.artist}</span>
-                                        </span>
-                                        {loading ? (
-                                            <span className={`${styles['item-flag']} ${styles.spin}`} aria-hidden="true">
-                                                <IconRefresh />
+                                            <span
+                                                className={styles['item-thumb']}
+                                                style={{ background: trackGradient(track.name) }}
+                                                aria-hidden="true"
+                                            >
+                                                {active && !loading ? (
+                                                    <span className={styles['thumb-overlay']}>
+                                                        {isPlaying ? <IconPause /> : <IconPlay />}
+                                                    </span>
+                                                ) : (
+                                                    <IconNote />
+                                                )}
                                             </span>
-                                        ) : active ? (
-                                            <span className={eqClass} aria-hidden="true"><i /><i /><i /></span>
-                                        ) : null}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={rowMenuOpen
-                                            ? `${styles['item-more']} ${styles['item-more-on']}`
-                                            : styles['item-more']}
-                                        title="更多操作"
-                                        aria-label={`${item.title} 的更多操作`}
-                                        aria-haspopup="menu"
-                                        aria-expanded={rowMenuOpen}
-                                        onClick={() => onOpenRowMenu(track)}
-                                    >
-                                        <IconMoreVertical />
-                                    </button>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                )}
+                                            <span className={styles['item-text']}>
+                                                <span className={styles['item-title']}>{item.title}</span>
+                                                <span className={styles['item-artist']}>{item.artist}</span>
+                                            </span>
+                                            {loading ? (
+                                                <span className={`${styles['item-flag']} ${styles.spin}`} aria-hidden="true">
+                                                    <IconRefresh />
+                                                </span>
+                                            ) : active ? (
+                                                <span className={eqClass} aria-hidden="true"><i /><i /><i /></span>
+                                            ) : null}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={rowMenuOpen
+                                                ? `${styles['item-more']} ${styles['item-more-on']}`
+                                                : styles['item-more']}
+                                            title="更多操作"
+                                            aria-label={`${item.title} 的更多操作`}
+                                            aria-haspopup="menu"
+                                            aria-expanded={rowMenuOpen}
+                                            onClick={() => onOpenRowMenu(track)}
+                                        >
+                                            <IconMoreVertical />
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+
+                    {/* Pinned to the scroller's bottom corner, not to a row:
+                        it has to stay put while the list moves under it. The
+                        phone bar carries the same button on its shoulder. */}
+                    {!listLoading && rowOffScreen && !jumping && (
+                        <button
+                            type="button"
+                            className={styles['locate-btn']}
+                            title="回到正在播放"
+                            aria-label="回到正在播放"
+                            onClick={jumpToCurrent}
+                        >
+                            <IconLocate />
+                        </button>
+                    )}
+                </div>
 
                 <footer className={styles['panel-foot']}>
                     <span>{cached ? '离线可用' : '在线'}</span>

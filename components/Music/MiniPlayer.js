@@ -53,6 +53,7 @@ const MiniPlayer = function ({
     onNext,
     onOpenPlayer,
     listLoading,
+    trackCount,
 }) {
     const meta = parseTrackName(current.track.name);
     const percent = progress.duration > 0
@@ -83,6 +84,11 @@ const MiniPlayer = function ({
     // floating header covers, and the bottom strip this very bar sits over.
     // Without the insets a row parked behind either would count as visible and
     // the button would stay hidden exactly when it is needed.
+    //
+    // `trackCount` is in the deps for the case where the playing row stops
+    // being rendered at all — a search that filters it out. A removed node
+    // generates no further entries, so without re-running here the last reading
+    // would stick and the button would offer a jump to a row that is not there.
     useEffect(() => {
         const row = rowOf();
         if (!row) {
@@ -97,7 +103,7 @@ const MiniPlayer = function ({
         );
         observer.observe(row);
         return () => observer.disconnect();
-    }, [rowOf, listLoading]);
+    }, [rowOf, listLoading, trackCount]);
 
     useEffect(() => () => {
         window.clearTimeout(settleRef.current);
