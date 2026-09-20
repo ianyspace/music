@@ -16,11 +16,13 @@ import {
     IconArchive,
     IconDislike,
     IconGoogleDrive,
+    IconHeart,
     IconMoon,
     IconNote,
     IconPin,
     IconSun,
 } from '../icons';
+import { DRIVE_SOURCE } from '../librarySource';
 
 import styles from './MusicApp.module.scss';
 
@@ -52,6 +54,10 @@ const MusicApp = function () {
         dislikeTrack,
         restoreTrack,
         pinTrack,
+        isLiked,
+        toggleLike,
+        likedOnly,
+        toggleLikedOnly,
         tracks,
         libraryCount,
         visibleTracks,
@@ -244,6 +250,12 @@ const MusicApp = function () {
                         libraryCount={libraryCount}
                         search={search}
                         onSearch={setSearch}
+                        // 喜欢 is the public library's feature; the Drive library
+                        // gets no filter button and no heart, rather than a
+                        // button that would always come back empty.
+                        canLike={librarySource !== DRIVE_SOURCE}
+                        likedOnly={likedOnly}
+                        onToggleLikedOnly={toggleLikedOnly}
                         current={current}
                         loadingId={loadingId}
                         isPlaying={isPlaying}
@@ -296,6 +308,12 @@ const MusicApp = function () {
                     isPlaying={isPlaying}
                     progress={progress}
                     mode={playbackMode}
+                    // Read here rather than inside the player so the page stays a
+                    // plain view: it renders a heart, it does not know how a
+                    // like is stored or which library it belongs to.
+                    liked={isLiked(current.track)}
+                    canLike={current.track.source !== DRIVE_SOURCE}
+                    onToggleLike={() => toggleLike(current.track)}
                     listLoading={listLoading}
                     closing={playerClosing}
                     onClosed={finishClosePlayer}
@@ -488,6 +506,37 @@ const MusicApp = function () {
                                 </span>
                             </span>
                         </button>
+                        {/* 喜欢 sits between 置顶 and 移入不喜欢 because that is
+                            the order of what it does to the song: arranges it,
+                            keeps it, hides it. The label carries the current
+                            state rather than reading 喜欢 either way — the
+                            drawer is where the visitor finds out whether a song
+                            is already liked, since no row shows a heart. */}
+                        {rowMenu.source !== DRIVE_SOURCE && (
+                            <button
+                                type="button"
+                                className={styles['menu-item']}
+                                role="menuitem"
+                                onClick={() => {
+                                    toggleLike(rowMenu);
+                                    closeRowMenu();
+                                }}
+                            >
+                                <span className={styles['menu-icon']} aria-hidden="true">
+                                    <IconHeart size={20} filled={isLiked(rowMenu)} />
+                                </span>
+                                <span className={styles['menu-text']}>
+                                    <span className={styles['menu-title']}>
+                                        {isLiked(rowMenu) ? '取消喜欢' : '喜欢'}
+                                    </span>
+                                    <span className={styles['menu-sub']}>
+                                        {isLiked(rowMenu)
+                                            ? '从「我喜欢」里移出'
+                                            : '加入「我喜欢」，只保存在本机'}
+                                    </span>
+                                </span>
+                            </button>
+                        )}
                         <button
                             type="button"
                             className={`${styles['menu-item']} ${styles['menu-item-danger']}`}

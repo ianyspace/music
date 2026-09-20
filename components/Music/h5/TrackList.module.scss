@@ -90,6 +90,24 @@
     }
 }
 
+/* The 我喜欢 filter, while it is on.
+   Three signals rather than one, because each fails somewhere: the filled heart
+   carries it without colour, the accent colour carries it at a glance, and the
+   tinted disc gives the lit button the same footprint as its neighbours so the
+   header does not shift when it toggles. Colour alone would be nothing at all
+   in a greyscale screenshot. */
+.nav-btn-on {
+    background: var(--row-active);
+    color: var(--accent);
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--row-active);
+            color: var(--accent);
+        }
+    }
+}
+
 /* --- in-row search pill (between the title and the icon buttons) --- */
 
 .search-box {

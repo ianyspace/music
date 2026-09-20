@@ -44,6 +44,20 @@ export const DESKTOP_LIST_KEY = 'music:setting:desktopList';
 // what you want — an orphaned dislike list would silently hide songs.
 export const DISLIKED_KEY = 'music:setting:disliked';
 export const ORDER_KEY = 'music:setting:order';
+// 我喜欢 — a *keep-in* list, the mirror of `DISLIKED_KEY` and stored the same
+// way: a JSON array of `<source>:<id>` keys in localStorage. Same reasoning as
+// above for not putting it in IndexedDB, and the same consequence — "clear site
+// data" takes the visitor's taste with it.
+//
+// 永不过期 is literal, and it is why there is no `expiresAt` here to read: the
+// list cache stores an expiry and therefore has to honour old entries, whereas
+// nothing ever invalidates a like. A song the visitor liked stays liked.
+//
+// Only the public library can be liked (`toggleLike` refuses a Drive track), so
+// in practice every entry starts with `cloud:`. The source is still part of the
+// key because that is what `audioCacheKey` builds, and a second key shape for
+// one list is exactly the kind of thing that silently stops matching later.
+export const LIKED_KEY = 'music:setting:liked';
 // Last-played stamps for cached audio, as `{ '<source>:<id>': timestamp }`.
 //
 // Deliberately NOT stored inside the cached record itself. Refreshing a stamp
@@ -199,17 +213,30 @@ export const applyListPrefs = function (tracks, disliked, order) {
  *
  * 1. still loading — not empty yet, so say that instead of diagnosing;
  * 2. a search that matched nothing — name the keyword back;
- * 3. the library has songs but the list preferences removed them all — they are
+ * 3. 只看喜欢 is on — the library is fine and so is the filter, there is simply
+ *    nothing in it yet, and "no audio files" would send the visitor to the
+ *    folder picker for a problem that does not exist;
+ * 4. the library has songs but the list preferences removed them all — they are
  *    in 不喜欢, and sending the visitor to the folder picker would have them
  *    hunting for a problem that is not there (the one case where the old copy
  *    was actively misleading);
- * 4. otherwise the library itself is empty, and the folder picker *is* the fix
+ * 5. otherwise the library itself is empty, and the folder picker *is* the fix
  *    — `folderHint` names it, because the phone calls that screen 「我的」 and
  *    the wide-screen layout calls it 「设置」.
+ *
+ * The keyword branch comes first even when 只看喜欢 is on, because the visitor
+ * typed something and that is the thing they are waiting to hear about — but it
+ * says *where* it looked, since "no match" while a filter is silently on is the
+ * confusing version of the same sentence.
  */
-export const emptyListMessage = function ({ listLoading, keyword, libraryCount, folderHint }) {
+export const emptyListMessage = function ({ listLoading, keyword, libraryCount, folderHint, likedOnly }) {
     if (listLoading) return '加载中…';
-    if (keyword) return `没有匹配「${keyword}」的歌曲`;
+    if (keyword) {
+        return likedOnly
+            ? `喜欢的歌曲里没有匹配「${keyword}」的`
+            : `没有匹配「${keyword}」的歌曲`;
+    }
+    if (likedOnly) return '还没有喜欢的歌曲，在歌曲右侧的「更多」里可以喜欢';
     if (libraryCount > 0) return '歌曲都移进「不喜欢」了，从「更多」里可以移回来';
     return `没有找到音频文件，去「${folderHint}」换个文件夹试试？`;
 };

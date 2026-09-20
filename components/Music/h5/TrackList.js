@@ -4,6 +4,7 @@ import {
     IconNote,
     IconNoteList,
     IconRefresh,
+    IconHeart,
     IconMoreVertical,
     IconPlay,
     IconPause,
@@ -35,11 +36,17 @@ import styles from './TrackList.module.scss';
  * this component writes — `data-track-id` on every row, and the transient
  * `track-pulse` class.
  *
- * Each row's three-dots button opens a per-song drawer (置顶 / 移入不喜欢) that
- * the shell owns, for the same reason the list's own drawer lives there: a
+ * Each row's three-dots button opens a per-song drawer (置顶 / 喜欢 / 移入不喜欢)
+ * that the shell owns, for the same reason the list's own drawer lives there: a
  * `position: fixed` child would be trapped by this column's `transform`ed
  * ancestor. `rowMenuId` is the track whose drawer is open, so the button can
  * report its expanded state.
+ *
+ * The heart in the header, right after the search button, is the entry to
+ * 我喜欢: it does not open a screen, it narrows this list to the liked songs and
+ * narrows it back. `canLike` is false for a Drive library, where the feature
+ * does not apply, and the button is not rendered at all in that case — an entry
+ * that could only ever come back empty is worse than no entry.
  */
 const TrackList = function ({
     connected,
@@ -49,6 +56,9 @@ const TrackList = function ({
     libraryCount,
     search,
     onSearch,
+    canLike,
+    likedOnly,
+    onToggleLikedOnly,
     current,
     loadingId,
     isPlaying,
@@ -64,9 +74,10 @@ const TrackList = function ({
     const eqClass = `${styles.eq}${isPlaying ? '' : ` ${styles['eq-paused']}`}`;
     // `libraryCount` is the library *before* the list preferences and the
     // search ran, which is the only way to tell "this library is empty" from
-    // "this library is all hidden" — see `emptyListMessage`.
+    // "this library is all hidden" — see `emptyListMessage`. `likedOnly` has to
+    // go in too, or an empty 我喜欢 reads as "there are no audio files here".
     const empty = visibleTracks.length === 0 || listLoading
-        ? emptyListMessage({ listLoading, keyword, libraryCount, folderHint: '我的' })
+        ? emptyListMessage({ listLoading, keyword, libraryCount, folderHint: '我的', likedOnly })
         : '';
     // The search field only exists while unfolded; a tap on the search button
     // reveals it and puts the caret straight inside.
@@ -143,6 +154,27 @@ const TrackList = function ({
                                 onClick={openSearch}
                             >
                                 <IconSearch />
+                            </button>
+                        )}
+                        {/* 我喜欢 — a filter, not a destination: it narrows the
+                            list below and stays lit while it does. It keeps
+                            working alongside the search, so it is not hidden
+                            while the field is open, unlike the search button
+                            itself. `aria-pressed` is what makes it a toggle to
+                            a screen reader rather than two different buttons
+                            whose labels happen to alternate. */}
+                        {connected && canLike && (
+                            <button
+                                type="button"
+                                className={likedOnly
+                                    ? `${styles['nav-btn']} ${styles['nav-btn-on']}`
+                                    : styles['nav-btn']}
+                                title={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
+                                aria-label={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
+                                aria-pressed={likedOnly}
+                                onClick={onToggleLikedOnly}
+                            >
+                                <IconHeart filled={likedOnly} />
                             </button>
                         )}
                         {/* Opens the shell's bottom drawer, which carries the

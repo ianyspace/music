@@ -49,6 +49,11 @@
     --np-text: #f2f3f7;
     --np-text-2: rgba(228, 230, 240, 0.6);
     --np-track: rgba(255, 255, 255, 0.22);
+    /* Restated rather than inherited from the app's `--accent`: this screen
+       keeps its own palette on purpose, and a token that is only *usually*
+       there is the kind of thing that breaks the day someone renders the
+       player outside the shell. Same value as the app's. */
+    --np-accent: #fa233b;
 
     display: flex;
     flex-direction: column;
@@ -568,6 +573,53 @@
     white-space: nowrap;
     font-size: 13px;
     color: var(--np-text-2);
+}
+
+/* 喜欢, at the right end of the song line. Sized to the transport buttons'
+   hit area rather than to the glyph, so it is a comfortable thumb target on a
+   row that is otherwise all text — and `flex-shrink: 0` keeps a long title
+   from squeezing it, since the title is the part that should ellipsise. */
+.like-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    margin-right: -8px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--np-text-2);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s, color 0.2s, background-color 0.2s;
+
+    @media (hover: hover) {
+        &:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--np-text);
+        }
+    }
+
+    &:active {
+        transform: scale(0.9);
+    }
+}
+
+/* Liked. The player is the one screen that does not follow the app theme, so
+   the accent is restated here instead of inherited from the page — same value,
+   owned by this palette. The filled glyph carries the state on its own; the
+   colour is the shortcut. */
+.like-btn-on {
+    color: var(--np-accent);
+
+    @media (hover: hover) {
+        &:hover {
+            color: var(--np-accent);
+        }
+    }
 }
 
 /* --- progress --- */

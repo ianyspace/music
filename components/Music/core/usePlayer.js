@@ -16,6 +16,7 @@ import {
     REPEAT_MODES,
     DISLIKED_KEY,
     ORDER_KEY,
+    LIKED_KEY,
     storageGet,
     storageSet,
     readKeyList,
@@ -108,7 +109,20 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // the theme and the ripples switch; see the note on `DISLIKED_KEY`.
     const [disliked, setDisliked] = useState([]);
     const [order, setOrder] = useState([]);
-    // The row drawer (cover + 置顶 / 移入不喜欢), opened from a row's own
+    // 我喜欢 — the third list preference, and the only one that is a *keep-in*
+    // list rather than an arrangement. Unlike the other two it is a feature of
+    // the public library specifically, so `toggleLike` refuses a Drive track;
+    // see `LIKED_KEY`.
+    const [liked, setLiked] = useState([]);
+    // 只看喜欢 — whether the list is narrowed to the liked songs. Deliberately
+    // *not* persisted, and it sits next to `search` rather than next to the
+    // preferences above because it is the same kind of thing: what the list is
+    // currently showing, not what the visitor has decided. A reload that came
+    // back with a short list and no visible reason for it would be worse than
+    // having to tap again.
+    const [likedOnly, setLikedOnly] = useState(false);
+    // The row drawer (置顶 / 喜欢 / 移入不喜欢 on the phone; 置顶 / 移入不喜欢 on
+    // the wide screen, which has no like feature), opened from a row's own
     // three-dots button. The *track* is held rather than an id so the drawer
     // can render the cover and both labels with no lookup — and so it keeps
     // rendering them while it plays its exit animation.
@@ -344,6 +358,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     useEffect(() => {
         setDisliked(readKeyList(DISLIKED_KEY));
         setOrder(readKeyList(ORDER_KEY));
+        setLiked(readKeyList(LIKED_KEY));
     }, []);
 
     // 移入不喜欢 — the row action behind the list's three-dots button.
@@ -408,7 +423,53 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         setNotice(`已置顶：${parseTrackName(track.name).title}`);
     }, []);
 
-    /* --- row drawer (cover + 置顶 / 移入不喜欢) --- */
+    /* --- 我喜欢 --- */
+
+    // A Set, because the list asks this once per row on every render and the
+    // array form would be a linear scan per row. Rebuilt only when the list
+    // changes, which is a tap.
+    const likedSet = useMemo(() => new Set(liked), [liked]);
+
+    // The question the row drawer and the player both ask. Takes the track
+    // rather than a key so neither of them has to know how keys are built —
+    // `audioCacheKey` stays the one place that decides that.
+    const isLiked = useCallback(
+        (track) => Boolean(track) && likedSet.has(audioCacheKey(track)),
+        [likedSet],
+    );
+
+    // 喜欢 / 取消喜欢 — one action, because it is one button whose label
+    // follows its state. Toggling rather than two functions keeps the state and
+    // the toast reading from the same decision, so they cannot disagree.
+    //
+    // A Drive track is refused rather than stored. The feature is the public
+    // library's: a Drive file id means nothing outside the account that owns
+    // it, so a like there would be a key that can never match a song again —
+    // and the list would then hold something the visitor cannot see or remove.
+    // Refusing keeps it honest; the UI does not offer the button in the first
+    // place, so this is the guard behind that, not the thing that shows it.
+    const toggleLike = useCallback(function (track) {
+        if (!track) return;
+        if (track.source === DRIVE_SOURCE) return;
+        const key = audioCacheKey(track);
+        const { title } = parseTrackName(track.name);
+        const wasLiked = likedSet.has(key);
+        setLiked((keys) => {
+            const next = wasLiked ? keys.filter((entry) => entry !== key) : keys.concat(key);
+            writeKeyList(LIKED_KEY, next);
+            return next;
+        });
+        // Outside the updater on purpose: an updater has to be pure, and React
+        // may run it more than once. `wasLiked` is read from the rendered set,
+        // which is what the button the visitor just pressed was showing.
+        setNotice(wasLiked ? `已取消喜欢：${title}` : `已喜欢：${title}`);
+    }, [likedSet]);
+
+    const toggleLikedOnly = useCallback(function () {
+        setLikedOnly((on) => !on);
+    }, []);
+
+    /* --- row drawer (cover + 置顶 / 喜欢 / 移入不喜欢) --- */
 
     const openRowMenu = useCallback(function (track) {
         setRowMenuClosing(false);
@@ -1083,11 +1144,26 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // runs on the result. The order matters: a disliked song must not come back
     // through a search that happens to match it, and searching must not disturb
     // the pinned positions.
+    //
+    // 只看喜欢 sits between the two, and both of its neighbours are the reason.
+    // After `applyListPrefs` because a disliked song must not be likable back
+    // into view — 移入不喜欢 is the stronger statement, and honouring the older
+    // one keeps "移入不喜欢 hides it" true no matter what else is on. Before the
+    // search because the search is a *narrowing of what is shown*, and the
+    // filter has already decided what is shown.
+    //
+    // Filtering here rather than in the list component is what keeps the count
+    // on the brand badge, the rows, and the prev/next walk agreeing — the same
+    // reason `disliked` lives here. A view-only filter would leave 下一首
+    // stepping onto songs that are not on screen.
     const visibleTracks = useMemo(function () {
         const filtered = applyListPrefs(tracks, disliked, order);
+        const shown = likedOnly
+            ? filtered.filter((track) => likedSet.has(audioCacheKey(track)))
+            : filtered;
         const keyword = search.trim().toLowerCase();
-        if (!keyword) return filtered;
-        return filtered.filter((track) => {
+        if (!keyword) return shown;
+        return shown.filter((track) => {
             const { artist, title } = parseTrackName(track.name);
             return (
                 track.name.toLowerCase().includes(keyword)
@@ -1095,7 +1171,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
                 || artist.toLowerCase().includes(keyword)
             );
         });
-    }, [tracks, disliked, order, search]);
+    }, [tracks, disliked, order, search, likedOnly, likedSet]);
 
     const stepTrack = useCallback(function (delta) {
         if (!current || visibleTracks.length < 2) return;
@@ -1417,6 +1493,11 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         dislikeTrack,
         restoreTrack,
         pinTrack,
+        liked,
+        isLiked,
+        toggleLike,
+        likedOnly,
+        toggleLikedOnly,
 
         /* library */
         tracks,
@@ -1458,7 +1539,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         lyricsVisible,
         toggleLyrics,
 
-        /* the row drawer (cover + 置顶 / 移入不喜欢) */
+        /* the row drawer (置顶 / 喜欢 / 移入不喜欢) */
         rowMenu,
         rowMenuClosing,
         rowMenuId: rowMenu ? rowMenu.id : '',

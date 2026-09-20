@@ -208,9 +208,23 @@ export const IconQueue = () => (
     </SvgStroke>
 );
 
-export const IconHeart = () => (
-    <SvgStroke size={22}>
-        <path d="M12 20.5S3.8 15 3.8 9.2a4.4 4.4 0 0 1 8.2-2.3 4.4 4.4 0 0 1 8.2 2.3c0 5.8-8.2 11.3-8.2 11.3z" />
+// The heart, in its two states.
+//
+// One component with a `filled` flag rather than two icons, because liked and
+// unliked have to be the *same glyph*: two hearts that differ in more than
+// their fill read as two different buttons, and the whole point of a toggle is
+// that the visitor recognises what they already pressed. `filled` is the state,
+// the outline is what it becomes.
+//
+// No size prop default change beyond what the callers pass — the phone's header
+// buttons clamp `svg` to 19px in CSS anyway, and the player asks for the full
+// size, so the icon itself stays out of that argument.
+export const IconHeart = ({ size = 22, filled = false }) => (
+    <SvgStroke size={size}>
+        <path
+            d="M12 20.5S3.8 15 3.8 9.2a4.4 4.4 0 0 1 8.2-2.3 4.4 4.4 0 0 1 8.2 2.3c0 5.8-8.2 11.3-8.2 11.3z"
+            fill={filled ? 'currentColor' : 'none'}
+        />
     </SvgStroke>
 );
 

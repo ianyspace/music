@@ -12,6 +12,7 @@ import {
     IconQueue,
     IconChevronDown,
     IconMoreVertical,
+    IconHeart,
     IconRipple,
 } from '../icons';
 import { parseTrackName, trackGradient, formatTime } from '../shared';
@@ -82,13 +83,24 @@ const Tonearm = function ({ playing }) {
  * The three-dots button raises a bottom drawer of player preferences. `ripples`
  * / `onToggleRipples` come from the shell, which owns the localStorage read and
  * write, so this page stays a plain view of the setting — the same shape the
- * shell already uses for the theme.
+ * shell already uses for the theme. `liked` / `onToggleLike` arrive the same
+ * way, and for the same reason: the heart says what it is told.
+ *
+ * The heart sits at the right end of the song line and is a child of `.np-head`
+ * rather than of `.np-meta`, which is the column holding the title and artist.
+ * That is what puts it at the far right, and it is also what keeps the whole
+ * row out of the way in lyrics mode: `.stage-lyrics ~ .np-head` folds the row
+ * away, so the heart is on screen exactly in the record mode and gone with the
+ * title in the lyrics mode, without a second rule to say so.
  */
 const NowPlaying = function ({
     track,
     isPlaying,
     progress,
     mode = 'off',
+    liked = false,
+    canLike = false,
+    onToggleLike,
     closing,
     onClosed,
     onCancelClose,
@@ -311,6 +323,23 @@ const NowPlaying = function ({
                                 {meta.artist}
                             </span>
                         </div>
+                        {/* 喜欢 / 取消喜欢. The label and the glyph both follow
+                            `liked`, so the button never describes a state the
+                            song is not in. */}
+                        {canLike && (
+                            <button
+                                type="button"
+                                className={liked
+                                    ? `${styles['like-btn']} ${styles['like-btn-on']}`
+                                    : styles['like-btn']}
+                                title={liked ? '取消喜欢' : '喜欢'}
+                                aria-label={liked ? '取消喜欢' : '喜欢'}
+                                aria-pressed={liked}
+                                onClick={onToggleLike}
+                            >
+                                <IconHeart filled={liked} />
+                            </button>
+                        )}
                     </div>
 
                     <div className={styles['np-progress']}>
