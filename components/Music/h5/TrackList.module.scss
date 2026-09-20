@@ -1,8 +1,12 @@
-// "歌曲" screen: a sticky top bar (avatar + in-row search + icon actions); the
-// track rows scroll underneath it.
+// "歌曲" screen: a sticky top bar (in-row search + icon actions + the app's
+// mark, at the far right); the track rows scroll underneath it.
 //
 // The bar is the original one — sticky, full-bleed, glass — with the brand mark
-// and the library's name taken out and the visitor's avatar put in their place.
+// and the library's name taken out and, for a while, the visitor's avatar put in
+// their place. The avatar left for 账号's identity card and the mark came back
+// as the trailing control; the ⋮ that used to close the row is gone entirely
+// (its last entry moved to 「我的」).
+//
 // (A short-lived version of this scrolled the bar away and floated a compact
 // glass copy in behind it. That is gone: two bars taking turns was more
 // machinery than the header was worth, and the handover was the only thing the
@@ -39,23 +43,17 @@
     gap: 10px;
 }
 
-/* The app's mark in the header, standing where the library's brand name and
-   then the visitor's avatar used to. It is the published app icon — the same
-   artwork as the favicon, so the tab and the page agree — and it is a button:
-   tapping it opens 账号.
+/* The app's mark at the trailing end of the bar — the way into 账号.
 
-   The circle is the button's own `border-radius` plus `overflow: hidden`, so
-   the square artwork is only ever *clipped*. Nothing is drawn behind it, which
-   is why there is no `--avatar-bg` here any more: the avatar's red ramp still
-   exists for the 账号 page's identity card, which is where the visitor's own
-   face is drawn. A face belongs with the settings about *who* is listening;
-   this button is about *where* they are.
+   A **rounded square**, not a circle. The artwork is an app icon, and the circle
+   made it read as an avatar — which is exactly what this button used to be, and
+   what now lives on 账号's identity card. The radius belongs to the button and
+   the image inherits it, so the two cannot drift apart.
 
-   (That disc used to live here, with a long list of notes about the fill, the
-   frosted pane that was removed from it and the glyph's centring. All of that
-   moved with it — see `h5/Account.module.scss` and the AGENTS.md section on
-   the avatar.) */
+   `position: relative` is for the state dot, the one child that has to sit
+   outside the artwork's corner. */
 .mark {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -64,8 +62,7 @@
     height: 40px;
     padding: 0;
     border: 0;
-    border-radius: 50%;
-    overflow: hidden;
+    border-radius: 11px;
     background: transparent;
     font-family: inherit;
     cursor: pointer;
@@ -82,12 +79,38 @@
     }
 }
 
-/* Fills the disc — the crop is what turns the square artwork into a circle. */
+/* Fills the rounded square — the crop is what turns the square artwork into the
+   button's shape. */
 .mark-img {
     display: block;
     width: 100%;
     height: 100%;
+    border-radius: inherit;
     object-fit: cover;
+}
+
+/* The QQ state as a dot on the bottom-right corner: grey = 未确认, green =
+   已确认. It answers "did my number actually take?" from the list, without
+   opening a page — the button doubles as the indicator, which is why the dot
+   hangs off the artwork's corner instead of being hidden inside it.
+
+   The ring is `--badge-ring`, an opaque token for exactly this job: a
+   translucent ring over the artwork reads as a smudge, and this app's surfaces
+   (`--glass`, `--card`) are all translucent. The same answer is in the button's
+   `aria-label`, so the dot itself is decorative. */
+.mark-dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #8e8e93;
+    box-shadow: 0 0 0 2px var(--badge-ring);
+}
+
+.mark-dot-on {
+    background: #34c759;
 }
 
 
@@ -108,11 +131,18 @@
     border: 0;
 }
 
+/* The trailing group, and **`margin-left: auto` is load-bearing**: the row's
+   only other child is the `sr-only` heading, which is `position: absolute` and
+   therefore not a flex item at all. With `justify-content: space-between` and a
+   single in-flow child, that child is laid out at the *start* — so without this
+   the whole group (search, heart, mark) would jump to the left edge the moment
+   the mark moved out of the leading position. */
 .head-actions {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 /* bare icon buttons (search / 我喜欢 / more) — no circle frame */

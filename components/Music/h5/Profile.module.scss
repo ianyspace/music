@@ -73,28 +73,37 @@
 
 /* --- the library card --- */
 
+/* Stands on its own, not inside a `.group` — it is the page's subject rather
+   than one settings row, and a card inside a card reads as a mistake. The shape
+   is the Drive sheet's library card (`DriveSheet.module.scss`): the same
+   `--field` surface, the same 44px blue tile, the same badge. Two screens
+   answering "which library am I on?" should answer it identically. */
 .account {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 2px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: 18px;
+    background: var(--field);
+    border: 1px solid var(--hairline);
 }
 
 .account-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
     flex-shrink: 0;
-    border-radius: 14px;
+    border-radius: 13px;
     background: linear-gradient(135deg, #64d2ff, #0a84ff);
     color: #fff;
     box-shadow: 0 10px 22px -8px rgba(10, 132, 255, 0.6);
 
     svg {
-        width: 22px;
-        height: 22px;
+        width: 21px;
+        height: 21px;
     }
 }
 
@@ -103,11 +112,14 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
 }
 
 .account-name {
-    font-size: 16.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15.5px;
     font-weight: 700;
     color: var(--text);
 }
@@ -118,6 +130,26 @@
     white-space: nowrap;
     font-size: 12.5px;
     color: var(--text-2);
+}
+
+/* 已连接 / 未连接 — the same pair as the Drive sheet's, down to the blue. It is
+   the one piece of state colour on this page, which is what makes it readable
+   at a glance instead of being a word you have to find. */
+.badge {
+    flex-shrink: 0;
+    padding: 3px 9px;
+    border-radius: 9px;
+    background: var(--field);
+    border: 1px solid var(--hairline);
+    color: var(--text-2);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.badge-on {
+    background: rgba(10, 132, 255, 0.16);
+    border-color: rgba(10, 132, 255, 0.4);
+    color: #0a84ff;
 }
 
 /* --- folder picker --- */

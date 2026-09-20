@@ -19,7 +19,7 @@ import StatsPage from './StatsPage';
 import MiniPlayer from './MiniPlayer';
 import NowPlaying from './NowPlaying';
 import TrackList from './TrackList';
-import { IconGoogleDrive, IconHeart, IconNote, IconPin } from '../icons';
+import { IconHeart, IconNote, IconPin } from '../icons';
 import { DRIVE_SOURCE } from '../librarySource';
 
 import styles from './MusicApp.module.scss';
@@ -35,16 +35,22 @@ import styles from './MusicApp.module.scss';
  *
  * Everything stateful comes from `usePlayer`; what is left here is genuinely
  * phone-only UI state — which tab is showing, whether the full-screen player is
- * up, whether the list's three-dots drawer is open, and who the avatar is. All
- * of it lives in this shell rather than the hook because the desktop has no
- * equivalent of any of it, and the drawer has to be mounted at this level
- * anyway: the list column sits under a `transform`ed ancestor, which would break
- * `position: fixed` inside it.
+ * up, and whether a per-song drawer is open. All of it lives in this shell
+ * rather than the hook because the desktop has no equivalent of any of it, and
+ * the row drawer has to be mounted at this level anyway: the list column sits
+ * under a `transform`ed ancestor, which would break `position: fixed` inside it.
  *
- * The avatar URL is derived here rather than inside `TrackList` for the same
- * reason: the same picture is drawn on the 账号 page, and a load-failure
- * fallback that each caller decides for itself is two fallbacks that can
- * disagree.
+ * There are four tab pages, and they are not all peers: 歌曲 is the app, 我的 is
+ * the library (which songs are here, and where they come from — the Drive
+ * connection opens from there), and 账号 / 听歌排行 are the visitor's own, the
+ * second reached from the first. All four stay mounted so their scroll positions
+ * survive a switch, which is why every per-page data hook here takes an `active`
+ * flag rather than loading on mount.
+ *
+ * The avatar URL is derived here rather than inside `Account` for the same
+ * reason the number itself lives in `usePlayer`: the picture depends on the
+ * number, and a fallback each caller decides for itself is two fallbacks that
+ * can disagree.
  */
 const MusicApp = function () {
     const player = usePlayer({ lyricsAutoOpen: false });
@@ -153,13 +159,6 @@ const MusicApp = function () {
     // While true the sheet plays its slide-down exit animation and only
     // unmounts when that finishes (`onClosed`).
     const [playerClosing, setPlayerClosing] = useState(false);
-    // The song list's three-dots drawer. It is owned by this shell — not by
-    // `TrackList` — because the list column sits under a `transform`ed
-    // ancestor, which would break `position: fixed` inside it (see the drawer
-    // note in MusicApp.module.scss). `open` mounts it, `closing` plays the exit
-    // animation first (the sheet-unmount-via-animation-end trick).
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [menuClosing, setMenuClosing] = useState(false);
 
     /* --- the visitor's own pages --- */
 
@@ -206,30 +205,6 @@ const MusicApp = function () {
     const onAvatarError = useCallback(function () {
         setAvatarBroken(true);
     }, []);
-
-    /* --- three-dots drawer --- */
-
-    const closeMenu = useCallback(function () {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            setMenuOpen(false);
-            setMenuClosing(false);
-            return;
-        }
-        setMenuClosing(true);
-    }, []);
-
-    const openMenu = useCallback(function () {
-        setMenuClosing(false);
-        setMenuOpen(true);
-    }, []);
-
-    // Escape closes the drawer while it is open.
-    useEffect(() => {
-        if (!menuOpen) return undefined;
-        const onKeyDown = (event) => { if (event.key === 'Escape') closeMenu(); };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [menuOpen, closeMenu]);
 
     /* --- now-playing transitions (mini bar ⇄ sheet) --- */
 
@@ -289,10 +264,13 @@ const MusicApp = function () {
                         visibleTracks={visibleTracks}
                         search={search}
                         onSearch={setSearch}
-                        // 喜欢 is the public library's feature; the Drive library
-                        // gets no filter button and no heart, rather than a
-                        // button that would always come back empty.
-                        canLike={librarySource !== DRIVE_SOURCE}
+                        // 喜欢 is the public library's feature, and it belongs
+                        // to a QQ number now that it lives in the database —
+                        // so the Drive library gets no filter button and no
+                        // heart, and neither does a visitor who has not bound a
+                        // number. A button that would always come back empty is
+                        // worse than no button.
+                        canLike={librarySource !== DRIVE_SOURCE && Boolean(qq)}
                         likedOnly={likedOnly}
                         onToggleLikedOnly={toggleLikedOnly}
                         current={current}
@@ -301,8 +279,11 @@ const MusicApp = function () {
                         onToggleTrack={toggleTrack}
                         onGoProfile={() => setTab('profile')}
                         onGoAccount={() => setTab('account')}
-                        menuOpen={menuOpen && !menuClosing}
-                        onOpenMenu={openMenu}
+                        // Drawn as a dot on the mark's corner: the state of the
+                        // visitor's number, readable from the list. A boolean
+                        // rather than the number itself, because that is the
+                        // whole of what the dot has to say.
+                        qqBound={Boolean(qq)}
                         rowMenuId={rowMenuId}
                         onOpenRowMenu={openRowMenu}
                     />
@@ -321,6 +302,17 @@ const MusicApp = function () {
                         loading={listLoading}
                         trackCount={tracks.length}
                         onGoList={() => setTab('list')}
+                        // The two settings-style pages point at each other:
+                        // 「我的」 is the library's, 账号 is the visitor's, and
+                        // neither is a dead end.
+                        onGoAccount={() => setTab('account')}
+                        // 连接云盘 lives here now — it is the page about *which
+                        // songs are here*, and its 音乐库 rows (文件夹 / 浏览歌曲)
+                        // only ever appear next to it. The sheet itself is
+                        // unchanged and still owned by this shell, because it is
+                        // a full-height panel over the whole column rather than
+                        // something that belongs to one tab.
+                        onOpenDrive={openDriveSheet}
                     />
                 </div>
                 <div
@@ -329,8 +321,10 @@ const MusicApp = function () {
                     {/* The visitor's own page, opened by tapping the app's mark.
                         The appearance switch and the cache used to be entries in
                         the list's three-dots drawer, which mixed a library
-                        action (谷歌云盘链接) with personal settings; the drawer
-                        is the library's now, and these are the mark's. */}
+                        action (谷歌云盘链接) with personal settings; both that
+                        drawer and the ⋮ that opened it are gone, and this page
+                        holds the personal half while 「我的」 holds the library
+                        half. */}
                     <Account
                         qq={qq}
                         avatarUrl={avatarUrl}
@@ -340,6 +334,7 @@ const MusicApp = function () {
                         onToggleTheme={toggleTheme}
                         onOpenCache={goCacheManager}
                         onGoList={() => setTab('list')}
+                        onGoProfile={() => setTab('profile')}
                         onGoStats={() => setTab('stats')}
                         // The 数据同步 row's whole data source, as one prop: it
                         // is a single hook's output and this page is its only
@@ -415,57 +410,16 @@ const MusicApp = function () {
                 />
             )}
 
-            {/* Bottom drawer opened by the song list's three-dots button. It
-                belongs to the shell, so on a wide screen it stays centred over
-                the phone column instead of hanging off the list.
+            {/* The list's bottom drawer used to be here. It is gone, along with
+                the ⋮ that opened it: 缓存管理 and 切换外观 had already left for
+                账号, which left it holding one entry (谷歌云盘链接) — and a menu
+                of one costs a tap and a decision to reach something that could
+                have been a row. That entry is a row on 「我的」 now.
 
-                It holds one entry, and that is the point: 缓存管理 and 切换外观
-                moved to 账号 (behind the avatar) because a library action and
-                personal settings are not the same kind of thing, and the ⋮ sits
-                on the library. What is left is the one entry that is about the
-                library you are browsing. */}
-            {menuOpen && (
-                <div
-                    className={menuClosing
-                        ? `${styles['menu-scrim']} ${styles['menu-scrim-out']}`
-                        : styles['menu-scrim']}
-                    role="presentation"
-                    onClick={closeMenu}
-                    onAnimationEnd={(event) => {
-                        // Only the scrim's own fade ends the drawer; the sheet
-                        // and its children animate independently.
-                        if (menuClosing && event.target === event.currentTarget) {
-                            setMenuOpen(false);
-                            setMenuClosing(false);
-                        }
-                    }}
-                >
-                    <div
-                        className={menuClosing
-                            ? `${styles.menu} ${styles['menu-out']}`
-                            : styles.menu}
-                        role="menu"
-                        aria-label="更多功能"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <span className={styles['menu-grip']} aria-hidden="true" />
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={() => { closeMenu(); openDriveSheet(); }}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconGoogleDrive size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>谷歌云盘链接</span>
-                                <span className={styles['menu-sub']}>连接或切换自己的云盘曲库</span>
-                            </span>
-                        </button>
-                    </div>
-                </div>
-            )}
+                The *row* drawer below is a different thing and stays: it is
+                per-song, it has more than one entry, and it has to be mounted at
+                this level (the list column sits under a `transform`ed ancestor,
+                which would trap a `position: fixed` child). */}
 
             {/* The row drawer, opened by a row's own three-dots button. It gets
                 the same treatment as the drawer above — the cover, the title
@@ -572,7 +526,7 @@ const MusicApp = function () {
                                     <span className={styles['menu-sub']}>
                                         {isLiked(rowMenu)
                                             ? '从「我喜欢」里移出'
-                                            : '加入「我喜欢」，只保存在本机'}
+                                            : '加入「我喜欢」，按你的 QQ 号保存'}
                                     </span>
                                 </span>
                             </button>

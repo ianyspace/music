@@ -17,19 +17,26 @@ import Cover from '../Cover';
 import styles from './TrackList.module.scss';
 
 /**
- * The song list. The sticky top bar holds the app's mark and the search /
- * 我喜欢 / three-dots actions; tapping search unfolds the field into that row
- * and focuses it. The three-dots button opens the bottom drawer owned by the
- * shell (see `MusicApp`), which reports whether the drawer is open through
- * `menuOpen` — the button only shows its expanded state. The track rows scroll
- * underneath.
+ * The song list. The sticky top bar holds the search / 我喜欢 actions and the
+ * app's mark, at the far right; tapping search unfolds the field into that row
+ * and focuses it. The track rows scroll underneath.
  *
- * The mark stands where the library's brand name used to, and it is the way
- * into 账号: tapping it opens the page that holds the visitor's own settings
- * (appearance, cache, QQ number, 听歌排行). It used to be the visitor's *avatar*
- * — a QQ picture once a number was bound. That moved to the 账号 page's identity
- * card, where it belongs: a face is about who is listening, and this button is
- * about where the settings are. What is here now is the app itself.
+ * The bar has **no ⋮ any more**. It opened the shell's bottom drawer, which had
+ * been reduced to a single entry (谷歌云盘链接) once 缓存管理 and 切换外观 moved
+ * to 账号 — and a menu of one is worse than no menu: it costs a tap and a
+ * decision to reach something that could have been a row. That entry is on
+ * 「我的」 now, which is the page about *which songs are here*.
+ *
+ * The mark is the way into 账号: tapping it opens the page that holds the
+ * visitor's own things (the QQ number, 听歌排行, the sync button, appearance,
+ * the cache). It used to be the visitor's *avatar* — a QQ picture once a number
+ * was bound; that moved to 账号's identity card, where a face belongs. It also
+ * used to sit on the left, where the library's brand name had been; it moved to
+ * the trailing end because the left edge of a list is where the content starts.
+ *
+ * `qqBound` is drawn as a dot on the mark's bottom-right corner (grey / green)
+ * and spoken in its label: the button doubles as the "is my number in?" light,
+ * so that question does not need a page visit to answer.
  *
  * The library's *name* did not leave with the title, though: it is still here as
  * the page's only `<h1>`, off screen (see `.sr-only`). It is the one thing that
@@ -47,7 +54,7 @@ import styles from './TrackList.module.scss';
  * `track-pulse` class.
  *
  * Each row's three-dots button opens a per-song drawer (置顶 / 喜欢)
- * that the shell owns, for the same reason the list's own drawer lives there: a
+ * that the shell owns, for the same reason the list's own drawer lived there: a
  * `position: fixed` child would be trapped by this column's `transform`ed
  * ancestor. `rowMenuId` is the track whose drawer is open, so the button can
  * report its expanded state.
@@ -76,8 +83,7 @@ const TrackList = function ({
     onToggleTrack,
     onGoProfile,
     onGoAccount,
-    menuOpen,
-    onOpenMenu,
+    qqBound,
     rowMenuId,
     onOpenRowMenu,
 }) {
@@ -118,34 +124,19 @@ const TrackList = function ({
         <div className={styles.page}>
             <header className={styles.head}>
                 <div className={styles['head-row']}>
-                    {/* The app's mark, standing where the library's brand name
-                        used to, and a **button**: tapping it opens 账号
-                        (`onGoAccount`), which is where the appearance switch,
-                        the cache, the QQ number and 听歌排行 live. It used to be
-                        the visitor's avatar; that moved to the 账号 page's
-                        identity card, because a face says *who is listening*
-                        and this button says *where the settings are*.
-
-                        The file is the published app icon — the same artwork as
-                        the favicon — so the tab and the page agree. It is a
-                        plain `<img>` rather than an `icon` component because it
-                        is a picture, and `assetUrl` is what adds the basePath
-                        (files under `public/` are not prefixed by Next). */}
-                    <button
-                        type="button"
-                        className={styles.mark}
-                        title="账号"
-                        aria-label="账号"
-                        onClick={onGoAccount}
-                    >
-                        <img className={styles['mark-img']} src={assetUrl('/icon-192.png')} alt="" />
-                    </button>
                     {/* The library's name is still here, just not on screen.
                         It is the page's only heading, and it is the one thing
                         that says which library the rows below belong to — so
                         it stays in the document (and stays readable to the
                         smoke test, which watches it to see a source switch)
-                        while the pixels go to the mark. */}
+                        while the pixels go to the mark on the right.
+
+                        It is also the *only* thing on the left now: the mark
+                        moved to the trailing end of the row (see below), so
+                        with no search open the bar is this heading and three
+                        buttons. `position: absolute` takes it out of the flex
+                        flow, which is why its position in the markup does not
+                        matter. */}
                     <h1 className={styles['sr-only']}>
                         {source === DRIVE_SOURCE ? 'Google Drive' : 'Music Space'}
                     </h1>
@@ -213,18 +204,53 @@ const TrackList = function ({
                                 <IconHeart filled={likedOnly} />
                             </button>
                         )}
-                        {/* Opens the shell's bottom drawer, which carries the
-                            entry to 「我的」 and the Google Drive connection. */}
+                        {/* The app's mark, at the **far right** of the bar, and
+                            the way into 账号 — the page holding the QQ number,
+                            听歌排行, the sync button, appearance and the cache.
+
+                            It used to sit on the left, where the library's brand
+                            name had been; it moved because the left edge of a
+                            list is where the *content* starts, and a control
+                            that leaves the list should not be the first thing
+                            the eye lands on. The ⋮ that used to close this row
+                            is gone: its only remaining entry (谷歌云盘链接) is
+                            on 「我的」 now, and a button whose whole job is to
+                            open a menu of one is worse than no button.
+
+                            Two details are the button's whole look:
+                            - it is a **rounded square**, not a circle, so the
+                              artwork reads as an app icon rather than as an
+                              avatar (the visitor's face is on 账号's identity
+                              card, where a face belongs);
+                            - the **dot at its bottom-right** is the QQ state:
+                              grey = 未确认, green = 已确认. It is the answer to
+                              "did my number actually take?" at a glance, before
+                              opening a page to find out — the button *is* the
+                              indicator, so the state is legible from the list.
+
+                            The file is the published app icon — the same artwork
+                            as the favicon, so the tab and the page agree. It is
+                            a plain `<img>` rather than an `icon` component
+                            because it is a picture, and `assetUrl` is what adds
+                            the basePath (files under `public/` are not prefixed
+                            by Next). */}
                         <button
                             type="button"
-                            className={styles['nav-btn']}
-                            title="更多"
-                            aria-label="更多"
-                            aria-haspopup="menu"
-                            aria-expanded={Boolean(menuOpen)}
-                            onClick={onOpenMenu}
+                            className={styles.mark}
+                            title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
+                            aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
+                            onClick={onGoAccount}
                         >
-                            <IconMoreVertical />
+                            <img className={styles['mark-img']} src={assetUrl('/icon-192.png')} alt="" />
+                            {/* Decorative: the state is already in the label
+                                above, and a screen reader does not need to be
+                                told about a coloured pixel. */}
+                            <span
+                                className={qqBound
+                                    ? `${styles['mark-dot']} ${styles['mark-dot-on']}`
+                                    : styles['mark-dot']}
+                                aria-hidden="true"
+                            />
                         </button>
                     </div>
                 </div>
