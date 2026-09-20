@@ -66,19 +66,28 @@ const MAX_CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
  *
  * `played_at` is when the visitor listened (client clock), `created_at` is when
  * the row landed. They differ by however long the device was offline.
+ *
+ * **One statement per entry, and it is applied with `batch`, not `exec`.**
+ * `exec()` on the D1 binding does not accept a multi-statement string — it
+ * hands the whole thing to SQLite and comes back with
+ * `D1_EXEC_ERROR: incomplete input`, which is how the first live deploy of this
+ * failed. `batch` takes prepared statements, runs them in one transaction, and
+ * costs one round trip; every statement is `IF NOT EXISTS`, so re-running it is
+ * free. Keep this list in step with `schema.sql` (which `wrangler d1 execute
+ * --file` *can* run as one file — that path splits the statements itself).
  */
-const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS plays (
-    event_id   TEXT PRIMARY KEY,
-    qq         TEXT NOT NULL,
-    track_id   TEXT NOT NULL,
-    track_name TEXT NOT NULL DEFAULT '',
-    played_at  INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_plays_qq_time ON plays (qq, played_at);
-CREATE INDEX IF NOT EXISTS idx_plays_qq_track ON plays (qq, track_id);
-`;
+const SCHEMA_STATEMENTS = [
+    `CREATE TABLE IF NOT EXISTS plays (
+        event_id   TEXT PRIMARY KEY,
+        qq         TEXT NOT NULL,
+        track_id   TEXT NOT NULL,
+        track_name TEXT NOT NULL DEFAULT '',
+        played_at  INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_plays_qq_time ON plays (qq, played_at)',
+    'CREATE INDEX IF NOT EXISTS idx_plays_qq_track ON plays (qq, track_id)',
+];
 
 // Run once per isolate, and retried on the next request if it failed — a cold
 // start that lost a race with the first deploy must not leave the database
@@ -87,10 +96,11 @@ let schemaPromise = null;
 
 const ensureSchema = function (db) {
     if (!schemaPromise) {
-        schemaPromise = db.exec(SCHEMA_SQL).catch((error) => {
-            schemaPromise = null;
-            throw error;
-        });
+        schemaPromise = db.batch(SCHEMA_STATEMENTS.map((sql) => db.prepare(sql)))
+            .catch((error) => {
+                schemaPromise = null;
+                throw error;
+            });
     }
     return schemaPromise;
 };

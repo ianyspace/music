@@ -239,6 +239,10 @@ Cloudflare D1，由 `cloudflare-worker/` 的 `POST /plays` / `GET /stats` 读写
    `MAX_PLAYS_PER_REQUEST`，都是 200）。服务端对超出的部分**照样回 200**，客户端于是把
    整批标成「已确认」再删掉 —— 多出来的那几条就静默丢了。日志上限是 1000 条，所以只有
    很久没联网的设备会撞上，但那正是这个日志存在的场景。
+5. **Worker 里建表用 `batch`，不要用 `exec`**：D1 绑定的 `exec()` **不吃多语句字符串**，
+   整串丢给 SQLite 会回 `D1_EXEC_ERROR: incomplete input` —— 第一次部署就是这么挂的。
+   `schema.sql` 和 `index.js` 里的 `SCHEMA_STATEMENTS` 是同一份 DDL 的两个写法，改一处
+   记得改另一处（`wrangler d1 execute --file` 那条路能跑多语句，它自己会拆）。
 
 **记录时机是 `play` 事件，不是「加载完成」**（`usePlayer` 的 `onAudioPlay`）：恢复上次的
 歌、被浏览器挡掉的自动播放、blob 到了但没人按下播放，这些都不是「听了一次」。同一个

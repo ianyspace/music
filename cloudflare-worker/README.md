@@ -58,6 +58,11 @@ plays(event_id PRIMARY KEY, qq, track_id, track_name, played_at, created_at)
 - **`played_at` 是客户端时间**（访客什么时候听的），`created_at` 是落库时间。设备时钟
   离谱到不在「2001 年之后、明天之前」这个区间里的，按当前时间记 —— 丢掉这条记录比
   记一个假时间更糟。
+- **建表语句一条一条地跑，用 `batch` 而不是 `exec`。** D1 绑定的 `exec()` **不吃多语句
+  字符串** —— 它把整串丢给 SQLite，然后回 `D1_EXEC_ERROR: incomplete input`。第一次部署
+  就是这么挂的。`batch` 收的是 prepare 过的语句，一次事务、一次往返，而且每条都是
+  `IF NOT EXISTS`，重复跑不花钱。`schema.sql` 是同一份 DDL，`wrangler d1 execute --file`
+  那条路**能**跑多语句（它自己会拆），所以两边都得留着，改一处记得改另一处。
 - **没有鉴权，这是有意的。** QQ 号是访客给自己头像起的名字（见 `components/Music/shared.js`
   的 `normalizeQq`），不是一个能验证的凭据，所以 `GET /stats` 回答的是「这个号码听过什么」，
   而不是「证明你是这个号码」。知道号码的人就能看到它的排行 —— 和知道号码就能取到它的头像
@@ -87,7 +92,7 @@ Worker 自己也会在第一次写入前跑一遍同样的 DDL（`ensureSchema`�
 | 公开域名 | `https://pub-5fd69e65dbb64faca6f6a164b495d7ba.r2.dev`（r2.dev 子域） |
 | Worker 名 | `space-music` |
 | Worker 地址 | `https://space-music.ianyscript.workers.dev`（`config/index.js` 的 `music.workerUrl`） |
-| D1 数据库 | `space-music-plays`（绑定名 `PLAY_DB`，`database_id` 填在 `wrangler.toml`） |
+| D1 数据库 | `space-music-plays`（绑定名 `PLAY_DB`，`database_id` 已填在 `wrangler.toml`） |
 
 改动公开域名（比如换成自定义域）后，记得同步 `wrangler.toml` 的 `R2_PUBLIC_BASE` 并重新
 `npx wrangler deploy`，否则清单里返回的还是旧地址。

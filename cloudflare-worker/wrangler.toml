@@ -13,14 +13,13 @@ bucket_name = "space"
 
 # Play counts. Create the database and apply `schema.sql` once:
 #   npx wrangler d1 create space-music-plays
-#   npx wrangler d1 execute space-music-plays --remote --file schema.sql
+#   npx wrangler d1 execute space-music-plays --remote --file=schema.sql
 # `database_id` is printed by `d1 create` (it is also in the Cloudflare
-# dashboard under Workers & Pages → D1). Replace the placeholder below before
-# deploying, otherwise `wrangler deploy` will refuse the binding.
+# dashboard under Workers & Pages → D1).
 [[d1_databases]]
 binding = "PLAY_DB"
 database_name = "space-music-plays"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "1d06930f-241b-419d-9510-85c81683711d"
 
 [vars]
 # Public R2 domain (r2.dev subdomain or your own custom domain). Used to build
