@@ -198,6 +198,16 @@ pages/3d.js ───────▶ components/Music/three/ThreeApp.js ──�
 （`hasCurrent` 而不是 `current`）：`current` 每次渲染换身份的话，定时器会被反复
 清掉重设，列表就永远不会收起。
 
+**`current` 不是一首歌，是 `{ track, url, startTime, shouldPlay }`。**
+歌在 `current.track` 里 —— 要写 `current.track.name`、`current.track.id`、
+`coverUrlOf(current.track)`。判断「有没有歌在放」用 `Boolean(current)` 就对了，
+一旦要**读字段**就必须往下走一层。这一条被踩过一次，而且一次踩出三个症状：
+3D 版整棵树写成了 `current.name` / `current.id` / `coverUrlOf(current)`，
+于是点列表里任何一首歌都会**把整页打崩**（`parseTrackName` 第一行就是
+`name.match(...)`，拿到 `undefined` 就抛；React 19 渲染期抛异常会卸掉整棵树，
+只剩错误边界那张卡片），同时唱片标签永远不上封面、正在播的那一行永远不高亮。
+三个症状一个原因，改完三处一起好。
+
 **改一套布局时先想另一套**。以前这个缝漏过三次：`置顶` / `移入不喜欢` 只接在手机端；
 桌面端用 Google token 而不是 `hasLibrary` 判空状态，导致公共曲库明明加载好了却显示
 「曲库里还没有歌曲」；`回到正在播放` 长在手机端迷你条上，桌面端根本没有。
@@ -567,6 +577,32 @@ chrome --headless=new --window-size=1440,810 --timeout=25000 \
 
 服务起在 `--directory` 上，**不要 `cd out`** —— 否则 `npm run build` 会因为
 `EBUSY: rmdir 'out'` 失败（Windows 会把占用它的 python 进程锁住那个目录）。
+
+### 但曲库的 CORS 只放行线上域名
+
+上面那套环境里**列表永远是空的**：worker 回的是
+`Access-Control-Allow-Origin: https://ianyspace.github.io`，`127.0.0.1` 读不到。
+后果是所有依赖 `current` 的分支全部短路 —— 空列表、没有歌在放、没有封面、
+没有歌词。**「构建绿 + 截图正常」在这个状态下什么也证明不了**，
+线上点一首歌就崩的那个 bug 就是这么漏过去的。
+
+要真的走一遍数据路径，用 CDP 驱动一个真浏览器，并给一个临时 profile
+关掉同源策略：
+
+```bash
+# 零依赖：Node 22 自带 WebSocket，直接说 DevTools 协议
+node .workbuddy-ai/drive.mjs http://127.0.0.1:8899/music/3d/ .workbuddy-ai/out --insecure
+node .workbuddy-ai/drive.mjs https://ianyspace.github.io/music/3d/ .workbuddy-ai/live
+```
+
+`--insecure` 加的是 `--disable-web-security`，只在那个一次性 profile 里生效。
+脚本会打印每一步的 DOM 状态、所有 4xx/5xx 的真实 URL、以及全部
+`console.error` / 未捕获异常 —— **异常是这套东西最值钱的产出**，
+它直接给出了压缩后的堆栈，对着 chunk 的字节偏移就能翻回源码那一行。
+
+两个坑：**URL 要放在 Chrome 命令行上，不要用 `Page.navigate`**（驱动空白页有竞态，
+第一次探测会打在 `about:blank` 上，看到 `title: ""` 和空 DOM，然后误判成「页面是坏的」）；
+**别用 `--screenshot` 代替它**，截图看不出「点了会不会崩」。
 
 ### 只想看一个 scene 模块，或者想量像素的时候
 
