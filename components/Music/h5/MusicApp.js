@@ -53,7 +53,8 @@ const MusicApp = function () {
         disliked,
         dislikeTrack,
         restoreTrack,
-        pinTrack,
+        isPinned,
+        togglePin,
         isLiked,
         toggleLike,
         likedOnly,
@@ -484,24 +485,35 @@ const MusicApp = function () {
                                 </span>
                             </span>
                         </div>
+                        {/* 置顶 / 取消置顶 — one button whose label follows its
+                            state, the same shape as 喜欢 below it. It used to be
+                            one-way and greyed itself out once the song reached
+                            the first row, which meant the visitor could pin but
+                            never take it back.
+
+                            The state comes from `isPinned` (is the song in the
+                            stored ranking) rather than from the first row, and
+                            those stopped being the same question the moment a
+                            search or 只看喜欢 could push a pinned song down. */}
                         <button
                             type="button"
                             className={styles['menu-item']}
                             role="menuitem"
                             onClick={() => {
-                                pinTrack(rowMenu);
+                                togglePin(rowMenu);
                                 closeRowMenu();
                             }}
-                            disabled={visibleTracks[0] && visibleTracks[0].id === rowMenu.id}
                         >
                             <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconPin size={20} />
+                                <IconPin size={20} filled={isPinned(rowMenu)} />
                             </span>
                             <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>置顶</span>
+                                <span className={styles['menu-title']}>
+                                    {isPinned(rowMenu) ? '取消置顶' : '置顶'}
+                                </span>
                                 <span className={styles['menu-sub']}>
-                                    {visibleTracks[0] && visibleTracks[0].id === rowMenu.id
-                                        ? '已经在列表第一位'
+                                    {isPinned(rowMenu)
+                                        ? '回到列表里原来的位置'
                                         : '把这首歌移到列表第一位'}
                                 </span>
                             </span>

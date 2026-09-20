@@ -53,7 +53,8 @@ const DesktopApp = function () {
         disliked,
         dislikeTrack,
         restoreTrack,
-        pinTrack,
+        isPinned,
+        togglePin,
         tracks,
         visibleTracks,
         sourceName,
@@ -238,24 +239,30 @@ const DesktopApp = function () {
                                 </span>
                             </span>
                         </div>
+                        {/* 置顶 / 取消置顶 — see the phone layout's note; the two
+                            drawers are deliberately the same three rows in the
+                            same order, and this one is the reason the shared
+                            `isPinned` / `togglePin` live in the hook rather than
+                            in either layout. */}
                         <button
                             type="button"
                             className={styles.item}
                             role="menuitem"
                             onClick={() => {
-                                pinTrack(rowMenu);
+                                togglePin(rowMenu);
                                 closeRowMenu();
                             }}
-                            disabled={visibleTracks[0] && visibleTracks[0].id === rowMenu.id}
                         >
                             <span className={styles['item-icon']} aria-hidden="true">
-                                <IconPin size={18} />
+                                <IconPin size={18} filled={isPinned(rowMenu)} />
                             </span>
                             <span className={styles['item-text']}>
-                                <span className={styles['item-title']}>置顶</span>
+                                <span className={styles['item-title']}>
+                                    {isPinned(rowMenu) ? '取消置顶' : '置顶'}
+                                </span>
                                 <span className={styles['item-sub']}>
-                                    {visibleTracks[0] && visibleTracks[0].id === rowMenu.id
-                                        ? '已经在列表第一位'
+                                    {isPinned(rowMenu)
+                                        ? '回到列表里原来的位置'
                                         : '把这首歌移到列表第一位'}
                                 </span>
                             </span>

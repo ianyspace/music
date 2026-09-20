@@ -105,7 +105,9 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // list and never count towards any total. `order` records only the songs
     // the visitor pinned, in the order they were pinned — it is a ranking, not
     // a full permutation of the library, so a library refresh does not throw
-    // away positions the visitor never set. Both live in localStorage next to
+    // away positions the visitor never set, and a key can leave it again
+    // (取消置顶) without the song needing a remembered home to fall back to —
+    // see `unpinTrack`. Both live in localStorage next to
     // the theme and the ripples switch; see the note on `DISLIKED_KEY`.
     const [disliked, setDisliked] = useState([]);
     const [order, setOrder] = useState([]);
@@ -410,8 +412,8 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     //
     // The stored `order` is a ranking of pinned keys, and "top" is expressed by
     // *unshifting* the key: whatever was pinned before keeps its relative order
-    // behind it. Re-pinning a song that is already pinned therefore re-promotes
-    // it, which is what a second tap on 置顶 should do.
+    // behind it. The `filter` is not tidiness — this array is what gets stored,
+    // so the key must never appear in it twice.
     const pinTrack = useCallback(function (track) {
         if (!track) return;
         const key = audioCacheKey(track);
@@ -422,6 +424,49 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         });
         setNotice(`已置顶：${parseTrackName(track.name).title}`);
     }, []);
+
+    // 取消置顶 — the key leaves the ranking, and that is the whole of it.
+    //
+    // `order` only ever held the songs the visitor pinned, so a song with no
+    // entry in it has no position at all; `applyListPrefs`' stable sort then
+    // leaves it in the library's own order, exactly where it was before it was
+    // ever pinned. So "back to the default sort" needs no second list
+    // remembering where the song came from — forgetting *is* the restore. That
+    // is the payoff of `order` being a ranking rather than a permutation, and
+    // it is why this function is three lines.
+    const unpinTrack = useCallback(function (track) {
+        if (!track) return;
+        const key = audioCacheKey(track);
+        setOrder((keys) => {
+            const next = keys.filter((entry) => entry !== key);
+            writeKeyList(ORDER_KEY, next);
+            return next;
+        });
+        setNotice(`已取消置顶：${parseTrackName(track.name).title}`);
+    }, []);
+
+    // A Set for the same reason as `likedSet` below: the drawer asks this, but
+    // the question is "did the visitor pin it", never "is it sitting in the
+    // first row". Those are different questions the moment anything pushes the
+    // song down — a search, 只看喜欢, or a later pin landing on top of it — and
+    // answering the wrong one is how the drawer would offer 取消置顶 on a song
+    // that is not pinned, or refuse it on one that is.
+    const pinnedSet = useMemo(() => new Set(order), [order]);
+
+    const isPinned = useCallback(
+        (track) => Boolean(track) && pinnedSet.has(audioCacheKey(track)),
+        [pinnedSet],
+    );
+
+    // One action, because it is one button whose label follows its state — the
+    // same shape as 喜欢. `pinTrack` and `unpinTrack` stay private to the hook
+    // so both layouts ask the same question and neither of them re-derives the
+    // decision from `order`.
+    const togglePin = useCallback(function (track) {
+        if (!track) return;
+        if (pinnedSet.has(audioCacheKey(track))) unpinTrack(track);
+        else pinTrack(track);
+    }, [pinnedSet, pinTrack, unpinTrack]);
 
     /* --- 我喜欢 --- */
 
@@ -1492,7 +1537,8 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         dislikedCount: disliked.length,
         dislikeTrack,
         restoreTrack,
-        pinTrack,
+        isPinned,
+        togglePin,
         liked,
         isLiked,
         toggleLike,

@@ -39,6 +39,12 @@
  *      check is only that the control is not inert.
  *   6. **Nothing throws.** Every `console.error` and uncaught exception, with
  *      its stack, and a non-zero exit code if there was one.
+ *   7. **The row actions work, in both layouts.** 置顶 / 取消置顶 and 我喜欢 are
+ *      driven by the labels the visitor reads, on the phone page and the
+ *      desktop page alike, because those two are separate component trees and
+ *      a feature wired into only one of them looks finished until a person
+ *      notices. 取消置顶 is checked by the *whole row order* coming back, not
+ *      by the first row — see the stage.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -89,6 +95,26 @@ const CHROME = process.env.CHROME_PATH
  * `keys` entries are `{ key, paused }`: press `key`, and the transport should
  * be left paused (or not) afterwards. Expectation, not just input.
  */
+/**
+ * The row drawer's two handles, and the reason they are not copied into each
+ * page's spec.
+ *
+ * Both trees label them identically — a row's ⋮ is `<title> 的更多操作` and the
+ * drawer is `role=dialog aria-label=歌曲操作` — which is what lets *one* stage
+ * cover both layouts. If one of the two ever renames its drawer, this file
+ * should stop matching for both rather than quietly keep testing the one that
+ * did not change.
+ *
+ * The ⋮ is matched on the suffix because the label starts with the song's
+ * title, and the row's own play target is a `div[role=button]` (a `<button>`
+ * inside a `<button>` is invalid HTML), so the suffix is what tells the two
+ * apart.
+ */
+const ROW_DRAWER = {
+    rowMenu: 'button[aria-label$="的更多操作"]',
+    drawer: '[role="dialog"][aria-label="歌曲操作"]',
+};
+
 const PAGES = [
     {
         name: '3d',
@@ -135,6 +161,10 @@ const PAGES = [
         // Escape only — it closes the settings sheet, which must not stop the
         // music.
         keys: [{ key: 'Escape', paused: false }],
+        // 置顶 / 取消置顶. The row drawer is the one action both layouts have,
+        // and this is the reason it is driven on *both* pages: it was wired
+        // into the phone alone once, and only a person noticed.
+        pin: ROW_DRAWER,
     },
     {
         name: 'h5',
@@ -144,16 +174,14 @@ const PAGES = [
         // No lyrics or list toggle: the phone opens the now-playing sheet by
         // tapping the mini player, which is a different interaction.
         keys: [{ key: 'Escape', paused: false }],
+        // 置顶 / 取消置顶, same stage as the desktop's — see `pin` above.
+        pin: ROW_DRAWER,
         // 我喜欢 — the one feature this file exercises in full, because it is
         // the only one with state that has to survive a reload. See
         // `exerciseLike`.
         like: {
             filter: 'header button[aria-label="只看喜欢的歌曲"], header button[aria-label="显示全部歌曲"]',
-            // A row's own three-dots button. The label is `<title> 的更多操作`,
-            // so the suffix is what identifies it — the row's own play target
-            // is a `div[role=button]`, not a `<button>`, and carries 播放.
-            rowMenu: 'button[aria-label$="的更多操作"]',
-            drawer: '[role="dialog"][aria-label="歌曲操作"]',
+            ...ROW_DRAWER,
             // A `div[role=button]`, not a `<button>`: the bar wraps the
             // transport buttons and a button inside a button is invalid HTML —
             // the same reason the rows are `div[role=button]` too. Matched on
@@ -564,12 +592,218 @@ const drive = async (target, index) => {
     const rowsAtEnd = await evaluate(rowCount);
     check('the list survived the interactions', rowsAtEnd > 0, `${rowsAtEnd} rows`);
 
+    /* --- the row drawer, shared by 置顶 and 我喜欢 -------------------------
+     *
+     * A drawer action is picked by its **visible label**, never by its index:
+     * the drawer is a list of actions and the label is what the visitor chooses
+     * by, while an index silently starts pointing at a different action the
+     * next time a row is inserted above it. `accept` is a set because 置顶 and
+     * 喜欢 both carry their state in their label — which of the two is correct
+     * depends on the song, and a one-state selector would stop matching the
+     * moment the click it just made took effect.
+     */
+
+    /** The drawer's actions as `{title, sub, disabled}`, or null if it is shut. */
+    const drawerItems = (spec) => evaluate(`(() => {
+        const drawer = document.querySelector(${JSON.stringify(spec.drawer)});
+        if (!drawer) return null;
+        return [...drawer.querySelectorAll('[role="menuitem"]')].map((b) => {
+            const lines = (b.innerText || '').split('\\n').map((s) => s.trim()).filter(Boolean);
+            return { title: lines[0] || '', sub: lines[1] || '', disabled: b.disabled === true };
+        });
+    })()`);
+
+    /** The one action whose label is in `accept`. Returns its label, or why not. */
+    const clickDrawerItem = (spec, accept) => evaluate(`(() => {
+        const drawer = document.querySelector(${JSON.stringify(spec.drawer)});
+        if (!drawer) return 'no drawer';
+        const items = [...drawer.querySelectorAll('[role="menuitem"]')];
+        const titles = items.map((b) => ((b.innerText || '').split('\\n')[0] || '').trim());
+        const index = titles.findIndex((t) => ${JSON.stringify(accept)}.includes(t));
+        if (index === -1) return 'none of ' + ${JSON.stringify(accept.join('/'))} + ' in: ' + titles.join('/');
+        items[index].click();
+        return titles[index];
+    })()`);
+
+    /**
+     * Open one row's drawer and return that row's title.
+     *
+     * `picker` is a JS expression over `rows`, so a caller chooses by index or
+     * by name. `closest('li')` because in both trees the ⋮ is the row's sibling
+     * rather than its child: the row itself is the play target, and one button
+     * inside another is invalid HTML.
+     *
+     * The title is read from `aria-label` (phone: `播放 <title>`) or `title`
+     * (desktop: `<title> - <artist>`), whichever the layout publishes.
+     */
+    const openRowDrawer = async (spec, picker) => evaluate(`(() => {
+        const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
+        const row = ${picker};
+        if (!row) return '';
+        const li = row.closest('li');
+        const more = li && li.querySelector(${JSON.stringify(spec.rowMenu)});
+        if (!more) return '';
+        more.click();
+        return (row.getAttribute('aria-label') || row.getAttribute('title') || '')
+            .replace(/^播放\\s*/, '').replace(/\\s+/g, ' ').trim();
+    })()`);
+
+    /** Shut the drawer without clicking anything in it. */
+    const closeDrawer = async () => {
+        await evaluate(
+            `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+        );
+        await sleep(600);
+    };
+
+    /**
+     * Every row's title, in the order they are on screen.
+     *
+     * The list's *order* is the only witness for 取消置顶. "The song went back
+     * where it was" and "the song went back to the top" are the same thing
+     * until you look past the first row, and only one of them is the feature —
+     * so the checks below compare whole arrays rather than the head of one.
+     */
+    const rowTitles = `(() => [...document.querySelectorAll(${JSON.stringify(target.rows)})]
+        .map((r) => (r.getAttribute('aria-label') || r.getAttribute('title') || '')
+            .replace(/^播放\\s*/, '').replace(/\\s+/g, ' ').trim()))()`;
+
+    /* --- 置顶 / 取消置顶 ---------------------------------------------------
+     *
+     * 置顶 used to be one-way: the drawer greyed its item out as soon as the
+     * song reached the first row, so a visitor could pin a song and never take
+     * it back. The claim now is that 取消置顶 returns it to the *default*
+     * order, and that is what the whole-array comparisons are for.
+     *
+     * The song to pin is deliberately not the first row, and the run says so
+     * out loud: pinning the song that is already on top moves nothing, and
+     * every check here would pass on a page where 置顶 did nothing at all.
+     *
+     * This stage reloads the page once — to prove the pin was stored, and to
+     * get into the one state that matters, where the pinned song really is the
+     * first row. That is why it runs *before* the 我喜欢 stage, which reloads
+     * for its own reasons and expects to find the list in its default order.
+     */
+    if (target.pin) {
+        const spec = target.pin;
+        const before = await evaluate(rowTitles);
+        const matched = track ? before.findIndex((t) => t.includes(track)) : -1;
+        // `--track` is honoured only when it lands somewhere other than the
+        // first row: this stage is about moving a song, and a run that pins the
+        // song already on top measures nothing.
+        const index = matched > 0 ? matched : 1;
+        check(
+            'there is a non-first row to pin',
+            before.length > 1 && index < before.length,
+            `${before.length} rows, pinning #${index + 1} (${before[index] || 'none'})`,
+        );
+
+        const pinTitle = before[index];
+        const rest = before.filter((_, i) => i !== index);
+
+        const opened = await openRowDrawer(spec, `rows[${index}]`);
+        check('the row drawer opened', Boolean(opened) && opened === pinTitle, opened || '(no three-dots button)');
+        await sleep(900);
+        await shot('pin-drawer');
+
+        // Read the whole item, not just its label: the old version published
+        // 「已经在列表第一位」 on a `disabled` row, and the state a drawer
+        // believes it is in is exactly what this is checking.
+        const pinItem = (items) => (items || []).find((i) => i.title === '置顶' || i.title === '取消置顶') || null;
+        const unpinned = pinItem(await drawerItems(spec));
+        check(
+            'a song that is not pinned offers 置顶',
+            Boolean(unpinned) && unpinned.title === '置顶' && unpinned.disabled === false,
+            unpinned ? `${unpinned.title}${unpinned.disabled ? ' (disabled)' : ''}` : '(no pin item)',
+        );
+
+        const pinnedLabel = await clickDrawerItem(spec, ['置顶', '取消置顶']);
+        check('...and clicking it pins the song', pinnedLabel === '置顶', String(pinnedLabel));
+        await sleep(1600);
+        await shot('pinned');
+
+        const afterPin = await evaluate(rowTitles);
+        const expectedPinned = [pinTitle, ...rest];
+        check(
+            '置顶 moves the song to the head and leaves the rest alone',
+            JSON.stringify(afterPin) === JSON.stringify(expectedPinned),
+            `head=${afterPin[0]} want=${pinTitle}`,
+        );
+
+        // --- the reload ------------------------------------------------------
+        await send('Page.reload', {});
+        await sleep(3000);
+        const back = await waitFor(rowTitles, (v) => Array.isArray(v) && v.length > 1, 30000);
+        check('the list comes back after a reload', back.value.length > 1, `${back.value.length} rows`);
+        // Settle before reading the order: the public library paints from its
+        // permanent list cache before the live list lands, and this file has
+        // already been caught once reading the first of those as the second.
+        await sleep(1500);
+        const afterReload = await evaluate(rowTitles);
+        // Compared whole, and that is doing two jobs. It is the persistence
+        // claim — the pin was written, not just rendered — and it is also what
+        // lets the check at the end compare against `before`: it shows the
+        // library's own order came back unchanged, so `before` is still the
+        // default order the visitor is owed.
+        check(
+            'the pin survived a reload',
+            JSON.stringify(afterReload) === JSON.stringify(expectedPinned),
+            `head=${afterReload[0]} want=${pinTitle}, ${afterReload.length} rows`,
+        );
+
+        // The pinned song is the first row now, which is exactly the state the
+        // old version refused to let go of. Nothing about "is it on top?" can
+        // be used to decide the label here.
+        const reopened = await openRowDrawer(spec, 'rows[0]');
+        await sleep(900);
+        await shot('pinned-drawer');
+        const pinnedItem = pinItem(await drawerItems(spec));
+        check(
+            'the first row of a pinned list can still be unpinned',
+            Boolean(pinnedItem) && pinnedItem.title === '取消置顶' && pinnedItem.disabled === false,
+            pinnedItem ? `${pinnedItem.title}${pinnedItem.disabled ? ' (disabled)' : ''}` : `(no drawer: ${reopened})`,
+        );
+
+        const unpinnedLabel = await clickDrawerItem(spec, ['取消置顶', '置顶']);
+        check('...and that item says 取消置顶', unpinnedLabel === '取消置顶', String(unpinnedLabel));
+        await sleep(1600);
+        const afterUnpin = await evaluate(rowTitles);
+        // Against `before`, not against "the list without the pinned song".
+        // Those are different orders and only one of them is the feature: the
+        // song has to come back *to its own place*, not merely stop being
+        // first. An expectation built by deleting the song passes for an
+        // implementation that drops it to the end of the list.
+        const drift = afterUnpin.findIndex((t, i) => t !== before[i]);
+        check(
+            '取消置顶 puts the list back to its default order',
+            drift === -1 && afterUnpin.length === before.length,
+            drift === -1
+                ? `${afterUnpin.length} rows, same order as before the pin`
+                : `first difference at #${drift + 1}: ${afterUnpin[drift]} vs ${before[drift]}`,
+        );
+        await shot('unpinned');
+
+        // And the song is pinnable again — the point of a toggle rather than
+        // two one-way actions that could disagree about which one applies.
+        const again = await openRowDrawer(spec, `rows[${Math.max(0, afterUnpin.indexOf(pinTitle))}]`);
+        await sleep(900);
+        const againItem = pinItem(await drawerItems(spec));
+        check(
+            'the same song can be pinned again afterwards',
+            Boolean(againItem) && againItem.title === '置顶',
+            againItem ? againItem.title : `(no drawer: ${again})`,
+        );
+        // Leave the page as the next stage expects to find it: no drawer open.
+        await closeDrawer();
+    }
+
     /* --- 我喜欢, end to end ------------------------------------------------
      *
-     * The one stage that reloads the page, and that is the whole point of it:
-     * every other check here can be satisfied by React state that was never
-     * written anywhere. "永不过期" is a claim about storage, so the only way to
-     * test it is to throw the page away and come back.
+     * The stage that reloads the page to prove a *preference* was stored, and
+     * that is the whole point of it: every other check here can be satisfied by
+     * React state that was never written anywhere. "永不过期" is a claim about
+     * storage, so the only way to test it is to throw the page away and come
+     * back.
      *
      * It runs last because the reload resets the page the earlier checks were
      * measuring. Everything it does is a tap a visitor could make — no
@@ -587,46 +821,16 @@ const drive = async (target, index) => {
         check('the liked filter is there', filterStart !== null, `state=${filterStart}`);
         check('the liked filter starts off', filterStart === 'false', `state=${filterStart}`);
 
-        // Open the drawer of whichever row this run is about. Returns that
-        // row's title, so the caller can compare it with what the filter later
-        // leaves behind.
-        //
-        // `|| rows[0]` matters: the Drive stage below has a library where
+        // `|| rows[0]` matters: the Drive part of this stage has a library where
         // `--track` matches nothing, and without the fallback it would open no
         // drawer at all — which would make "no 喜欢 item in the Drive drawer"
         // pass by measuring an empty string.
-        const openRowDrawer = async () => evaluate(`(() => {
-            const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
-            const row = ${pick} || rows[0];
-            if (!row) return '';
-            const li = row.closest('li');
-            const more = li && li.querySelector(${JSON.stringify(spec.rowMenu)});
-            if (!more) return '';
-            more.click();
-            return (row.getAttribute('aria-label') || '').replace(/^播放\\s*/, '');
-        })()`);
-
-        // Picked by its visible label, not by a class name or an index: the
-        // drawer is a list of actions and the label is what the visitor chooses
-        // by. `accept` is a set because the like item's label carries its state,
-        // so which of 喜欢 / 取消喜欢 is correct depends on the row.
-        const clickDrawerItem = async (accept) => evaluate(`(() => {
-            const drawer = document.querySelector(${JSON.stringify(spec.drawer)});
-            if (!drawer) return 'no drawer';
-            const items = [...drawer.querySelectorAll('[role="menuitem"]')];
-            const titles = items.map((b) => ((b.innerText || '').split('\\n')[0] || '').trim());
-            const index = titles.findIndex((t) => ${JSON.stringify(accept)}.includes(t));
-            if (index === -1) return 'none of ' + ${JSON.stringify(accept.join('/'))} + ' in: ' + titles.join('/');
-            items[index].click();
-            return titles[index];
-        })()`);
-
-        const likedTitle = await openRowDrawer();
+        const likedTitle = await openRowDrawer(spec, `${pick} || rows[0]`);
         check('the row drawer opened', Boolean(likedTitle), likedTitle || '(no three-dots button)');
         await sleep(900);
         await shot('like-drawer');
 
-        const itemLabel = await clickDrawerItem(['喜欢', '取消喜欢']);
+        const itemLabel = await clickDrawerItem(spec, ['喜欢', '取消喜欢']);
         check('the drawer offers 喜欢', itemLabel === '喜欢', String(itemLabel));
         await sleep(1600);
         await shot('liked');
@@ -718,13 +922,13 @@ const drive = async (target, index) => {
          */
         await clickToggle(spec.filter);
         await sleep(1400);
-        await openRowDrawer();
+        await openRowDrawer(spec, `${pick} || rows[0]`);
         await sleep(900);
-        const reliked = await clickDrawerItem(['喜欢', '取消喜欢']);
+        const reliked = await clickDrawerItem(spec, ['喜欢', '取消喜欢']);
         await sleep(1400);
-        await openRowDrawer();
+        await openRowDrawer(spec, `${pick} || rows[0]`);
         await sleep(900);
-        const hidden = await clickDrawerItem(['移入不喜欢']);
+        const hidden = await clickDrawerItem(spec, ['移入不喜欢']);
         await sleep(1400);
         await clickToggle(spec.filter);
         await sleep(1400);
@@ -816,7 +1020,7 @@ const drive = async (target, index) => {
         );
         check('no 我喜欢 filter over a Drive library', driveFilter === false, driveFilter ? 'present' : 'absent');
 
-        const driveTitle = await openRowDrawer();
+        const driveTitle = await openRowDrawer(spec, `${pick} || rows[0]`);
         await sleep(900);
         await shot('drive-drawer');
         // The titles come back as an array, and the check compares them whole.
@@ -824,21 +1028,17 @@ const drive = async (target, index) => {
         // one label in this drawer that *contains* it — so the substring form
         // of this check is worse than useless: it fails on a correct drawer and
         // would pass on one that offered 喜欢 by accident.
-        const driveItems = await evaluate(`(() => {
-            const drawer = document.querySelector(${JSON.stringify(spec.drawer)});
-            if (!drawer) return null;
-            return [...drawer.querySelectorAll('[role="menuitem"]')]
-                .map((b) => ((b.innerText || '').split('\\n')[0] || '').trim());
-        })()`);
+        const driveItems = await drawerItems(spec);
+        const driveLabels = Array.isArray(driveItems) ? driveItems.map((i) => i.title) : null;
         check(
             'the Drive row drawer opened',
-            Array.isArray(driveItems),
-            driveItems ? `${driveTitle}: ${driveItems.join('/')}` : 'no drawer',
+            Array.isArray(driveLabels),
+            driveLabels ? `${driveTitle}: ${driveLabels.join('/')}` : 'no drawer',
         );
         check(
             'no 喜欢 in a Drive row drawer',
-            Array.isArray(driveItems) && !driveItems.some((t) => t === '喜欢' || t === '取消喜欢'),
-            Array.isArray(driveItems) ? driveItems.join('/') : String(driveItems),
+            Array.isArray(driveLabels) && !driveLabels.some((t) => t === '喜欢' || t === '取消喜欢'),
+            Array.isArray(driveLabels) ? driveLabels.join('/') : String(driveLabels),
         );
     }
 

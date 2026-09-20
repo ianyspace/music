@@ -254,10 +254,17 @@ export const IconDislike = ({ size = 20 }) => (
 //
 // Head is the diamond at the top, the flange bars sit under it, and the needle
 // runs to the lower-left corner so the glyph still reads as a pin at 18px.
-export const IconPin = ({ size = 20 }) => (
+//
+// Two states, for the same reason as `IconHeart`: the row drawer is the only
+// place that says whether a song is pinned, so the tile has to carry the
+// answer. The needle stays a stroke either way — only the head fills.
+export const IconPin = ({ size = 20, filled = false }) => (
     <SvgStroke size={size}>
         <path d="M14.4 9.6 20.4 3.6" />
-        <path d="M9.1 5.4 18.6 14.9a.9.9 0 0 1-.5 1.5l-3.3.7-3.9 3.9-6.9-6.9 3.9-3.9.7-3.3a.9.9 0 0 1 1.5-.5z" />
+        <path
+            d="M9.1 5.4 18.6 14.9a.9.9 0 0 1-.5 1.5l-3.3.7-3.9 3.9-6.9-6.9 3.9-3.9.7-3.3a.9.9 0 0 1 1.5-.5z"
+            fill={filled ? 'currentColor' : 'none'}
+        />
     </SvgStroke>
 );
 
