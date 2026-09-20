@@ -1,15 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import {
-    normalizeQq,
     parseTrackName,
     qqAvatarUrl,
-    QQ_KEY,
-    storageGet,
-    storageSet,
     trackGradient,
 } from '../shared';
 import usePlayer from '../core/usePlayer';
+import usePlayStats from './usePlayStats';
 import PageHead from '../core/PageHead';
 import PlayerAudio from '../core/PlayerAudio';
 import Cover from '../Cover';
@@ -60,6 +57,8 @@ const MusicApp = function () {
         toggleLike,
         likedOnly,
         toggleLikedOnly,
+        qq,
+        saveQq,
         tracks,
         visibleTracks,
         librarySource,
@@ -162,34 +161,35 @@ const MusicApp = function () {
 
     /* --- the visitor's avatar --- */
 
-    // The QQ number behind the header avatar, read from this browser on mount
-    // and written back when the visitor confirms one on 账号.
+    // The 账号 page's 听歌排行 card: the visitor's own play counts, all time and
+    // for the last seven days.
     //
-    // Restoring in an effect rather than in `useState` is deliberate: this is a
-    // static export, so an initialiser that touches localStorage would also run
-    // during prerender and hand the client markup that disagrees with what it
-    // reads (the same reasoning as the theme in `usePlayer`).
+    // `active` is "is that page on screen", not "is this component mounted":
+    // all three tab pages stay mounted so their scroll positions survive (see
+    // the note on `tab`), so a ranking loaded on mount would be a request every
+    // time the app opens. It is owned here rather than inside `Account` for the
+    // same reason the cache manager's data is owned by the player — the page
+    // stays a view.
+    const playStats = usePlayStats({ qq, active: tab === 'account' });
+
+    // The QQ number behind the header avatar. It lives in `usePlayer` now
+    // rather than here, because it is no longer only about the avatar: it is
+    // also the key every play count is recorded under, and plays are recorded
+    // by the player — which all three layouts share. One storage read, one
+    // answer to "who is listening".
     //
-    // The stored value is re-validated on the way in, so a hand-edited key
-    // degrades to "not bound" instead of becoming a request for a nonsense
-    // picture.
-    const [qq, setQq] = useState('');
-    // Set when the QQ picture fails to load, so the disc falls back to the note
-    // glyph. Kept here rather than inside the avatar for the same reason as the
-    // URL — see the file comment. Cleared whenever the number changes, because
-    // "this picture failed" says nothing about the next one.
+    // What stays here is the *picture*: the URL and the "it failed to load"
+    // flag, because the same disc is drawn on two screens (the list's header
+    // and the 账号 page) and a fallback each caller decides for itself is two
+    // fallbacks that can disagree — one showing a QQ avatar while the other
+    // shows the note glyph.
     const [avatarBroken, setAvatarBroken] = useState(false);
 
+    // Cleared whenever the number changes, because "this picture failed" says
+    // nothing about the next one.
     useEffect(() => {
-        setQq(normalizeQq(storageGet(QQ_KEY)));
-    }, []);
-
-    const saveQq = useCallback(function (next) {
-        const digits = normalizeQq(next);
-        storageSet(QQ_KEY, digits);
-        setQq(digits);
         setAvatarBroken(false);
-    }, []);
+    }, [qq]);
 
     // '' means "draw the note": either no number is bound, or its picture did
     // not arrive. Both callers get the same answer.
@@ -334,6 +334,11 @@ const MusicApp = function () {
                         onToggleTheme={toggleTheme}
                         onOpenCache={goCacheManager}
                         onGoList={() => setTab('list')}
+                        // The 听歌排行 card's whole data source, as one prop:
+                        // it is a single hook's output and this page is its
+                        // only consumer, unlike the player's eighty fields
+                        // which each screen picks a different subset of.
+                        playStats={playStats}
                     />
                 </div>
             </div>

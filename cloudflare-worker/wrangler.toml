@@ -11,6 +11,17 @@ compatibility_date = "2024-11-06"
 binding = "MUSIC_BUCKET"
 bucket_name = "space"
 
+# Play counts. Create the database and apply `schema.sql` once:
+#   npx wrangler d1 create space-music-plays
+#   npx wrangler d1 execute space-music-plays --remote --file schema.sql
+# `database_id` is printed by `d1 create` (it is also in the Cloudflare
+# dashboard under Workers & Pages → D1). Replace the placeholder below before
+# deploying, otherwise `wrangler deploy` will refuse the binding.
+[[d1_databases]]
+binding = "PLAY_DB"
+database_name = "space-music-plays"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
 [vars]
 # Public R2 domain (r2.dev subdomain or your own custom domain). Used to build
 # the direct audio URLs returned in the track index — no trailing slash.

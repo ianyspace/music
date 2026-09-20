@@ -251,6 +251,264 @@
     color: #ff453a;
 }
 
+/* --- 听歌排行 --- */
+
+/* Range switch + ⟳, on one line. Text tabs with an accent underline rather than
+   a filled segmented control: a pill would have to be lighter than its track in
+   light mode and darker in dark mode to read as "selected", and `--card` /
+   `--glass-strong` only do the first. An underline reads the same in both. */
+.rank-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 2px 0;
+}
+
+.rank-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.rank-tab {
+    position: relative;
+    padding: 4px 0 7px;
+    border: 0;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 0.18s;
+
+    &::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--accent);
+        opacity: 0;
+        transition: opacity 0.18s;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            color: var(--text);
+        }
+    }
+}
+
+.rank-tab-on {
+    color: var(--text);
+
+    &::after {
+        opacity: 1;
+    }
+}
+
+.rank-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--hairline);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: transform 0.15s;
+
+    svg {
+        width: 15px;
+        height: 15px;
+    }
+
+    @media (hover: hover) {
+        &:hover:not(:disabled) {
+            transform: scale(1.08);
+        }
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: wait;
+    }
+}
+
+.spinning {
+    animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.rank-summary {
+    margin: 6px 2px 2px;
+    font-size: 12.5px;
+    color: var(--text-2);
+}
+
+.rank-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.rank-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 2px;
+    border-bottom: 1px solid var(--hairline);
+
+    &:last-child {
+        border-bottom: 0;
+    }
+}
+
+/* The position *is* the payload of this list, so it is drawn rather than left
+   to be inferred from the order. The podium is the only part that gets colour. */
+.rank-index {
+    flex-shrink: 0;
+    width: 18px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+}
+
+.rank-item:nth-child(-n + 3) .rank-index {
+    color: var(--accent);
+}
+
+.rank-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rank-title {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.rank-artist {
+    font-size: 11.5px;
+    color: var(--text-2);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.rank-count {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.rank-state {
+    margin: 0;
+    padding: 10px 2px 6px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text-2);
+}
+
+.rank-state-bad {
+    color: #ff453a;
+}
+
+/* --- 本地待同步 --- */
+
+.sync-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    padding: 11px 2px 3px;
+    border-top: 1px solid var(--hairline);
+}
+
+.sync-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-2);
+}
+
+.sync-note {
+    color: var(--text-2);
+}
+
+/* Bordered by default, gradient when there is something to send — see the note
+   at the call site. The border keeps the row readable when the log is empty,
+   where a filled button would be the loudest thing on the page for no reason. */
+.sync-btn {
+    flex-shrink: 0;
+    height: 32px;
+    padding: 0 15px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text);
+    font-size: 13.5px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, background-color 0.18s, opacity 0.2s;
+
+    @media (hover: hover) {
+        &:hover:not(:disabled) {
+            background: var(--row-hover);
+        }
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: wait;
+    }
+}
+
+.sync-btn-hot {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+    color: #fff;
+
+    @media (hover: hover) {
+        &:hover:not(:disabled) {
+            background: linear-gradient(135deg, var(--accent-2), var(--accent));
+            transform: scale(1.04);
+        }
+    }
+}
+
 /* --- settings rows --- */
 
 .row {

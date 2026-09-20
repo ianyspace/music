@@ -16,6 +16,7 @@ import {
     REPEAT_MODES,
     ORDER_KEY,
     LIKED_KEY,
+    QQ_KEY,
     storageGet,
     storageSet,
     readKeyList,
@@ -24,11 +25,13 @@ import {
     safePlay,
     isIOSLike,
     SILENT_WAV,
+    normalizeQq,
     parseTrackName,
     mediaArtwork,
     listAllFiles,
     parseLyrics,
 } from '../shared';
+import { recordPlay } from '../playStats';
 import {
     getCachedAudio,
     touchCachedAudio,
@@ -117,6 +120,13 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // back with a short list and no visible reason for it would be worse than
     // having to tap again.
     const [likedOnly, setLikedOnly] = useState(false);
+    // The visitor's QQ number, as typed on the phone's 账号 page. It lives here
+    // rather than in `h5/MusicApp` because it is no longer only about the
+    // avatar: it is also the key every play count is recorded under, and the
+    // play counts are recorded by *this* hook, which all three layouts share.
+    // A number read from storage by the shell and by the player separately
+    // would be two answers to "who is listening".
+    const [qq, setQq] = useState('');
     // The row drawer (置顶 / 喜欢 on the phone; 置顶 alone on the wide screen,
     // which has no like feature), opened from a row's own three-dots button.
     // The *track* is held rather than an id so the drawer can render the cover
@@ -190,6 +200,11 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // { id, promise } of the in-flight/finished next-track prefetch.
     const prefetchRef = useRef(null);
     const restoredTrackRef = useRef(false);
+    // Id of the track whose play has already been counted for the ranking. The
+    // `play` event fires again on every resume and once per loop in 单曲循环, so
+    // "one play" has to be defined by something other than the event itself —
+    // see `onAudioPlay` and the `repeat === 'one'` branch of `handleEnded`.
+    const countedTrackRef = useRef('');
     // `loadTracks` writes the folder list into the cache; reading it through a
     // ref keeps `folders` out of the callback deps (which would re-trigger the
     // load effect every time the folder list arrives).
@@ -344,6 +359,28 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         storageSet(SHUFFLE_KEY, shuffle ? 'on' : 'off');
         storageSet(REPEAT_KEY, repeat);
     }, [shuffle, repeat]);
+
+    /* --- the visitor's QQ number --- */
+
+    // Read on mount and written back when the visitor confirms one on 账号.
+    //
+    // Restored in an effect rather than in `useState` for the same reason as
+    // the theme: this is a static export, so an initialiser that touched
+    // localStorage would also run during prerender and hand the client markup
+    // that disagrees with what it read. The stored value is re-validated on the
+    // way in, so a hand-edited key degrades to "not bound" instead of becoming
+    // a request for a nonsense avatar or a ranking under a nonsense number.
+    useEffect(() => {
+        setQq(normalizeQq(storageGet(QQ_KEY)));
+    }, []);
+
+    // `''` is a real value here — 清除 writes it — and every reader treats it as
+    // "not bound" rather than as "no answer yet".
+    const saveQq = useCallback(function (next) {
+        const digits = normalizeQq(next);
+        storageSet(QQ_KEY, digits);
+        setQq(digits);
+    }, []);
 
     /* --- list preferences: pinned order + 我喜欢 --- */
 
@@ -1250,6 +1287,10 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
             const audio = audioRef.current;
             if (audio) {
                 audio.currentTime = 0;
+                // A loop is a second listen, so the play-count guard is
+                // cleared before it restarts — otherwise 单曲循环 would count
+                // once and then keep going all night uncounted.
+                countedTrackRef.current = '';
                 safePlay(audio);
             }
             return;
@@ -1409,7 +1450,25 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // cannot end up wiring a different set of six.
     const onAudioPlay = useCallback(function () {
         setIsPlaying(true);
-    }, []);
+        // The play count is recorded here — on the element's own `play` event —
+        // and not where the track is loaded, because loading is not listening:
+        // a restored last track, an autoplay the browser blocked, or a blob
+        // that arrived and was never started would all count as a play.
+        //
+        // Once per track, not once per event: pause/resume fires `play` again,
+        // and counting those would make the number a measure of how often the
+        // visitor tapped the screen. 单曲循环 resets the guard in `handleEnded`
+        // so a genuine repeat still counts.
+        //
+        // Non-blocking by construction: `recordPlay` writes a few bytes to
+        // localStorage and starts a request nobody awaits (see playStats.js),
+        // so a slow or dead network cannot delay a note of the song.
+        const track = current && current.track;
+        if (track && countedTrackRef.current !== track.id) {
+            countedTrackRef.current = track.id;
+            recordPlay(qq, track);
+        }
+    }, [current, qq]);
 
     const onAudioPause = useCallback(function () {
         setIsPlaying(false);
@@ -1457,6 +1516,10 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         toggleLike,
         likedOnly,
         toggleLikedOnly,
+
+        /* the visitor */
+        qq,
+        saveQq,
 
         /* library */
         tracks,
