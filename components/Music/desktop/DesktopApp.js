@@ -8,9 +8,7 @@ import PlayerAudio from '../core/PlayerAudio';
 import Cover from '../Cover';
 import DesktopMusic from './DesktopMusic';
 import DesktopCachePanel from './DesktopCachePanel';
-import DesktopDislikedPanel from './DesktopDislikedPanel';
 import {
-    IconDislike,
     IconNote,
     IconPin,
 } from '../icons';
@@ -33,12 +31,11 @@ import styles from './DesktopApp.module.scss';
  *    and the `--glass-*` recipe, and `DesktopMusic` plus the panels below
  *    consume them. One declaration is what keeps the workspace and its chrome
  *    from drifting apart.
- *  - the **row drawer** (置顶 / 移入不喜欢). It is rendered here, not in the
+ *  - the **row drawer** (置顶). It is rendered here, not in the
  *    list, so it can centre itself over the viewport instead of inside the
  *    scroller.
- *  - the **cache manager and the disliked-songs panels**, which are the same
- *    bodies the phone layout shows in its bottom sheets — only the frame
- *    differs.
+ *  - the **cache manager panel**, the same body the phone layout shows in a
+ *    bottom sheet — only the frame differs.
  *
  * `lyricsAutoOpen` is the one genuine disagreement between the layouts: the
  * desktop stage *is* the lyrics card, so opening them for a song that has them
@@ -50,9 +47,6 @@ const DesktopApp = function () {
         toggleTheme,
         ripples,
         toggleRipples,
-        disliked,
-        dislikeTrack,
-        restoreTrack,
         isPinned,
         togglePin,
         tracks,
@@ -102,12 +96,6 @@ const DesktopApp = function () {
         readCache,
         deleteCacheEntries,
         cacheAllTracks,
-        dislikedOpen,
-        dislikedClosing,
-        setDislikedOpen,
-        setDislikedClosing,
-        openDislikedManager,
-        closeDislikedManager,
         gsiReady,
         setGsiReady,
         clientIdDraft,
@@ -158,10 +146,6 @@ const DesktopApp = function () {
                 onFolderChange={handleFolderChange}
                 listLoading={listLoading}
                 visibleTracks={visibleTracks}
-                // Not `trackCount` (which is what the panel displays): this is
-                // the library *before* the list preferences ran, so the empty
-                // state can tell "no songs" from "all hidden".
-                libraryCount={tracks.length}
                 trackCount={visibleTracks.length}
                 search={search}
                 onSearch={setSearch}
@@ -186,16 +170,14 @@ const DesktopApp = function () {
                 rowMenuId={rowMenuId}
                 onOpenRowMenu={openRowMenu}
                 onOpenCache={goCacheManager}
-                onOpenDisliked={openDislikedManager}
-                dislikedCount={disliked.length}
                 onOpen3D={openThree}
             />
 
             {/* The row drawer, opened by a row's own three-dots button. It is
                 centred over the viewport rather than anchored to the row: on a
                 wide screen the row is nowhere near the bottom edge, and a sheet
-                rising from there would read as a different app. Same two
-                actions as the phone's, so both layouts teach one behaviour. */}
+                rising from there would read as a different app. Same actions as
+                the phone's, so both layouts teach one behaviour. */}
             {rowMenu && (
                 <div
                     className={rowMenuClosing
@@ -240,8 +222,8 @@ const DesktopApp = function () {
                             </span>
                         </div>
                         {/* 置顶 / 取消置顶 — see the phone layout's note; the two
-                            drawers are deliberately the same three rows in the
-                            same order, and this one is the reason the shared
+                            drawers are deliberately the same rows in the same
+                            order, and this one is the reason the shared
                             `isPinned` / `togglePin` live in the hook rather than
                             in either layout. */}
                         <button
@@ -267,25 +249,6 @@ const DesktopApp = function () {
                                 </span>
                             </span>
                         </button>
-                        <button
-                            type="button"
-                            className={`${styles.item} ${styles['item-danger']}`}
-                            role="menuitem"
-                            onClick={() => {
-                                dislikeTrack(rowMenu);
-                                closeRowMenu();
-                            }}
-                        >
-                            <span className={styles['item-icon']} aria-hidden="true">
-                                <IconDislike size={18} />
-                            </span>
-                            <span className={styles['item-text']}>
-                                <span className={styles['item-title']}>移入不喜欢</span>
-                                <span className={styles['item-sub']}>
-                                    从列表隐藏并删除本地缓存，可在「不喜欢歌曲」里找回
-                                </span>
-                            </span>
-                        </button>
                     </div>
                 </div>
             )}
@@ -305,18 +268,6 @@ const DesktopApp = function () {
                     onRefresh={readCache}
                     onDelete={deleteCacheEntries}
                     onCacheAll={cacheAllTracks}
-                />
-            )}
-
-            {dislikedOpen && (
-                <DesktopDislikedPanel
-                    keys={disliked}
-                    tracks={tracks}
-                    closing={dislikedClosing}
-                    onClosed={() => { setDislikedOpen(false); setDislikedClosing(false); }}
-                    onCancelClose={() => setDislikedClosing(false)}
-                    onClose={closeDislikedManager}
-                    onRestore={restoreTrack}
                 />
             )}
 

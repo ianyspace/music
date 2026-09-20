@@ -14,14 +14,13 @@ import {
     SHUFFLE_KEY,
     REPEAT_KEY,
     REPEAT_MODES,
-    DISLIKED_KEY,
     ORDER_KEY,
     LIKED_KEY,
     storageGet,
     storageSet,
     readKeyList,
     writeKeyList,
-    applyListPrefs,
+    applyPinnedOrder,
     safePlay,
     isIOSLike,
     SILENT_WAV,
@@ -36,7 +35,6 @@ import {
     pruneExpiredAudio,
     cacheAudio,
     listCachedAudio,
-    deleteCachedAudio,
     deleteCachedAudioMany,
 } from '../audioCache';
 import {
@@ -99,22 +97,18 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // effect that has to be switched *on* would be an odd default. Restored
     // and persisted below, next to the theme, since both are display settings.
     const [ripples, setRipples] = useState(true);
-    // The two list preferences, both sets of `<source>:<id>` keys.
+    // The pinned order, as a list of `<source>:<id>` keys.
     //
-    // `disliked` is a *keep-out list*: matching tracks never reach the rendered
-    // list and never count towards any total. `order` records only the songs
-    // the visitor pinned, in the order they were pinned — it is a ranking, not
-    // a full permutation of the library, so a library refresh does not throw
-    // away positions the visitor never set, and a key can leave it again
-    // (取消置顶) without the song needing a remembered home to fall back to —
-    // see `unpinTrack`. Both live in localStorage next to
-    // the theme and the ripples switch; see the note on `DISLIKED_KEY`.
-    const [disliked, setDisliked] = useState([]);
+    // `order` records only the songs the visitor pinned, in the order they were
+    // pinned — it is a ranking, not a full permutation of the library, so a
+    // library refresh does not throw away positions the visitor never set, and
+    // a key can leave it again (取消置顶) without the song needing a remembered
+    // home to fall back to — see `unpinTrack`. It lives in localStorage next to
+    // the theme and the ripples switch.
     const [order, setOrder] = useState([]);
-    // 我喜欢 — the third list preference, and the only one that is a *keep-in*
-    // list rather than an arrangement. Unlike the other two it is a feature of
-    // the public library specifically, so `toggleLike` refuses a Drive track;
-    // see `LIKED_KEY`.
+    // 我喜欢 — the other list preference, and the only one that is a *keep-in*
+    // list rather than an arrangement. It is a feature of the public library
+    // specifically, so `toggleLike` refuses a Drive track; see `LIKED_KEY`.
     const [liked, setLiked] = useState([]);
     // 只看喜欢 — whether the list is narrowed to the liked songs. Deliberately
     // *not* persisted, and it sits next to `search` rather than next to the
@@ -123,11 +117,11 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // back with a short list and no visible reason for it would be worse than
     // having to tap again.
     const [likedOnly, setLikedOnly] = useState(false);
-    // The row drawer (置顶 / 喜欢 / 移入不喜欢 on the phone; 置顶 / 移入不喜欢 on
-    // the wide screen, which has no like feature), opened from a row's own
-    // three-dots button. The *track* is held rather than an id so the drawer
-    // can render the cover and both labels with no lookup — and so it keeps
-    // rendering them while it plays its exit animation.
+    // The row drawer (置顶 / 喜欢 on the phone; 置顶 alone on the wide screen,
+    // which has no like feature), opened from a row's own three-dots button.
+    // The *track* is held rather than an id so the drawer can render the cover
+    // and both labels with no lookup — and so it keeps rendering them while it
+    // plays its exit animation.
     const [rowMenu, setRowMenu] = useState(null);
     const [rowMenuClosing, setRowMenuClosing] = useState(false);
     const [gsiReady, setGsiReady] = useState(false);
@@ -182,10 +176,6 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // screen over. It is the only place that can raise Google's account picker.
     const [driveOpen, setDriveOpen] = useState(false);
     const [driveClosing, setDriveClosing] = useState(false);
-    // 不喜欢歌曲 manager: the same sheet mechanics once more, listing what the
-    // keep-out list holds so a song can be let back in.
-    const [dislikedOpen, setDislikedOpen] = useState(false);
-    const [dislikedClosing, setDislikedClosing] = useState(false);
 
     const audioRef = useRef(null);
     const tokenRestoreRef = useRef(false);
@@ -355,57 +345,11 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         storageSet(REPEAT_KEY, repeat);
     }, [shuffle, repeat]);
 
-    /* --- list preferences: hidden songs + pinned order --- */
+    /* --- list preferences: pinned order + 我喜欢 --- */
 
     useEffect(() => {
-        setDisliked(readKeyList(DISLIKED_KEY));
         setOrder(readKeyList(ORDER_KEY));
         setLiked(readKeyList(LIKED_KEY));
-    }, []);
-
-    // 移入不喜欢 — the row action behind the list's three-dots button.
-    //
-    // Three things happen together and they are deliberately one action:
-    //   · the song joins the keep-out list, so it leaves the list and every
-    //     total derived from it on the next render,
-    //   · its cached audio is dropped — the visitor said they do not want it,
-    //     so holding a blob of it would be the one thing they'd least expect
-    //     to still be on disk,
-    //   · its pinned position is forgotten.
-    // Nothing is destructive beyond the cache: the file is untouched at its
-    // source, so 移出 in the manager brings it straight back.
-    const dislikeTrack = useCallback(function (track) {
-        if (!track) return;
-        const key = audioCacheKey(track);
-        setDisliked((keys) => {
-            if (keys.includes(key)) return keys;
-            const next = keys.concat(key);
-            writeKeyList(DISLIKED_KEY, next);
-            return next;
-        });
-        setOrder((keys) => {
-            if (!keys.includes(key)) return keys;
-            const next = keys.filter((entry) => entry !== key);
-            writeKeyList(ORDER_KEY, next);
-            return next;
-        });
-        // Cached audio goes. `deleteCachedAudio` resolves even when the key was
-        // never stored, and a failure here must not block the hide — the
-        // visitor's intent is the list, the cleanup is housekeeping.
-        deleteCachedAudio(key).catch(() => { });
-        setNotice(`已移入不喜欢：${parseTrackName(track.name).title}`);
-    }, []);
-
-    // 移出（不喜欢歌曲 manager）— the reverse: back into the list, and
-    // cacheable again the next time it plays.
-    const restoreTrack = useCallback(function (key) {
-        const id = String(key || '');
-        if (!id) return;
-        setDisliked((keys) => {
-            const next = keys.filter((entry) => entry !== id);
-            writeKeyList(DISLIKED_KEY, next);
-            return next;
-        });
     }, []);
 
     // 置顶 — move the song to the head of the list.
@@ -428,7 +372,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // 取消置顶 — the key leaves the ranking, and that is the whole of it.
     //
     // `order` only ever held the songs the visitor pinned, so a song with no
-    // entry in it has no position at all; `applyListPrefs`' stable sort then
+    // entry in it has no position at all; `applyPinnedOrder`' stable sort then
     // leaves it in the library's own order, exactly where it was before it was
     // ever pinned. So "back to the default sort" needs no second list
     // remembering where the song came from — forgetting *is* the restore. That
@@ -514,7 +458,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         setLikedOnly((on) => !on);
     }, []);
 
-    /* --- row drawer (cover + 置顶 / 喜欢 / 移入不喜欢) --- */
+    /* --- row drawer (cover + 置顶 / 喜欢) --- */
 
     const openRowMenu = useCallback(function (track) {
         setRowMenuClosing(false);
@@ -607,32 +551,6 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [cacheOpen, closeCacheManager]);
-
-    /* --- 不喜欢歌曲 manager --- */
-
-    // Opened from the list's own drawer, one screen below 缓存管理. It reads
-    // `disliked` straight off state — that list *is* the store, so there is
-    // nothing to re-read on open the way the cache manager has to.
-    const openDislikedManager = useCallback(function () {
-        setDislikedClosing(false);
-        setDislikedOpen(true);
-    }, []);
-
-    const closeDislikedManager = useCallback(function () {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            setDislikedOpen(false);
-            setDislikedClosing(false);
-            return;
-        }
-        setDislikedClosing(true);
-    }, []);
-
-    useEffect(() => {
-        if (!dislikedOpen) return undefined;
-        const onKeyDown = (event) => { if (event.key === 'Escape') closeDislikedManager(); };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [dislikedOpen, closeDislikedManager]);
 
     // 全部缓存: download every track that is not stored yet, `CACHE_ALL_CONCURRENCY`
     // at a time. A small pool rather than one at a time — a serial pass over a
@@ -1184,28 +1102,27 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // The one list everything downstream reads: the rows, the total on the
     // brand badge, the cache manager's counts, the shuffle and repeat walks.
     //
-    // Preferences are applied to the *raw* library first — filter out what the
-    // visitor disliked, then put what they pinned at the top — and the search
-    // runs on the result. The order matters: a disliked song must not come back
-    // through a search that happens to match it, and searching must not disturb
-    // the pinned positions.
+    // Two things happen, in this order, and both of them are about *what is
+    // shown* rather than about the library itself:
     //
-    // 只看喜欢 sits between the two, and both of its neighbours are the reason.
-    // After `applyListPrefs` because a disliked song must not be likable back
-    // into view — 移入不喜欢 is the stronger statement, and honouring the older
-    // one keeps "移入不喜欢 hides it" true no matter what else is on. Before the
-    // search because the search is a *narrowing of what is shown*, and the
-    // filter has already decided what is shown.
+    // 1. the pinned songs move to the top (`applyPinnedOrder`), which is an
+    //    arrangement — nothing leaves the list;
+    // 2. 只看喜欢 narrows what is left.
+    //
+    // Then the search runs on the result. 只看喜欢 has to come before it
+    // because the search is a *narrowing of what is shown*, and the filter has
+    // already decided what is shown — searching must not resurrect a song the
+    // filter dropped, and turning the filter on must not disturb the search box.
     //
     // Filtering here rather than in the list component is what keeps the count
-    // on the brand badge, the rows, and the prev/next walk agreeing — the same
-    // reason `disliked` lives here. A view-only filter would leave 下一首
-    // stepping onto songs that are not on screen.
+    // on the brand badge, the rows, and the prev/next walk agreeing. A
+    // view-only filter would leave 下一首 stepping onto songs that are not on
+    // screen.
     const visibleTracks = useMemo(function () {
-        const filtered = applyListPrefs(tracks, disliked, order);
+        const ordered = applyPinnedOrder(tracks, order);
         const shown = likedOnly
-            ? filtered.filter((track) => likedSet.has(audioCacheKey(track)))
-            : filtered;
+            ? ordered.filter((track) => likedSet.has(audioCacheKey(track)))
+            : ordered;
         const keyword = search.trim().toLowerCase();
         if (!keyword) return shown;
         return shown.filter((track) => {
@@ -1216,7 +1133,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
                 || artist.toLowerCase().includes(keyword)
             );
         });
-    }, [tracks, disliked, order, search, likedOnly, likedSet]);
+    }, [tracks, order, search, likedOnly, likedSet]);
 
     const stepTrack = useCallback(function (delta) {
         if (!current || visibleTracks.length < 2) return;
@@ -1533,10 +1450,6 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         toggleRipples,
 
         /* list preferences */
-        disliked,
-        dislikedCount: disliked.length,
-        dislikeTrack,
-        restoreTrack,
         isPinned,
         togglePin,
         liked,
@@ -1547,7 +1460,6 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
 
         /* library */
         tracks,
-        libraryCount: tracks.length,
         visibleTracks,
         trackCount: visibleTracks.length,
         listCacheAvailable,
@@ -1585,7 +1497,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         lyricsVisible,
         toggleLyrics,
 
-        /* the row drawer (置顶 / 喜欢 / 移入不喜欢) */
+        /* the row drawer (置顶 / 喜欢) */
         rowMenu,
         rowMenuClosing,
         rowMenuId: rowMenu ? rowMenu.id : '',
@@ -1609,14 +1521,6 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         readCache,
         deleteCacheEntries,
         cacheAllTracks,
-
-        /* 不喜欢歌曲 manager */
-        dislikedOpen,
-        dislikedClosing,
-        setDislikedOpen,
-        setDislikedClosing,
-        openDislikedManager,
-        closeDislikedManager,
 
         /* Google Drive connection sheet */
         driveOpen,

@@ -27,7 +27,7 @@ import styles from './ThreeApp.module.scss';
  * What is reused is the state machine. `usePlayer` is the only thing in the
  * app that knows how to play a track, and this page takes the read-only subset
  * of it: playback, the library, the lyrics and the toast. The row drawer, the
- * cache manager, the disliked list and the Drive sheet are all still on
+ * cache manager and the Drive sheet are all still on
  * `/desktop` — the 3D page has no way to change the library, on purpose.
  *
  * `lyricsAutoOpen: false` is not the same decision it is on the phone. Here the
@@ -43,7 +43,6 @@ const SEEK_STEP = 5;
 
 const ThreeApp = function () {
     const {
-        tracks,
         visibleTracks,
         listLoading,
         refreshTracks,
@@ -219,7 +218,6 @@ const ThreeApp = function () {
                 listLoading={listLoading}
                 onRefresh={refreshTracks}
                 visibleTracks={visibleTracks}
-                libraryCount={tracks.length}
                 trackCount={visibleTracks.length}
                 sourceName={sourceName}
                 search={search}

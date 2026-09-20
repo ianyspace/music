@@ -5,7 +5,6 @@ import {
     IconChevronRight,
     IconCloud,
     IconCube,
-    IconDislike,
     IconFolder,
     IconGear,
     IconLocate,
@@ -176,23 +175,16 @@ const DesktopMusic = function ({
     // Id of the row whose actions are open. The drawer itself belongs to the
     // shell (the same one the phone layout opens, in its own desktop dress), so
     // all this needs is the id to report which row's button is expanded — the
-    // 置顶 / 移入不喜欢 callbacks live there, not here.
+    // 置顶 callback lives there, not here.
     rowMenuId,
     onOpenRowMenu,
-    // The cache manager and the disliked-songs screen are shell-owned too —
-    // they are rendered beside the layout, not inside it — so the desktop
-    // layout only has to be able to ask for them.
+    // The cache manager is shell-owned too — it is rendered beside the layout,
+    // not inside it — so the desktop layout only has to be able to ask for it.
     onOpenCache,
-    onOpenDisliked,
-    dislikedCount = 0,
     // Leaving for `/3d`. A callback rather than a `<Link>` here for the same
     // reason as the two above: this component renders the workspace and asks
     // for things, and the shell is what knows about routes.
     onOpen3D,
-    // The library *before* the list preferences and the search ran — the only
-    // way to tell "this library is empty" from "this library is all hidden".
-    // See `emptyListMessage`.
-    libraryCount = 0,
 }) {
     const searchInputRef = useRef(null);
     const activeLyricRef = useRef(null);
@@ -661,7 +653,6 @@ const DesktopMusic = function ({
                                 {emptyListMessage({
                                     listLoading,
                                     keyword,
-                                    libraryCount,
                                     folderHint: '设置',
                                 })}
                             </p>
@@ -870,10 +861,10 @@ const DesktopMusic = function ({
             </div>
 
             {/* --- settings, as a dialog -----------------------------------
-                The same chrome the cache and disliked panels use: a centred
-                glass card over a dimmed scrim. It used to slide in from the
-                right edge, which on a screen whose whole point is the record
-                read as a second app docked to the side. */}
+                The same chrome the cache panel uses: a centred glass card over
+                a dimmed scrim. It used to slide in from the right edge, which
+                on a screen whose whole point is the record read as a second app
+                docked to the side. */}
             {settingsOpen && (
                 <DesktopSheetChrome
                     title="设置"
@@ -962,25 +953,6 @@ const DesktopMusic = function ({
                                 </button>
                             </section>
                         )}
-
-                        {/* The three-dots popover that used to live above the
-                            list held three entries; two of them (the Drive
-                            account, the cache manager) already had a row in
-                            here, and this is the third. It sits outside the
-                            `connected` branch on purpose: the public library
-                            has hidden songs too. */}
-                        <section className={styles.group}>
-                            <div className={styles['group-label']}>曲库</div>
-                            <button
-                                type="button"
-                                className={`${styles.row} ${styles['row-btn']} ${styles['row-btn-last']}`}
-                                onClick={onOpenDisliked}
-                            >
-                                <span className={styles['row-icon']}><IconDislike /></span>
-                                <span className={styles['row-label']}>不喜欢歌曲</span>
-                                <span className={styles['row-value']}>{dislikedCount} 首</span>
-                            </button>
-                        </section>
 
                         <section className={styles.group}>
                             <div className={styles['group-label']}>沉浸模式</div>

@@ -40,14 +40,11 @@ export const DESKTOP_LIST_KEY = 'music:setting:desktopList';
 // localStorage rather than in IndexedDB: they are small, they are read on
 // every render of the list, and `storageGet`/`storageSet` already cover them.
 // Keeping them next to the theme/ripples keys also means "clear site data"
-// wipes the visitor's taste along with the rest of their settings, which is
-// what you want — an orphaned dislike list would silently hide songs.
-export const DISLIKED_KEY = 'music:setting:disliked';
+// wipes the visitor's taste along with the rest of their settings.
 export const ORDER_KEY = 'music:setting:order';
-// 我喜欢 — a *keep-in* list, the mirror of `DISLIKED_KEY` and stored the same
-// way: a JSON array of `<source>:<id>` keys in localStorage. Same reasoning as
-// above for not putting it in IndexedDB, and the same consequence — "clear site
-// data" takes the visitor's taste with it.
+// 我喜欢 — a *keep-in* list: a JSON array of `<source>:<id>` keys in
+// localStorage. Same reasoning as above for not putting it in IndexedDB, and
+// the same consequence — "clear site data" takes the visitor's taste with it.
 //
 // 永不过期 is literal, and it is why there is no `expiresAt` here to read: the
 // list cache stores an expiry and therefore has to honour old entries, whereas
@@ -161,44 +158,43 @@ export const writeKeyList = function (key, keys) {
 };
 
 /**
- * Applies the visitor's list preferences to a raw track list.
+ * Puts the pinned songs at the top of a raw track list.
  *
- * Two things happen, in this order:
+ * The only thing that moves is the ranking: the keys in `order` come first, in
+ * that order, with everything else keeping its source order behind them. No
+ * track is dropped — this is an arrangement, not a filter, so the row, the
+ * total on the brand badge and the cache-manager totals all count the same
+ * library.
  *
- * 1. Tracks whose key is in `disliked` are dropped. This is what makes "移入
- *    不喜欢" remove a song from the list *and* from every count derived from
- *    the result — there is exactly one filtered list downstream, so the row,
- *    the total on the brand badge and the cache-manager totals agree.
- * 2. The survivors are reordered so that the keys in `order` come first, in
- *    that order, with everything else keeping its source order behind them.
+ * It is a *stable partial* sort rather than "sort by index in `order`": `order`
+ * only ever holds keys the visitor pinned, and a song that has never been
+ * pinned has no position in it. Sorting by a lookup would push every unpinned
+ * track to one arbitrary end (a `-1` index sorts first, an `Infinity` last), so
+ * the list would reshuffle itself the moment one song was pinned. Ranking by
+ * presence instead leaves the untouched library exactly as it was, which is
+ * what the visitor expects.
  *
- * The reorder is a *stable partial* sort rather than "sort by index in
- * `order`": `order` only ever holds keys the visitor pinned, and a song that
- * has never been pinned has no position in it. Sorting by a lookup would push
- * every unpinned track to one arbitrary end (a `-1` index sorts first, an
- * `Infinity` last), so the list would reshuffle itself the moment one song was
- * pinned. Ranking by presence instead leaves the untouched library exactly as
- * it was, which is what the visitor expects.
+ * That is also what makes 取消置顶 free: removing the key from `order` leaves
+ * the song with no position again, and it lands back in the library's own order
+ * without anything having remembered where it used to be.
  *
  * Fresh library loads keep their positions too, so a refresh does not throw
  * away what the visitor arranged.
  */
-export const applyListPrefs = function (tracks, disliked, order) {
-    const hidden = new Set(disliked || []);
-    const kept = (tracks || []).filter((track) => !hidden.has(`${track.source || ''}:${track.id}`));
+export const applyPinnedOrder = function (tracks, order) {
     const ranking = new Map();
     (order || []).forEach((key, index) => { ranking.set(key, index); });
-    if (ranking.size === 0) return kept;
+    if (ranking.size === 0) return tracks || [];
     const pinned = [];
     const rest = [];
-    kept.forEach((track) => {
+    (tracks || []).forEach((track) => {
         const key = `${track.source || ''}:${track.id}`;
         if (ranking.has(key)) pinned.push([ranking.get(key), track]);
         else rest.push(track);
     });
     // One pinned song still moves to the head — only an *empty* pin list is a
     // no-op, and that is caught above.
-    if (pinned.length === 0) return kept;
+    if (pinned.length === 0) return tracks || [];
     pinned.sort((a, b) => a[0] - b[0]);
     return pinned.map((entry) => entry[1]).concat(rest);
 };
@@ -216,20 +212,23 @@ export const applyListPrefs = function (tracks, disliked, order) {
  * 3. 只看喜欢 is on — the library is fine and so is the filter, there is simply
  *    nothing in it yet, and "no audio files" would send the visitor to the
  *    folder picker for a problem that does not exist;
- * 4. the library has songs but the list preferences removed them all — they are
- *    in 不喜欢, and sending the visitor to the folder picker would have them
- *    hunting for a problem that is not there (the one case where the old copy
- *    was actively misleading);
- * 5. otherwise the library itself is empty, and the folder picker *is* the fix
+ * 4. otherwise the library itself is empty, and the folder picker *is* the fix
  *    — `folderHint` names it, because the phone calls that screen 「我的」 and
  *    the wide-screen layout calls it 「设置」.
+ *
+ * There used to be a fifth branch for "the library has songs but the list
+ * preferences hid them all", from when 移入不喜欢 could take every row away. No
+ * preference filters any more — the pin ranking only reorders — so an empty
+ * list now *is* an empty library, and the fallback covers it. `libraryCount` is
+ * gone from the arguments for the same reason: nothing here needs to know how
+ * big the library is to explain why nothing is on screen.
  *
  * The keyword branch comes first even when 只看喜欢 is on, because the visitor
  * typed something and that is the thing they are waiting to hear about — but it
  * says *where* it looked, since "no match" while a filter is silently on is the
  * confusing version of the same sentence.
  */
-export const emptyListMessage = function ({ listLoading, keyword, libraryCount, folderHint, likedOnly }) {
+export const emptyListMessage = function ({ listLoading, keyword, folderHint, likedOnly }) {
     if (listLoading) return '加载中…';
     if (keyword) {
         return likedOnly
@@ -237,7 +236,6 @@ export const emptyListMessage = function ({ listLoading, keyword, libraryCount, 
             : `没有匹配「${keyword}」的歌曲`;
     }
     if (likedOnly) return '还没有喜欢的歌曲，在歌曲右侧的「更多」里可以喜欢';
-    if (libraryCount > 0) return '歌曲都移进「不喜欢」了，从「更多」里可以移回来';
     return `没有找到音频文件，去「${folderHint}」换个文件夹试试？`;
 };
 

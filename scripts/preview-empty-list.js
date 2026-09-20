@@ -5,9 +5,9 @@
  * the messages can be eyeballed and measured without the app's audio/Auth
  * plumbing.
  *
- * The messages come from `shared.js` at runtime, so the wording itself is
- * asserted in `check-desktop-parity.js` (which drives the helper and compares
- * return values). What a browser can settle that a string comparison cannot:
+ * The messages come from `shared.js` at runtime; this page renders the same
+ * strings by hand, so what it settles is not the wording but the shape. What a
+ * browser can settle that a string comparison cannot:
  *
  *   - that the phone's message is the list's *sibling*, so the `<ul>` has no
  *     element children — a `<p>` inside a `<ul>` is invalid HTML, and it makes
@@ -47,24 +47,28 @@ const idOf = function (prefix) {
     return `${prefix}__${m[1]}`;
 };
 
+// Only what the markup below actually uses. Every entry here is a hard lookup
+// that *throws* when the class is gone, which is the point — but it also means
+// a name left behind after the element it belonged to was deleted takes the
+// whole script down with it. Two had been sitting here for a while
+// (`TrackList_title` and the panel's `panel-tools` / `tool-btn`), so the page
+// had stopped rendering at all and nobody could see it had.
 const cls = {
     page: idOf('TrackList_page'),
-    head: idOf('TrackList_head'),
-    title: idOf('TrackList_title'),
     tracks: idOf('TrackList_tracks'),
     phoneMsg: idOf('TrackList_list-empty'),
     wrap: idOf('DesktopMusic_list-wrap'),
     deskMsg: idOf('DesktopMusic_list-empty'),
-    tools: idOf('DesktopMusic_panel-tools'),
-    toolBtn: idOf('DesktopMusic_tool-btn'),
-    foot: idOf('DesktopMusic_panel-foot'),
 };
 
-// The four branches of `emptyListMessage`, in the order the helper tests them.
+// Four representative states of `emptyListMessage`, in the order the helper
+// tests them. The helper also has a 只看喜欢 + keyword variant, which is the
+// same branch with a different wording — the four below are the shapes that
+// differ in *markup* terms, which is what this page is for.
 const STATES = [
     ['曲库还在加载', '加载中…'],
     ['搜了但没搜到', '没有匹配「周杰伦」的歌曲'],
-    ['曲库有歌，一行都没留下', '歌曲都移进「不喜欢」了，从「更多」里可以移回来'],
+    ['只看喜欢，但还没喜欢过', '还没有喜欢的歌曲，在歌曲右侧的「更多」里可以喜欢'],
     ['曲库真的是空的', '没有找到音频文件，去「我的」换个文件夹试试？'],
 ];
 

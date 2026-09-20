@@ -182,6 +182,94 @@
     }
 }
 
+/* --- the floating top bar ----------------------------------------------- */
+
+/* What stands in for the list's own header once that header has scrolled away:
+   the avatar in glass on the left, the same three actions in one glass capsule
+   on the right.
+
+   Mounted the whole time and shown by class, so the fade has something to
+   animate — and `visibility` rather than `opacity` alone is what keeps it out
+   of the tab order and the accessibility tree while it is hidden. `visibility`
+   flips at the *end* of the fade on the way out (the delayed transition) and
+   immediately on the way in, which is what makes the exit smooth without the
+   hidden bar staying reachable.
+
+   `left: 0; right: 0; margin: 0 auto` rather than a translate: the bar has to
+   line up with the header it replaces, and the app column is centred at 480px,
+   so the slide animation can be a plain `translateY` and nothing else. */
+.float {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 480px;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 8px 18px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    transition:
+        opacity 0.26s ease,
+        transform 0.26s cubic-bezier(0.32, 0.72, 0.2, 1),
+        visibility 0s linear 0.26s;
+}
+
+.float-in {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition:
+        opacity 0.26s ease,
+        transform 0.26s cubic-bezier(0.32, 0.72, 0.2, 1),
+        visibility 0s;
+}
+
+/* The same glass on both halves, so they read as one bar even with a gap
+   between them. */
+.float-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 10px 24px -16px rgba(31, 38, 79, 0.5);
+    color: var(--text-2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(24px) saturate(1.8);
+
+    svg {
+        width: 21px;
+        height: 21px;
+    }
+}
+
+.float-capsule {
+    display: flex;
+    align-items: center;
+    /* 2px, not the header's 8: the buttons are already 34px discs, and the
+       capsule's own 3px of padding is what gives them their room. */
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 10px 24px -16px rgba(31, 38, 79, 0.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(24px) saturate(1.8);
+}
+
 /* --- three-dots bottom drawer (opened from the song list's top bar) --- */
 
 /* Lives here rather than inside `TrackList`: the list column sits under
@@ -340,26 +428,6 @@
     color: var(--text-2);
 }
 
-/* Destructive row — 移入不喜欢. Only the icon tile and the title carry the
-   warning colour: tinting the whole row would make the drawer read as a
-   confirmation dialog, and this action is reversible from the manager. */
-.menu-item-danger {
-    .menu-icon {
-        background: rgba(255, 59, 48, 0.14);
-        color: #ff3b30;
-    }
-
-    .menu-title {
-        color: #ff3b30;
-    }
-
-    @media (hover: hover) {
-        &:hover {
-            background: rgba(255, 59, 48, 0.1);
-        }
-    }
-}
-
 /* --- row drawer head: cover + title + artist --- */
 
 .row-head {
@@ -452,5 +520,13 @@
     .menu-scrim,
     .menu {
         animation: none;
+    }
+
+    /* The bar still has to appear and disappear — it just does it without the
+       slide or the fade. */
+    .float,
+    .float-in {
+        transform: none;
+        transition: visibility 0s;
     }
 }

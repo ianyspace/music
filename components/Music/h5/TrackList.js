@@ -1,31 +1,35 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 import {
+    IconMoreVertical,
     IconNote,
     IconNoteList,
+    IconPerson,
     IconRefresh,
-    IconHeart,
-    IconMoreVertical,
     IconPlay,
     IconPause,
     IconSearch,
-    IconMusicSpace,
-    IconGoogleDrive,
 } from '../icons';
 import { emptyListMessage, parseTrackName, trackGradient } from '../shared';
 import { DRIVE_SOURCE } from '../librarySource';
 import Cover from '../Cover';
+import ListActions from './ListActions';
 
 import styles from './TrackList.module.scss';
 
 /**
- * The song list. The sticky top bar holds the library's brand mark (Music Space
- * for the public library, Google Drive once the visitor's own drive is
- * connected) and the search / three-dots actions; tapping search unfolds the
- * field into the title row and focuses it. The three-dots button opens the
- * bottom drawer owned by the shell (see `MusicApp`), which reports whether the
- * drawer is open through `menuOpen` — the button only shows its expanded state.
- * The track rows scroll underneath.
+ * The song list. The top bar holds the visitor's avatar and the search /
+ * 我喜欢 / three-dots actions; tapping search unfolds the field into that row
+ * and focuses it. The three-dots button opens the bottom drawer owned by the
+ * shell (see `MusicApp`), which reports whether the drawer is open through
+ * `menuOpen` — the button only shows its expanded state.
+ *
+ * The bar **scrolls away** with the list rather than sticking to the top, and
+ * the shell takes over from there: it watches `headerRef` and floats a glass
+ * avatar + capsule of the same three buttons in once this bar is out of view.
+ * The search field's open state lives in the shell for that reason — the
+ * floating bar needs to be able to unfold the field, and the field is in here.
+ *
  * Rows cover every audio file, sorted by name; the folder chosen on the
  * profile page filters the whole list.
  *
@@ -36,26 +40,27 @@ import styles from './TrackList.module.scss';
  * this component writes — `data-track-id` on every row, and the transient
  * `track-pulse` class.
  *
- * Each row's three-dots button opens a per-song drawer (置顶 / 喜欢 / 移入不喜欢)
+ * Each row's three-dots button opens a per-song drawer (置顶 / 喜欢)
  * that the shell owns, for the same reason the list's own drawer lives there: a
  * `position: fixed` child would be trapped by this column's `transform`ed
  * ancestor. `rowMenuId` is the track whose drawer is open, so the button can
  * report its expanded state.
  *
- * The heart in the header, right after the search button, is the entry to
- * 我喜欢: it does not open a screen, it narrows this list to the liked songs and
- * narrows it back. `canLike` is false for a Drive library, where the feature
- * does not apply, and the button is not rendered at all in that case — an entry
- * that could only ever come back empty is worse than no entry.
+ * 我喜欢: the heart does not open a screen, it narrows this list to the liked
+ * songs and narrows it back. `canLike` is false for a Drive library, where the
+ * feature does not apply, and the button is not rendered at all in that case —
+ * an entry that could only ever come back empty is worse than no entry.
  */
 const TrackList = function ({
     connected,
     source,
     listLoading,
     visibleTracks,
-    libraryCount,
     search,
     onSearch,
+    searchOpen,
+    onOpenSearch,
+    onCloseSearch,
     canLike,
     likedOnly,
     onToggleLikedOnly,
@@ -68,20 +73,19 @@ const TrackList = function ({
     onOpenMenu,
     rowMenuId,
     onOpenRowMenu,
+    headerRef,
 }) {
     const keyword = search.trim();
     const currentId = current ? current.track.id : '';
     const eqClass = `${styles.eq}${isPlaying ? '' : ` ${styles['eq-paused']}`}`;
-    // `libraryCount` is the library *before* the list preferences and the
-    // search ran, which is the only way to tell "this library is empty" from
-    // "this library is all hidden" — see `emptyListMessage`. `likedOnly` has to
-    // go in too, or an empty 我喜欢 reads as "there are no audio files here".
+    // `likedOnly` has to go in, or an empty 我喜欢 reads as "there are no
+    // audio files here" — see `emptyListMessage`.
     const empty = visibleTracks.length === 0 || listLoading
-        ? emptyListMessage({ listLoading, keyword, libraryCount, folderHint: '我的', likedOnly })
+        ? emptyListMessage({ listLoading, keyword, folderHint: '我的', likedOnly })
         : '';
     // The search field only exists while unfolded; a tap on the search button
-    // reveals it and puts the caret straight inside.
-    const [searchOpen, setSearchOpen] = useState(false);
+    // reveals it and puts the caret straight inside. *Which* of those it is
+    // lives in the shell — see the note above — so all this holds is the input.
     const searchInputRef = useRef(null);
     // The document outlives every re-render here, so the "did the row appear"
     // test lives in `MiniPlayer` — it owns the button and reads the list back
@@ -95,28 +99,26 @@ const TrackList = function ({
         return undefined;
     }, [searchOpen]);
 
-    const openSearch = function () {
-        setSearchOpen(true);
-    };
-
-    const closeSearch = function () {
-        setSearchOpen(false);
-        onSearch('');
-    };
-
     return (
         <div className={styles.page}>
-            <header className={styles.head}>
+            <header className={styles.head} ref={headerRef}>
                 <div className={styles['head-row']}>
-                    <h1 className={styles.title}>
-                        {source === DRIVE_SOURCE
-                            ? <IconGoogleDrive size={21} />
-                            : <IconMusicSpace size={23} />}
-                        <span className={styles['title-word']}>
-                            {source === DRIVE_SOURCE ? 'Google Drive' : 'Music Space'}
-                        </span>
+                    {/* The visitor's avatar — a placeholder, and deliberately
+                        not a button: a control that does nothing is worse than
+                        a picture that does nothing. */}
+                    <span className={styles.avatar} role="img" aria-label="用户头像">
+                        <IconPerson />
+                    </span>
+                    {/* The library's name is still here, just not on screen.
+                        It is the page's only heading, and it is the one thing
+                        that says which library the rows below belong to — so
+                        it stays in the document (and stays readable to the
+                        smoke test, which watches it to see a source switch)
+                        while the pixels go to the avatar. */}
+                    <h1 className={styles['sr-only']}>
+                        {source === DRIVE_SOURCE ? 'Google Drive' : 'Music Space'}
                     </h1>
-                    {/* Unfolds between the title and the actions; its own
+                    {/* Unfolds between the avatar and the actions; its own
                         toggle hides while it is open. */}
                     {connected && searchOpen && (
                         <label className={styles['search-box']}>
@@ -129,7 +131,7 @@ const TrackList = function ({
                                 value={search}
                                 onChange={(event) => onSearch(event.target.value)}
                                 onKeyDown={(event) => {
-                                    if (event.key === 'Escape') closeSearch();
+                                    if (event.key === 'Escape') onCloseSearch();
                                 }}
                                 aria-label="搜索歌曲"
                             />
@@ -138,58 +140,25 @@ const TrackList = function ({
                                 className={styles['search-close']}
                                 title="关闭搜索"
                                 aria-label="关闭搜索"
-                                onClick={closeSearch}
+                                onClick={onCloseSearch}
                             >
                                 ×
                             </button>
                         </label>
                     )}
                     <div className={styles['head-actions']}>
-                        {connected && !searchOpen && (
-                            <button
-                                type="button"
-                                className={styles['nav-btn']}
-                                title="搜索"
-                                aria-label="搜索"
-                                onClick={openSearch}
-                            >
-                                <IconSearch />
-                            </button>
-                        )}
-                        {/* 我喜欢 — a filter, not a destination: it narrows the
-                            list below and stays lit while it does. It keeps
-                            working alongside the search, so it is not hidden
-                            while the field is open, unlike the search button
-                            itself. `aria-pressed` is what makes it a toggle to
-                            a screen reader rather than two different buttons
-                            whose labels happen to alternate. */}
-                        {connected && canLike && (
-                            <button
-                                type="button"
-                                className={likedOnly
-                                    ? `${styles['nav-btn']} ${styles['nav-btn-on']}`
-                                    : styles['nav-btn']}
-                                title={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
-                                aria-label={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
-                                aria-pressed={likedOnly}
-                                onClick={onToggleLikedOnly}
-                            >
-                                <IconHeart filled={likedOnly} />
-                            </button>
-                        )}
-                        {/* Opens the shell's bottom drawer, which carries the
-                            entry to 「我的」 and the Google Drive connection. */}
-                        <button
-                            type="button"
-                            className={styles['nav-btn']}
-                            title="更多"
-                            aria-label="更多"
-                            aria-haspopup="menu"
-                            aria-expanded={Boolean(menuOpen)}
-                            onClick={onOpenMenu}
-                        >
-                            <IconMoreVertical />
-                        </button>
+                        <ListActions
+                            // The field takes this slot while it is open, so
+                            // the button goes rather than sitting next to the
+                            // × that closes it.
+                            showSearch={connected && !searchOpen}
+                            canLike={connected && canLike}
+                            likedOnly={likedOnly}
+                            menuOpen={menuOpen}
+                            onOpenSearch={onOpenSearch}
+                            onToggleLikedOnly={onToggleLikedOnly}
+                            onOpenMenu={onOpenMenu}
+                        />
                     </div>
                 </div>
             </header>

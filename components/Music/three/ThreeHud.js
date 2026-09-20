@@ -49,7 +49,6 @@ const ThreeHud = function ({
     listLoading,
     onRefresh,
     visibleTracks,
-    libraryCount,
     trackCount,
     sourceName,
     search,
@@ -85,10 +84,13 @@ const ThreeHud = function ({
     // *change* the source — it ends with "go and pick another folder". Neither
     // of those things can be done from this page, so the wording here says
     // where they can be done instead.
+    //
+    // There used to be a branch between the search and the fallback, for "the
+    // library has songs but they are all hidden in 不喜欢". Nothing hides a
+    // song any more, so an empty list here *is* an empty library.
     let emptyNote = '';
     if (listLoading) emptyNote = '正在载入曲库';
     else if (search) emptyNote = `没有匹配「${search}」的歌曲`;
-    else if (libraryCount > 0) emptyNote = '歌曲都移进「不喜欢」了，回简洁版可以移回来';
     else emptyNote = '曲库是空的，回简洁版连接云盘或换个文件夹';
 
     return (

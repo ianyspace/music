@@ -1,10 +1,10 @@
 // The phone's panel chrome — the scrim, the column, the top bar and the motion
-// that all three of its panels (缓存管理 / 不喜欢歌曲 / 谷歌云盘链接) share.
+// that both of its panels (缓存管理 / 谷歌云盘链接) share.
 //
 // It is deliberately *only* chrome: the bodies it wraps live in
-// `components/Music/core/` (the two managers) or beside it (`DriveSheet`), and
+// `components/Music/core/` (the cache manager) or beside it (`DriveSheet`), and
 // the desktop layout builds its own chrome out of the same bodies. Keeping the
-// surface here rather than in each panel is what makes the three screens read
+// surface here rather than in each panel is what makes the two screens read
 // as one system: same width, same motion curve, same top bar.
 //
 // The palette is entirely theme tokens (`--text`, `--field`, `--hairline`,

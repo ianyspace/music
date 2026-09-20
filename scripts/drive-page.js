@@ -45,6 +45,11 @@
  *      a feature wired into only one of them looks finished until a person
  *      notices. 取消置顶 is checked by the *whole row order* coming back, not
  *      by the first row — see the stage.
+ *   8. **The phone's top bar hands over to the floating bar.** The header
+ *      scrolls away and a glass bar fades in behind it. The bar is mounted the
+ *      whole time, so it is read through `visibility` rather than by looking
+ *      for it, and the handover is driven by the header's own rect rather than
+ *      by a scroll offset — see the stage.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -176,6 +181,17 @@ const PAGES = [
         keys: [{ key: 'Escape', paused: false }],
         // 置顶 / 取消置顶, same stage as the desktop's — see `pin` above.
         pin: ROW_DRAWER,
+        // The top bar scrolls away, and a floating glass bar takes over.
+        //
+        // `:has()` rather than a bare `header`, and not out of tidiness: the
+        // profile page renders a `<header>` of its own, both tab pages stay
+        // mounted, and `visibility: hidden` is not `display: none` — so the
+        // wrong element still has a box and would answer a different question
+        // with a confident number. The avatar is what makes this the list's bar.
+        top: {
+            head: 'header:has([role="img"][aria-label="用户头像"])',
+            bar: '[data-float="list-bar"]',
+        },
         // 我喜欢 — the one feature this file exercises in full, because it is
         // the only one with state that has to survive a reload. See
         // `exerciseLike`.
@@ -482,15 +498,31 @@ const drive = async (target, index) => {
             return;
         }
 
-        await clickToggle(selector);
-        await sleep(2500);
-        await shot(`${step}-a`);
-        const on = await evaluate(toggleState(selector));
+        // Two waits, because there are two kinds of toggle here.
+        //
+        // Where the state mirrors the click (`cycle: true`) there is no hurry:
+        // 2.5s lets whatever the click set in motion finish before the picture
+        // is taken. Where the state is *derived* it can move on its own, and
+        // the desktop list button is the case in point — it publishes
+        // `listOpen && !autoHidden`, and the auto-fold fires three seconds
+        // after playback starts. That one is read at 1.2s, and it is read
+        // *before* the screenshot rather than after: a CDP screenshot is a
+        // round trip whose duration depends on how busy the machine is, and
+        // with the shot in between, this check passed on its own and failed
+        // inside `--all`, reading false at 3.0s+ for a page that had already
+        // done the right thing. At 1.2s the click is still the only reason the
+        // value changed, and there is 1.8s of headroom for the shot.
+        const settle = cycle ? 2500 : 1200;
 
         await clickToggle(selector);
-        await sleep(2500);
-        await shot(`${step}-b`);
+        await sleep(settle);
+        const on = await evaluate(toggleState(selector));
+        await shot(`${step}-a`);
+
+        await clickToggle(selector);
+        await sleep(settle);
         const off = await evaluate(toggleState(selector));
+        await shot(`${step}-b`);
 
         const trace = `state ${before.state} -> ${on && on.state} -> ${off && off.state}`;
 
@@ -797,6 +829,136 @@ const drive = async (target, index) => {
         await closeDrawer();
     }
 
+    /* --- 顶部栏滚走，浮动条接管 ---------------------------------------------
+     *
+     * The phone's header used to stick to the top. It leaves with the list now,
+     * and the shell floats a glass bar in behind it: the visitor's avatar on
+     * the left, the same three actions in one capsule on the right.
+     *
+     * "Is the bar there?" is the wrong question and this stage does not ask it.
+     * The bar is in the document the whole time — it has to be, or there would
+     * be nothing to fade — so a presence check passes with the page at the top,
+     * which is precisely the state where it must *not* be showing. `visibility`
+     * is what the CSS flips, and it is also the property that keeps the hidden
+     * bar out of the tab order, so that is what is read.
+     *
+     * The switch is caused by the header leaving the viewport, so the stage
+     * scrolls first and then reads the header's own rect rather than assuming
+     * an offset: how tall the library's rows are is not this file's business,
+     * and a fixed offset would start asserting the wrong thing the first time
+     * the list is short enough for it to land mid-header.
+     */
+    if (target.top) {
+        const spec = target.top;
+        const read = `(() => {
+            const head = document.querySelector(${JSON.stringify(spec.head)});
+            const bar = document.querySelector(${JSON.stringify(spec.bar)});
+            const rect = head ? head.getBoundingClientRect() : null;
+            const style = bar ? getComputedStyle(bar) : null;
+            const labels = (root) => root
+                ? [...root.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || b.title || '')
+                : null;
+            return {
+                headTop: rect ? Math.round(rect.top) : null,
+                headBottom: rect ? Math.round(rect.bottom) : null,
+                bar: style ? style.visibility : null,
+                barButtons: labels(bar),
+                headButtons: labels(head),
+            };
+        })()`;
+
+        await evaluate('window.scrollTo(0, 0)');
+        await sleep(1200);
+        const home = await evaluate(read);
+        check('the list has a top bar to scroll away', home.headTop !== null, `top=${home.headTop}`);
+        check(
+            'the floating bar is hidden while that bar is on screen',
+            home.headBottom > 0 && home.bar === 'hidden',
+            `header bottom=${home.headBottom}, bar visibility=${home.bar}`,
+        );
+
+        // The header is the avatar plus the actions now. The library's name did
+        // not go away with the title, though — it is off screen in a 1px box,
+        // and that is load-bearing: it is the page's only heading, and it is
+        // how the Drive stage below sees a source switch. `display: none` would
+        // hide it from `innerText` as well and quietly delete that observable.
+        const shape = await evaluate(`(() => {
+            const head = document.querySelector(${JSON.stringify(spec.head)});
+            if (!head) return null;
+            const title = head.querySelector('h1');
+            const rect = title ? title.getBoundingClientRect() : null;
+            return {
+                avatar: Boolean(head.querySelector('[role="img"][aria-label="用户头像"]')),
+                title: title ? (title.innerText || '').trim() : '',
+                titleWidth: rect ? Math.round(rect.width) : null,
+            };
+        })()`);
+        check(
+            'the header leads with the avatar',
+            Boolean(shape) && shape.avatar === true,
+            shape ? `avatar=${shape.avatar}` : '(no header)',
+        );
+        check(
+            '...and the library name is still in the document, just off screen',
+            Boolean(shape) && Boolean(shape.title) && shape.titleWidth !== null && shape.titleWidth <= 1,
+            shape ? `"${shape.title}" in a ${shape.titleWidth}px box` : '(no title)',
+        );
+
+        // Scrolled as far as the page goes, so the header is unambiguously
+        // gone rather than nearly gone.
+        await evaluate('window.scrollTo(0, document.documentElement.scrollHeight)');
+        await sleep(1600);
+        const away = await evaluate(read);
+        check('the header scrolls away with the list', away.headBottom <= 0, `header bottom=${away.headBottom}`);
+        check('...and the floating bar takes over', away.bar === 'visible', `visibility=${away.bar}`);
+        await shot('float-bar');
+
+        // The claim is not "three buttons" but "the same three": compared as
+        // whole arrays, because a bar that dropped one and doubled another
+        // would still have the right count and the right first label.
+        check(
+            'the capsule holds the actions the header held',
+            Array.isArray(away.barButtons) && Array.isArray(away.headButtons)
+                && away.barButtons.length > 0
+                && JSON.stringify(away.barButtons) === JSON.stringify(away.headButtons),
+            `capsule=${(away.barButtons || []).join('/')} header=${(away.headButtons || []).join('/')}`,
+        );
+
+        // And they are wired, not painted. 搜索 is the one action that cannot
+        // be done from where the visitor is standing — the field it unfolds
+        // lives in the header, which is off screen — so the tap has to come
+        // home as well, and that makes it the one button whose effect is
+        // visible from both ends of the transition.
+        await evaluate(`(() => {
+            const bar = document.querySelector(${JSON.stringify(spec.bar)});
+            const button = bar && bar.querySelector('button[aria-label="搜索"]');
+            if (button) button.click();
+        })()`);
+        await sleep(1800);
+        await shot('float-search');
+        const field = await evaluate('Boolean(document.querySelector(\'input[aria-label="搜索歌曲"]\'))');
+        check(
+            'a button in the capsule does what the header\'s did',
+            field === true,
+            field ? 'the search field unfolded' : 'nothing happened',
+        );
+        const returned = await evaluate(read);
+        check(
+            '...and coming home puts the bar away again',
+            returned.headTop !== null && returned.headTop >= 0 && returned.bar === 'hidden',
+            `header top=${returned.headTop}, bar visibility=${returned.bar}`,
+        );
+
+        // Fold the field back up: the next stage drives the header's own
+        // buttons, and the field takes the search button's slot while it is
+        // open.
+        await evaluate(`(() => {
+            const button = document.querySelector('button[aria-label="关闭搜索"]');
+            if (button) button.click();
+        })()`);
+        await sleep(1000);
+    }
+
     /* --- 我喜欢, end to end ------------------------------------------------
      *
      * The stage that reloads the page to prove a *preference* was stored, and
@@ -907,39 +1069,6 @@ const drive = async (target, index) => {
         })()`);
         check('an empty 我喜欢 explains itself', emptied.includes('还没有喜欢的歌曲'), emptied || '(no message)');
 
-        /* --- the two lists disagree, and 不喜欢 wins -----------------------
-         *
-         * 移入不喜欢 is the stronger statement, which is why `visibleTracks`
-         * applies it *before* the liked filter: a song that is both liked and
-         * disliked has to stay hidden, or a button somewhere else would undo
-         * the one the visitor pressed to get rid of it.
-         *
-         * That ordering is a judgement call rather than a reading of the
-         * request, and this is its only observable — so it is the one thing
-         * here most likely to regress silently if someone reshuffles the
-         * filters. Both taps below are ones a visitor could make; nothing
-         * writes the store directly.
-         */
-        await clickToggle(spec.filter);
-        await sleep(1400);
-        await openRowDrawer(spec, `${pick} || rows[0]`);
-        await sleep(900);
-        const reliked = await clickDrawerItem(spec, ['喜欢', '取消喜欢']);
-        await sleep(1400);
-        await openRowDrawer(spec, `${pick} || rows[0]`);
-        await sleep(900);
-        const hidden = await clickDrawerItem(spec, ['移入不喜欢']);
-        await sleep(1400);
-        await clickToggle(spec.filter);
-        await sleep(1400);
-        const both = await evaluate(rowCount);
-        check(
-            'a liked song that was 移入不喜欢 stays hidden',
-            reliked === '喜欢' && hidden === '移入不喜欢' && both === 0,
-            `${reliked} then ${hidden} -> ${both} rows`,
-        );
-        await shot('liked-vs-disliked');
-
         /* --- and it is the public library's feature only -------------------
          *
          * 喜欢 targets the public library, so with the visitor's own Drive
@@ -1023,11 +1152,13 @@ const drive = async (target, index) => {
         const driveTitle = await openRowDrawer(spec, `${pick} || rows[0]`);
         await sleep(900);
         await shot('drive-drawer');
-        // The titles come back as an array, and the check compares them whole.
-        // Searching the joined string for 喜欢 would pass on 移入不喜欢 — the
-        // one label in this drawer that *contains* it — so the substring form
-        // of this check is worse than useless: it fails on a correct drawer and
-        // would pass on one that offered 喜欢 by accident.
+        // The titles come back as an array, and the check compares them whole
+        // rather than searching the joined string for 喜欢. Those are two
+        // different questions: a substring search is satisfied by any label
+        // that merely *contains* the two characters, so a drawer offering
+        // nothing a visitor could press to like a song would still pass a check
+        // claiming it offered 喜欢. Whole labels are what the visitor chooses
+        // between, so whole labels are what is compared.
         const driveItems = await drawerItems(spec);
         const driveLabels = Array.isArray(driveItems) ? driveItems.map((i) => i.title) : null;
         check(

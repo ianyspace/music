@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { parseTrackName, trackGradient } from '../shared';
 import usePlayer from '../core/usePlayer';
@@ -6,19 +6,19 @@ import PageHead from '../core/PageHead';
 import PlayerAudio from '../core/PlayerAudio';
 import Cover from '../Cover';
 import CacheManager from './CacheManager';
-import DislikedSheet from './DislikedSheet';
 import DriveSheet from './DriveSheet';
+import ListActions from './ListActions';
 import Profile from './Profile';
 import MiniPlayer from './MiniPlayer';
 import NowPlaying from './NowPlaying';
 import TrackList from './TrackList';
 import {
     IconArchive,
-    IconDislike,
     IconGoogleDrive,
     IconHeart,
     IconMoon,
     IconNote,
+    IconPerson,
     IconPin,
     IconSun,
 } from '../icons';
@@ -50,9 +50,6 @@ const MusicApp = function () {
         toggleTheme,
         ripples,
         toggleRipples,
-        disliked,
-        dislikeTrack,
-        restoreTrack,
         isPinned,
         togglePin,
         isLiked,
@@ -60,7 +57,6 @@ const MusicApp = function () {
         likedOnly,
         toggleLikedOnly,
         tracks,
-        libraryCount,
         visibleTracks,
         librarySource,
         sourceName,
@@ -109,12 +105,6 @@ const MusicApp = function () {
         readCache,
         deleteCacheEntries,
         cacheAllTracks,
-        dislikedOpen,
-        dislikedClosing,
-        setDislikedOpen,
-        setDislikedClosing,
-        openDislikedManager,
-        closeDislikedManager,
         driveOpen,
         driveClosing,
         setDriveOpen,
@@ -165,6 +155,63 @@ const MusicApp = function () {
     // animation first (the sheet-unmount-via-animation-end trick).
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuClosing, setMenuClosing] = useState(false);
+
+    /* --- the list's top bar, and the bar that replaces it once it scrolls ---
+     *
+     * The search field's open state lives here, not in `TrackList`, because the
+     * field is now asked for from two places: the header's own button, and the
+     * floating bar's — which appears exactly when that header is off screen.
+     * Same reason the drawers live here: it is chrome that outlives the list
+     * column's box.
+     */
+
+    const [searchOpen, setSearchOpen] = useState(false);
+
+    const openSearch = useCallback(function () {
+        setSearchOpen(true);
+    }, []);
+
+    const closeSearch = useCallback(function () {
+        setSearchOpen(false);
+        setSearch('');
+    }, [setSearch]);
+
+    // The header element, handed to `TrackList` to put on its `<header>`.
+    const headRef = useRef(null);
+    // Whether that header is out of view — and *which tab that answer is
+    // about*, which is not a detail. The header is `display: none` while the
+    // profile tab is showing, and an element with no box reads as "out of
+    // view", so a bare boolean would raise the bar over the profile page and
+    // flash it for the frame or two the observer takes to report again after a
+    // switch back. Tagging the answer with the tab it was given for means a
+    // stale one simply does not match.
+    const [headGone, setHeadGone] = useState({ tab: null, gone: false });
+
+    // Watch the header instead of listening to scroll: the question is "is it
+    // still on screen", not "how far down are we", and the header's height is
+    // its own business. `isIntersecting` flips the moment the last pixel
+    // leaves, which is precisely 滚走了.
+    useEffect(() => {
+        const head = headRef.current;
+        if (!head || typeof IntersectionObserver === 'undefined') return undefined;
+        const observer = new IntersectionObserver(
+            ([entry]) => setHeadGone({ tab, gone: !entry.isIntersecting }),
+            { threshold: 0 },
+        );
+        observer.observe(head);
+        return () => observer.disconnect();
+    }, [tab]);
+
+    const barShown = headGone.tab === tab && headGone.gone;
+
+    // 搜索 from the floating bar unfolds the field *in the header*, which is the
+    // one thing in the bar that cannot be done from where the visitor is — so
+    // the tap goes back to the top as well. Without that it would look like a
+    // button that does nothing.
+    const openSearchFromBar = useCallback(function () {
+        setSearchOpen(true);
+        window.scrollTo(0, 0);
+    }, []);
 
     /* --- three-dots drawer --- */
 
@@ -246,11 +293,11 @@ const MusicApp = function () {
                         source={librarySource}
                         listLoading={listLoading}
                         visibleTracks={visibleTracks}
-                        // The library *before* the list preferences ran
-                        // — see `emptyListMessage`.
-                        libraryCount={libraryCount}
                         search={search}
                         onSearch={setSearch}
+                        searchOpen={searchOpen}
+                        onOpenSearch={openSearch}
+                        onCloseSearch={closeSearch}
                         // 喜欢 is the public library's feature; the Drive library
                         // gets no filter button and no heart, rather than a
                         // button that would always come back empty.
@@ -266,6 +313,7 @@ const MusicApp = function () {
                         onOpenMenu={openMenu}
                         rowMenuId={rowMenuId}
                         onOpenRowMenu={openRowMenu}
+                        headerRef={headRef}
                     />
                 </div>
                 <div
@@ -282,6 +330,43 @@ const MusicApp = function () {
                         loading={listLoading}
                         trackCount={tracks.length}
                         onGoList={() => setTab('list')}
+                    />
+                </div>
+            </div>
+
+            {/* The bar that takes over once the list's own top bar has scrolled
+                away: the visitor's avatar in glass on the left, and the same
+                three actions in one glass capsule on the right.
+
+                It lives here rather than inside `TrackList` for the same reason
+                the drawers do — the list column sits under ancestors carrying a
+                `transform` (the tab transition), which would turn a
+                `position: fixed` descendant into a box sized to those ancestors
+                instead of the viewport.
+
+                It is *mounted* the whole time and shown by class, so the fade
+                has something to animate; `visibility` is what keeps it out of
+                the tab order and out of the accessibility tree while it is
+                hidden, rather than `opacity` alone. */}
+            <div
+                className={barShown ? `${styles.float} ${styles['float-in']}` : styles.float}
+                data-float="list-bar"
+            >
+                <span className={styles['float-avatar']} role="img" aria-label="用户头像">
+                    <IconPerson />
+                </span>
+                <div className={styles['float-capsule']}>
+                    <ListActions
+                        // Kept even while the field is open, unlike the header's
+                        // copy: there is no field in this bar, and tapping this
+                        // is how the visitor gets back to the one up there.
+                        showSearch={hasLibrary}
+                        canLike={hasLibrary && librarySource !== DRIVE_SOURCE}
+                        likedOnly={likedOnly}
+                        menuOpen={menuOpen && !menuClosing}
+                        onOpenSearch={openSearchFromBar}
+                        onToggleLikedOnly={toggleLikedOnly}
+                        onOpenMenu={openMenu}
                     />
                 </div>
             </div>
@@ -391,29 +476,6 @@ const MusicApp = function () {
                                 <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
                             </span>
                         </button>
-                        {/* Sits under the cache entry because the two are the
-                            same kind of screen — a list of songs the visitor
-                            acted on, each row undoable — and above 外观, which
-                            is a display preference rather than app content. */}
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={() => { closeMenu(); openDislikedManager(); }}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconDislike size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>不喜欢歌曲</span>
-                                <span className={styles['menu-sub']}>
-                                    查看已隐藏的歌曲，可移出让它回到列表
-                                </span>
-                            </span>
-                            <span className={styles['menu-value']}>
-                                {disliked.length > 0 ? `${disliked.length} 首` : ''}
-                            </span>
-                        </button>
                         {/* Appearance sits below the cache entry so the drawer
                             reads as app actions first, display preference last. */}
                         <button
@@ -518,12 +580,12 @@ const MusicApp = function () {
                                 </span>
                             </span>
                         </button>
-                        {/* 喜欢 sits between 置顶 and 移入不喜欢 because that is
-                            the order of what it does to the song: arranges it,
-                            keeps it, hides it. The label carries the current
-                            state rather than reading 喜欢 either way — the
-                            drawer is where the visitor finds out whether a song
-                            is already liked, since no row shows a heart. */}
+                        {/* 喜欢 sits under 置顶 because that is the order of
+                            what it does to the song: arranges it, then keeps
+                            it. The label carries the current state rather than
+                            reading 喜欢 either way — the drawer is where the
+                            visitor finds out whether a song is already liked,
+                            since no row shows a heart. */}
                         {rowMenu.source !== DRIVE_SOURCE && (
                             <button
                                 type="button"
@@ -549,25 +611,6 @@ const MusicApp = function () {
                                 </span>
                             </button>
                         )}
-                        <button
-                            type="button"
-                            className={`${styles['menu-item']} ${styles['menu-item-danger']}`}
-                            role="menuitem"
-                            onClick={() => {
-                                dislikeTrack(rowMenu);
-                                closeRowMenu();
-                            }}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconDislike size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>移入不喜欢</span>
-                                <span className={styles['menu-sub']}>
-                                    从列表隐藏并删除本地缓存，可在「不喜欢歌曲」里找回
-                                </span>
-                            </span>
-                        </button>
                     </div>
                 </div>
             )}
@@ -587,18 +630,6 @@ const MusicApp = function () {
                     onRefresh={readCache}
                     onDelete={deleteCacheEntries}
                     onCacheAll={cacheAllTracks}
-                />
-            )}
-
-            {dislikedOpen && (
-                <DislikedSheet
-                    keys={disliked}
-                    tracks={tracks}
-                    closing={dislikedClosing}
-                    onClosed={() => { setDislikedOpen(false); setDislikedClosing(false); }}
-                    onCancelClose={() => setDislikedClosing(false)}
-                    onClose={closeDislikedManager}
-                    onRestore={restoreTrack}
                 />
             )}
 

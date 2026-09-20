@@ -2,8 +2,8 @@
 // dimmed, blurred scrim.
 //
 // It is deliberately *only* chrome. The bodies it wraps come from
-// `components/Music/core/` (`CacheContent`, `DislikedContent`), which the phone
-// layout wraps in its own bottom sheet instead. That split is the whole point:
+// `components/Music/core/` (`CacheContent`), which the phone layout wraps in its
+// own bottom sheet instead. That split is the whole point:
 // the two layouts share what a panel *says* and not how it *arrives*.
 //
 // The card is a flex column, and it has to be: the content components hang

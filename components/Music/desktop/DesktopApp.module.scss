@@ -104,7 +104,7 @@
 }
 
 /* ==========================================================================
-   the row drawer — 置顶 / 移入不喜欢
+   the row drawer — 置顶
    ========================================================================== */
 
 /* A centred card rather than the phone's bottom sheet: on a wide screen the
@@ -308,24 +308,6 @@
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-2);
-}
-
-/* Destructive row — 移入不喜欢. Only the icon tile and the title carry the
-   warning colour: tinting the whole row would make the drawer read as a
-   confirmation dialog, and this action is reversible from the manager. */
-.item-danger {
-    .item-icon {
-        background: rgba(255, 59, 48, 0.14);
-        color: #ff3b30;
-    }
-
-    .item-title {
-        color: #ff3b30;
-    }
-
-    &:hover:not(:disabled) {
-        background: rgba(255, 59, 48, 0.1);
-    }
 }
 
 /* ==========================================================================

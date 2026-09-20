@@ -9,9 +9,9 @@ import styles from './SheetChrome.module.scss';
  * over a blurred scrim, rising and scaling in from below, with the collapse
  * button and the title on top.
  *
- * It owns nothing but the frame — the body is passed in as children. The three
- * panels it serves (`CacheManager`, `DislikedSheet`, `DriveSheet`) supply
- * either a content component from `components/Music/core/` or their own markup,
+ * It owns nothing but the frame — the body is passed in as children. The two
+ * panels it serves (`CacheManager`, `DriveSheet`) supply either a content
+ * component from `components/Music/core/` or their own markup,
  * and the desktop layout supplies the same bodies to its own
  * `desktop/DesktopSheetChrome` instead. That split is the whole point: the two
  * layouts share what a panel *says* and not how it *arrives*.

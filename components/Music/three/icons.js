@@ -10,7 +10,7 @@
  *
  * There are thirteen of them, and that is the whole icon budget of this
  * layout: the 3D page plays music and shows the words, it does not manage a
- * library, so the cache manager, the disliked list and the Drive sheet are all
+ * library, so the cache manager and the Drive sheet are all
  * still on `/desktop` where they belong.
  */
 
