@@ -16,10 +16,17 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # Read-only, and only for the "wait out the legacy build" step below — it
+  # lists this repo's workflow runs to see whether GitHub's own Jekyll build is
+  # still in flight.
+  actions: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The step below can wait, so bound the whole job rather than trusting the
+    # runner's default. Ten minutes is ~8x a normal build.
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -81,6 +88,47 @@ jobs:
           # a stale shell is being shipped again.
           test ! -e out/sw.js         || { echo "::error::out/sw.js exists — the service worker was removed on purpose"; exit 1; }
           echo "build output verified"
+
+      # GitHub also runs its own legacy Jekyll build ("pages build and
+      # deployment", event `dynamic`) on every push whenever the Pages Source is
+      # left on "Deploy from a branch". Both publish to the same site and **the
+      # last one to finish wins**, so which site you get is a race — and on
+      # 2026-09-20 the Jekyll build won by 13 seconds, leaving every route except
+      # `/` as a 404 (symptoms in the note on `Setup Pages`).
+      #
+      # The real fix is one setting: Settings -> Pages -> Build and deployment ->
+      # Source: "GitHub Actions". Until that is flipped, this step makes the race
+      # harmless by waiting for that build to finish *before* we upload our
+      # artifact, so ours is always the newer deployment. It is a no-op once the
+      # setting is right (no such run is ever created) and it is bounded either
+      # way, so a stuck run cannot hang the job.
+      #
+      # One-line `python3 -c` rather than a heredoc: a multi-line script inside a
+      # `run: |` block has to be indented with the block, and Python rejects a
+      # leading indent on its first line. `python3` is on every hosted runner.
+      - name: Wait out GitHub's legacy Jekyll build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          legacy_state() {
+            curl -sS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&per_page=100" \
+            | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin).get('workflow_runs',[]) if x['name']=='pages build and deployment']; print('absent' if not r else ('running' if any(x['status']!='completed' for x in r) else 'done'))"
+          }
+
+          deadline=$((SECONDS + 300))
+          while [ $SECONDS -lt $deadline ]; do
+            state=$(legacy_state || echo absent)
+            echo "legacy Pages build: $state"
+            if [ "$state" = "done" ]; then break; fi
+            # `absent` means the setting is already right, or the run has not
+            # been created yet — one more look settles which.
+            sleep 20
+          done
+          echo "proceeding; ours will be the newer deployment"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
