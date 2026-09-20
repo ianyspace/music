@@ -1,9 +1,9 @@
 # space-music Worker
 
 把 Cloudflare R2 桶暴露成 `/music/` 页面可用的曲库清单，并用 D1 存「谁听了哪首歌、
-听了多少次」。因为站点是 GitHub Pages 静态导出，浏览器无法自己列举 R2，所以由这个
-Worker 提供清单；音频本身走 R2 公开域名直链下载。播放次数同理：静态页面没法写数据库，
-写和读都经过这个 Worker。
+听了多少次」和「谁喜欢了哪些歌」。因为站点是 GitHub Pages 静态导出，浏览器无法自己
+列举 R2，所以由这个 Worker 提供清单；音频本身走 R2 公开域名直链下载。播放次数和喜欢
+同理：静态页面没法写数据库，写和读都经过这个 Worker。
 
 ## 接口
 
@@ -13,6 +13,8 @@ Worker 提供清单；音频本身走 R2 公开域名直链下载。播放次数
 | `GET /tracks?refresh=1` | 绕过缓存，强制重新列举 R2（上传新歌后立即生效） |
 | `POST /plays` | 写入一批播放事件，body `{ qq, plays: [{ eid, id, name, at }] }` |
 | `GET /stats?qq=…` | 返回该 QQ 的排行：全部 + 最近 7 天 |
+| `GET /likes?qq=…` | 返回该 QQ 的喜欢列表，新的在前 |
+| `POST /likes` | 增 / 删喜欢，body `{ qq, add: [{ id, name }], remove: [id] }` |
 
 单个曲目：
 
@@ -68,7 +70,32 @@ plays(event_id PRIMARY KEY, qq, track_id, track_name, played_at, created_at)
   而不是「证明你是这个号码」。知道号码的人就能看到它的排行 —— 和知道号码就能取到它的头像
   一样。真要保护，得先有登录，不是在这里加一个参数。
 
-客户端那一侧（本机日志、非阻塞上报、手动同步）在 `components/Music/playStats.js`。
+客户端那一侧（本机日志、非阻塞上报）在 `components/Music/playStats.js`，
+手动「同步」按钮在 `components/Music/h5/useDataSync.js`（和喜欢共用一颗）。
+
+## 我喜欢（D1）
+
+喜欢同样存在 D1，同一份 `schema.sql`：
+
+```sql
+likes(qq, track_id, track_name, created_at, PRIMARY KEY (qq, track_id))
+```
+
+**主键是 `(qq, track_id)`，所以「喜欢」天然幂等** —— `INSERT OR IGNORE` 重发多少次都
+只算一次，取消就是一条 `DELETE`。这和 `/plays` 的 `event_id` 是同一类想法（重发不能改变
+结果），但形状不同：一次播放是一件**发生过的事**（要记 N 次），一次喜欢是一个**状态**
+（只关心最后是哪个），所以这边不需要客户端生成 id。
+
+- **一次请求就是一个事务**（`db.batch`）：`add` 和 `remove` 一起提交，不会出现
+  「加了一半、删了一半」那种要靠人对账的中间态。响应里的 `changed` 是真正生效的行数，
+  重发时为 0，这就是「服务端确实收到过」的凭据。
+- **两个数组都按 `MAX_LIKES_PER_REQUEST`（500）截断**。客户端必须用同样的值分批
+  （`likes.js` 的 `BATCH_SIZE`）：服务端对超出的部分**照样回 200**，客户端于是把整批
+  标成「已确认」再删掉 —— 多出来的那些就静默丢了。和 `/plays` 那对常量（200）是
+  **分开的两对**，改一对不要以为另一对跟着变。
+- **`GET /likes` 也走 `Cache-Control: no-store`**：喜欢是每个号码自己的，被边缘缓存
+  就等于把一个人的列表端给另一个人看。
+- **同样没有鉴权，同样是有意的**（理由见下一条）。
 
 ### 建库
 
@@ -80,9 +107,10 @@ npx wrangler d1 execute space-music-plays --remote --file schema.sql
 `d1 create` 会打印 `database_id`，把它填进 `wrangler.toml` 的 `[[d1_databases]]`
 （占位符没换掉的话 `wrangler deploy` 会直接拒绝这个绑定）。
 
-Worker 自己也会在第一次写入前跑一遍同样的 DDL（`ensureSchema`），所以忘了这一步的
-新部署会自己补上；`schema.sql` 是「它建了什么」的记录，而不是一个漏了就坏掉的步骤。
-两边记得同步改。
+Worker 自己也会在第一次写入前跑一遍同样的 DDL（`ensureSchema`，用 `db.batch`，
+`schemaPromise` 缓存住结果），所以忘了这一步的新部署会自己补上；`schema.sql` 是
+「它建了什么」的记录，而不是一个漏了就坏掉的步骤。**加一张新表不需要额外的部署步骤**
+（`likes` 就是这么加上去的），但第一次调用会慢一点。两边记得同步改。
 
 ## 当前部署（本仓库）
 
@@ -180,6 +208,15 @@ curl -X POST http://localhost:8787/plays \
      -H 'Content-Type: application/json' \
      -d '{"qq":"10001","plays":[{"eid":"test-1","id":"songs/牵丝戏-银临.mp3","name":"牵丝戏-银临.mp3","at":1730000000000}]}'
 curl "http://localhost:8787/stats?qq=10001"
+
+# 喜欢：加一首、读回来、再删掉
+curl -X POST http://localhost:8787/likes \
+     -H 'Content-Type: application/json' \
+     -d '{"qq":"10001","add":[{"id":"songs/牵丝戏-银临.mp3","name":"牵丝戏-银临.mp3"}]}'
+curl "http://localhost:8787/likes?qq=10001"
+curl -X POST http://localhost:8787/likes \
+     -H 'Content-Type: application/json' \
+     -d '{"qq":"10001","remove":["songs/牵丝戏-银临.mp3"]}'
 ```
 
 再让页面指向它：设置 `NEXT_PUBLIC_MUSIC_WORKER_URL=http://localhost:8787` 后启动 `npm run dev`
@@ -190,6 +227,6 @@ curl "http://localhost:8787/stats?qq=10001"
 - 清单缓存 300 秒；上传新歌后想立刻看到，用 `?refresh=1` 或等 5 分钟
 - Worker 只读清单，不代理音频流量；音频带宽走 R2 公开域名
 - 桶是公开的，任何知道 URL 的人都能下载音频，曲库等同公开资源
-- `/plays` 与 `/stats` 一律 `Cache-Control: no-store`：排行是每个访客自己的数字，
-  被边缘缓存就等于把一个人的次数端给另一个人看
+- `/plays` / `/stats` / `/likes` 一律 `Cache-Control: no-store`：排行和喜欢是每个访客
+  自己的数字，被边缘缓存就等于把一个人的数据端给另一个人看
 - 绑定 D1 之后 `wrangler dev` 默认用**本地**数据库；要连线上那份加 `--remote`

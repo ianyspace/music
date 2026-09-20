@@ -32,6 +32,9 @@ yarn-error.log*
 # --------------------------------------------------------------------- hosting
 .vercel
 
+# wrangler's local state (dev-mode D1/R2, caches) — never part of the repo
+.wrangler/
+
 # ------------------------------------------------------------------------- ide
 .idea/
 *.swp

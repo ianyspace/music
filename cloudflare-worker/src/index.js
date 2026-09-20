@@ -9,6 +9,8 @@
  *   GET  /tracks?refresh=1  → same, bypassing the edge cache
  *   POST /plays             → record play events into the D1 database
  *   GET  /stats?qq=…        → play rankings for one QQ number
+ *   GET  /likes?qq=…        → the liked songs of one QQ number
+ *   POST /likes             → add / remove likes for one QQ number
  *
  * Each track is:
  *   { id, name, key, size, url, lyricsUrl, coverUrl, source: 'cloud' }
@@ -47,6 +49,10 @@ const RECENT_WINDOW_MS = RECENT_DAYS * 24 * 60 * 60 * 1000;
 const MAX_PLAYS_PER_REQUEST = 200;
 const MAX_TRACK_ID_LENGTH = 512;
 const MAX_TRACK_NAME_LENGTH = 200;
+// A like is a row per song, so one request can never legitimately carry more
+// than a library has. Same ceiling as the client's chunk size — see the note in
+// `components/Music/likes.js`.
+const MAX_LIKES_PER_REQUEST = 500;
 // A play must be a real moment. A device with a wrong clock is common enough
 // that rejecting it would lose the record; clamping to "now" keeps the row
 // useful instead of dropping it. 2001-09-09 is the floor — the era of
@@ -87,6 +93,25 @@ const SCHEMA_STATEMENTS = [
     )`,
     'CREATE INDEX IF NOT EXISTS idx_plays_qq_time ON plays (qq, played_at)',
     'CREATE INDEX IF NOT EXISTS idx_plays_qq_track ON plays (qq, track_id)',
+    // 我喜欢 — one row per liked song, keyed by the same QQ label the plays use.
+    //
+    // The pair `(qq, track_id)` is the primary key rather than a synthetic id,
+    // and that is the whole write protocol: a like is `INSERT OR IGNORE`, an
+    // unlike is `DELETE`, and both are idempotent. The client keeps the
+    // *desired state* per song in a local outbox (not a log of taps), so a
+    // replayed batch lands on the same answer instead of toggling twice.
+    //
+    // `created_at` is the server's clock, not the client's: nothing is measured
+    // from it (unlike `plays.played_at`, where "最近 7 天" is the point), so
+    // there is no reason to trust a device clock for it.
+    `CREATE TABLE IF NOT EXISTS likes (
+        qq         TEXT NOT NULL,
+        track_id   TEXT NOT NULL,
+        track_name TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (qq, track_id)
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_likes_qq_time ON likes (qq, created_at)',
 ];
 
 // Run once per isolate, and retried on the next request if it failed — a cold
@@ -382,6 +407,133 @@ const handleStats = async function (env, url, cors) {
     }
 };
 
+/* --- GET /likes ---------------------------------------------------------- */
+
+/**
+ * The liked songs of one QQ number.
+ *
+ * Same no-authentication stance as `/stats` (see the note on `normalizeQq`):
+ * the number is a label the visitor typed, so this answers "what has this
+ * number liked", not "prove you are this number".
+ *
+ * Newest first, because the only thing anyone does with a full list is look at
+ * the top of it. The client does not depend on the order — it turns this into a
+ * set — so this is a presentation choice, not part of the contract.
+ */
+const handleLikesRead = async function (env, url, cors) {
+    if (!env.PLAY_DB) return jsonResponse({ error: 'PLAY_DB binding is missing' }, 500, cors);
+
+    const qq = normalizeQq(url.searchParams.get('qq'));
+    if (!qq) return jsonResponse({ error: 'A valid qq (5-11 digits) is required' }, 400, cors);
+
+    try {
+        await ensureSchema(env.PLAY_DB);
+        const result = await env.PLAY_DB.prepare(
+            `SELECT track_id AS id, track_name AS name, created_at AS at
+             FROM likes WHERE qq = ?1
+             ORDER BY created_at DESC
+             LIMIT ${MAX_LIKES_PER_REQUEST}`,
+        ).bind(qq).all();
+
+        return jsonResponse({
+            qq,
+            likes: (result.results || []).map((row) => ({
+                id: String(row.id || ''),
+                name: String(row.name || ''),
+                at: Number(row.at) || 0,
+            })).filter((row) => row.id),
+            generatedAt: Date.now(),
+        }, 200, cors);
+    } catch (error) {
+        return jsonResponse({ error: `Cannot read likes: ${error.message}` }, 502, cors);
+    }
+};
+
+/* --- POST /likes --------------------------------------------------------- */
+
+/**
+ * Applies a batch of like / unlike decisions.
+ *
+ * The two lists are **desired states**, not operations: `add` means "this song
+ * is liked now", `remove` means "it is not". That is why replaying a batch is
+ * safe — `INSERT OR IGNORE` and `DELETE` both converge on the same answer — and
+ * why the client can collapse a whole offline session into one request.
+ *
+ * The batch is one transaction, so a half-applied batch cannot exist. An id in
+ * *both* lists is refused rather than guessed at: it is ambiguous (add first?
+ * remove first?), and the client's outbox is keyed by track id so it cannot
+ * produce one. Failing loudly beats picking a winner silently.
+ */
+const handleLikesWrite = async function (request, env, cors) {
+    if (!env.PLAY_DB) return jsonResponse({ error: 'PLAY_DB binding is missing' }, 500, cors);
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch (error) {
+        return jsonResponse({ error: 'Invalid JSON body' }, 400, cors);
+    }
+
+    const qq = normalizeQq(payload && payload.qq);
+    if (!qq) return jsonResponse({ error: 'A valid qq (5-11 digits) is required' }, 400, cors);
+
+    const rawAdds = Array.isArray(payload.add) ? payload.add.slice(0, MAX_LIKES_PER_REQUEST) : [];
+    const rawRemoves = Array.isArray(payload.remove) ? payload.remove.slice(0, MAX_LIKES_PER_REQUEST) : [];
+
+    const addIds = new Set();
+    const adds = [];
+    rawAdds.forEach((entry) => {
+        const id = clip(entry && entry.id, MAX_TRACK_ID_LENGTH).trim();
+        if (!id || addIds.has(id)) return;
+        addIds.add(id);
+        adds.push({ id, name: clip(entry && entry.name, MAX_TRACK_NAME_LENGTH) });
+    });
+    const removes = [];
+    const removeIds = new Set();
+    rawRemoves.forEach((entry) => {
+        const id = clip(typeof entry === 'string' ? entry : entry && entry.id, MAX_TRACK_ID_LENGTH).trim();
+        if (!id || removeIds.has(id)) return;
+        removeIds.add(id);
+        removes.push(id);
+    });
+
+    const overlap = removes.filter((id) => addIds.has(id));
+    if (overlap.length > 0) {
+        return jsonResponse({
+            error: `add and remove must not overlap (${overlap.length} id(s) in both)`,
+        }, 400, cors);
+    }
+
+    const now = Date.now();
+    const statements = [
+        ...removes.map((id) => env.PLAY_DB.prepare(
+            'DELETE FROM likes WHERE qq = ?1 AND track_id = ?2',
+        ).bind(qq, id)),
+        ...adds.map((row) => env.PLAY_DB.prepare(
+            `INSERT OR IGNORE INTO likes (qq, track_id, track_name, created_at)
+             VALUES (?1, ?2, ?3, ?4)`,
+        ).bind(qq, row.id, row.name, now)),
+    ];
+
+    if (statements.length === 0) return jsonResponse({ ok: true, added: 0, removed: 0 }, 200, cors);
+
+    try {
+        await ensureSchema(env.PLAY_DB);
+        const results = await env.PLAY_DB.batch(statements);
+        const changed = results.reduce((sum, result) => sum + (result.meta ? result.meta.changes || 0 : 0), 0);
+        return jsonResponse({
+            ok: true,
+            received: { add: adds.length, remove: removes.length },
+            // `INSERT OR IGNORE` reports 0 for a like that was already there,
+            // so this is "rows that actually moved" — a replay says 0 and that
+            // is still a success the client can clear its outbox on.
+            changed,
+        }, 200, cors);
+    } catch (error) {
+        return jsonResponse({ error: `Cannot write likes: ${error.message}` }, 502, cors);
+    }
+};
+
 export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
@@ -409,11 +561,24 @@ export default {
             return response;
         }
 
+        if (url.pathname === '/likes') {
+            if (request.method !== 'GET' && request.method !== 'POST') {
+                return jsonResponse({ error: 'Use GET /likes?qq=… or POST /likes' }, 405, cors);
+            }
+            const response = request.method === 'POST'
+                ? await handleLikesWrite(request, env, cors)
+                : await handleLikesRead(env, url, cors);
+            // Per-visitor data on every request: an edge cache would hand one
+            // visitor's likes to another.
+            response.headers.set('Cache-Control', 'no-store');
+            return response;
+        }
+
         if (request.method !== 'GET' && request.method !== 'HEAD') {
             return jsonResponse({ error: 'Method not allowed' }, 405, cors);
         }
         if (url.pathname !== '/tracks') {
-            return jsonResponse({ error: 'Not found. Try /tracks, /plays or /stats' }, 404, cors);
+            return jsonResponse({ error: 'Not found. Try /tracks, /plays, /stats or /likes' }, 404, cors);
         }
         if (!env.MUSIC_BUCKET) {
             return jsonResponse({ error: 'MUSIC_BUCKET binding is missing' }, 500, cors);

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { fetchPlayStats, flushPending, pendingCount } from '../playStats';
+import { fetchPlayStats } from '../playStats';
 
 /**
- * The state behind the 账号 page's 听歌排行 card.
+ * The state behind the 听歌排行 page.
  *
  * It sits in `h5/` rather than in `core/` because it is the *only* thing in the
  * app that talks to the play-count API and exactly one screen ever shows it —
@@ -27,39 +27,30 @@ import { fetchPlayStats, flushPending, pendingCount } from '../playStats';
  * - a play recorded while the page is open is not seen by this hook at all.
  *   That is deliberate: the count it would add is one, and re-fetching on every
  *   song change would be a request per song for a number nobody is watching.
- *   `reload` is the ⟳ button, and 同步 reloads for the same reason.
+ *   `reload` is the ⟳ button.
  *
- * Sync is offered here and nowhere else: the log is per-browser, so the only
- * person who can decide "send what is pending now" is the visitor looking at
- * their own page — and it is the same page that says how much is pending.
+ * Uploading what is still only on this device is **not** here. It used to be —
+ * this hook carried a queue count and a 同步 button for the card that lived on
+ * 账号 — but the page moved out, and the queue is about the visitor's *number*,
+ * not about their ranking. It is `useDataSync`, one row on 账号, and it covers
+ * both queues (plays and likes) with one button. Keeping a second copy of that
+ * logic here would have been two answers to "what is still local".
  */
 const usePlayStats = function ({ qq, active }) {
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    // How many plays are sitting in the local log. Refreshed when the page
-    // opens and after every sync — the two moments it can have changed without
-    // this hook doing anything.
-    //
-    // `ready` is separate from `pending === 0` on purpose. The card is mounted
-    // long before it is ever looked at (all three tab pages stay mounted), and
-    // until this hook has run once it has *not counted* the log — it has no
-    // answer, which is not the same as "nothing pending". The page says nothing
-    // about the log until `ready`, so it can never claim "已全部上传" about a
-    // question it has not asked.
-    const [pending, setPending] = useState(0);
-    const [ready, setReady] = useState(false);
-    const [syncing, setSyncing] = useState(false);
-    const [syncNotice, setSyncNotice] = useState('');
+    // Bumped by ⟳. A dependency rather than a function call because the load
+    // *is* an effect: it has to be cancelled on unmount, and a manual reload
+    // has to behave exactly like the automatic one.
     const [reloadKey, setReloadKey] = useState(0);
 
     useEffect(() => {
         if (!active) return undefined;
-        setPending(pendingCount());
-        setReady(true);
         if (!qq) {
-            // Unbound: there is no number to ask about. The card says so; this
-            // clears anything a previous number left behind.
+            // Unbound: there is no number to ask about. The page says so; this
+            // clears anything a previous number left behind, so binding a new
+            // number never shows the old one's rows for a moment.
             setStats(null);
             setError('');
             setLoading(false);
@@ -79,40 +70,7 @@ const usePlayStats = function ({ qq, active }) {
         setReloadKey((key) => key + 1);
     }, []);
 
-    /**
-     * 同步 — send the local log, then delete what the server confirmed.
-     *
-     * The wording follows the outcome rather than a success flag: a partial
-     * failure is the interesting case ("some went, some are still here"), and
-     * it is the one the visitor can act on by pressing again later.
-     */
-    const sync = useCallback(async function () {
-        setSyncing(true);
-        setSyncNotice('');
-        try {
-            const result = await flushPending();
-            setPending(result.remaining);
-            if (result.error && result.sent === 0) {
-                setSyncNotice(`同步失败：${result.error.message}，记录仍留在本机`);
-            } else if (result.error) {
-                setSyncNotice(`已同步 ${result.sent} 条，还有 ${result.remaining} 条没成功，稍后再试`);
-            } else if (result.sent > 0) {
-                setSyncNotice(`已同步 ${result.sent} 条，本地记录已清除`);
-            } else {
-                setSyncNotice('没有待同步的记录');
-            }
-            // A successful sync just changed the ranking this page shows.
-            if (result.sent > 0) setReloadKey((key) => key + 1);
-        } catch (err) {
-            // `flushPending` reports failures as data, so this is for the
-            // unexpected — and the log is untouched either way.
-            setSyncNotice(`同步失败：${err.message || err}`);
-        } finally {
-            setSyncing(false);
-        }
-    }, []);
-
-    return { stats, loading, error, reload, pending, ready, syncing, syncNotice, sync };
+    return { stats, loading, error, reload };
 };
 
 export default usePlayStats;

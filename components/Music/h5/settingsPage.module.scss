@@ -1,0 +1,296 @@
+// The settings-style page shell, shared by the phone's three of them: 「我的」
+// (Profile), 「账号」 (Account) and 「听歌排行」 (StatsPage).
+//
+// These shapes used to be *copied* between Profile and Account, deliberately:
+// two pages did not justify a third file both import, and that file would have
+// had to live somewhere belonging to neither. The note in both said the third
+// settings-style page would be the moment to extract — and to fold 我的 in at
+// the same time rather than leaving one page on the old copy. 听歌排行 is that
+// page, so this is that moment.
+//
+// What belongs here is only the **shell**: the sticky bar, the grouped cards,
+// the settings rows and the footnotes. Anything that is about one page's
+// subject stays in that page's own module (the QQ form and the sync row in
+// Account, the folder select in Profile, the ranking list in StatsPage), because
+// a shared file that grows a little of everything stops being a shell and
+// becomes the place nobody dares change.
+//
+// Everything here is shaped by the theme tokens (`--text`, `--card`,
+// `--hairline`, `--glass*`) that `MusicApp.module.scss` declares, so one
+// definition follows both palettes.
+
+.page {
+    box-sizing: border-box;
+    padding: 0 18px 48px; /* no mini bar on these pages — just dock breathing */
+}
+
+/* --- sticky top bar --- */
+
+.head {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: 0 -18px;
+    padding: 10px 18px 12px;
+    background: var(--glass);
+    border-bottom: 1px solid var(--hairline);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(24px) saturate(1.8);
+}
+
+.head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.title {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: var(--text);
+}
+
+.head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* capsule entry to another page (「歌曲」 / 「账号」) */
+.nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 13px;
+    border: 1px solid var(--glass-border);
+    border-radius: 17px;
+    background: var(--glass-strong);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 4px 12px -6px rgba(31, 38, 79, 0.35);
+    transition: transform 0.15s, background-color 0.2s;
+
+    svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.04);
+        }
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+}
+
+/* round ⟳ next to a nav button */
+.refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--glass-border);
+    border-radius: 50%;
+    background: var(--glass-strong);
+    color: var(--text);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.15s;
+
+    @media (hover: hover) {
+        &:hover:not(:disabled) {
+            transform: scale(1.08);
+        }
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: wait;
+    }
+}
+
+/* The one loud button a page owns: 确定 on 账号's QQ form, 去绑定 QQ 号 on
+   听歌排行的空态. It wears the same gradient as a settings row's icon chip, so
+   "this is the thing to press" looks the same on all three pages — and it lives
+   here rather than in one of them because the second page that needed it was
+   the moment it stopped being that page's button. */
+.primary-btn {
+    height: 40px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+    color: #fff;
+    font-size: 14.5px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.2s;
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.04);
+        }
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+}
+
+.spinning {
+    animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --- cards --- */
+
+.group {
+    margin-bottom: 16px;
+    padding: 2px 14px 12px;
+    border-radius: 20px;
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-card);
+}
+
+.group-label {
+    padding: 10px 2px 6px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: var(--text-2);
+    text-transform: uppercase;
+}
+
+/* --- settings rows --- */
+
+.row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 2px;
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    text-align: left;
+
+    &:last-child {
+        border-bottom: 0;
+    }
+}
+
+.row-btn {
+    cursor: pointer;
+    border-radius: 10px;
+    transition: background-color 0.18s;
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--row-hover);
+        }
+    }
+}
+
+.row-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+
+    svg {
+        width: 16px;
+        height: 16px;
+    }
+}
+
+.row-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* A row that reports a value instead of opening something (外观, 数据同步). */
+.row-value {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--text-2);
+}
+
+.row-chev {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--text-2);
+    pointer-events: none;
+}
+
+/* --- text --- */
+
+.hint {
+    margin: 0 2px;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text-2);
+}
+
+/* The only state that needs colour: the visitor pressed something and nothing
+   happened, so the line above has to say why. */
+.hint-bad {
+    color: #ff453a;
+}
+
+.footnote {
+    margin: 4px 8px 0;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text-2);
+}
+
+@media (max-width: 520px) {
+    .page {
+        padding: 0 12px 48px;
+    }
+
+    .head {
+        margin: 0 -12px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .title {
+        font-size: 22px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spinning {
+        animation: none;
+    }
+}

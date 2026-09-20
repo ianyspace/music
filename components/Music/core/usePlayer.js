@@ -15,7 +15,6 @@ import {
     REPEAT_KEY,
     REPEAT_MODES,
     ORDER_KEY,
-    LIKED_KEY,
     QQ_KEY,
     storageGet,
     storageSet,
@@ -32,6 +31,13 @@ import {
     parseLyrics,
 } from '../shared';
 import { recordPlay } from '../playStats';
+import {
+    applyLikeChange,
+    flushLikes,
+    migrateLegacyLikes,
+    readLikedKeys,
+    refreshLikes,
+} from '../likes';
 import {
     getCachedAudio,
     touchCachedAudio,
@@ -111,7 +117,10 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     const [order, setOrder] = useState([]);
     // 我喜欢 — the other list preference, and the only one that is a *keep-in*
     // list rather than an arrangement. It is a feature of the public library
-    // specifically, so `toggleLike` refuses a Drive track; see `LIKED_KEY`.
+    // specifically, so `toggleLike` refuses a Drive track; and it belongs to a
+    // QQ number, so it also refuses a visitor who has not bound one. The keys
+    // come from the local mirror of the database — see `likes.js` for why there
+    // is a mirror at all and what it is allowed to do.
     const [liked, setLiked] = useState([]);
     // 只看喜欢 — whether the list is narrowed to the liked songs. Deliberately
     // *not* persisted, and it sits next to `search` rather than next to the
@@ -382,11 +391,47 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         setQq(digits);
     }, []);
 
-    /* --- list preferences: pinned order + 我喜欢 --- */
+    /* --- 我喜欢 (a local mirror of the database, per QQ number) --- */
+
+    // Paint from the mirror, let the server correct it, and push whatever a
+    // previous session left queued. Three steps in this order on purpose:
+    //
+    // - the mirror first, *synchronously*, so the list is right on the first
+    //   paint rather than after a round trip — and right with no network at all;
+    // - the fetch second, because the server is the source of truth: a like
+    //   made on another device appears here, and the mirror is *replaced* by the
+    //   answer rather than merged with it (see the caching rules in `likes.js`);
+    // - the flush last, so a queue left over from an offline session goes out as
+    //   soon as the number is known.
+    //
+    // A failed fetch is deliberately silent. The visitor keeps the likes they
+    // can see, the queue keeps whatever did not make it, and nothing about a
+    // song starting depends on either.
+    useEffect(() => {
+        if (!qq) {
+            setLiked([]);
+            // 只看喜欢 is a filter over a set that no longer exists. Leaving it
+            // on would show an empty list with no way to explain why.
+            setLikedOnly(false);
+            return undefined;
+        }
+        // A pre-D1 local list, if this browser still has one, joins the queue
+        // first — its entries are part of the mirror as well, so this has to
+        // happen before the mirror is read back.
+        migrateLegacyLikes(qq);
+        setLiked(readLikedKeys(qq));
+        flushLikes().catch(() => { });
+        let cancelled = false;
+        refreshLikes(qq)
+            .then((keys) => { if (!cancelled) setLiked(keys); })
+            .catch(() => { });
+        return () => { cancelled = true; };
+    }, [qq]);
+
+    /* --- 置顶 (the pinned ranking) --- */
 
     useEffect(() => {
         setOrder(readKeyList(ORDER_KEY));
-        setLiked(readKeyList(LIKED_KEY));
     }, []);
 
     // 置顶 — move the song to the head of the list.
@@ -468,28 +513,36 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // follows its state. Toggling rather than two functions keeps the state and
     // the toast reading from the same decision, so they cannot disagree.
     //
-    // A Drive track is refused rather than stored. The feature is the public
-    // library's: a Drive file id means nothing outside the account that owns
-    // it, so a like there would be a key that can never match a song again —
-    // and the list would then hold something the visitor cannot see or remove.
-    // Refusing keeps it honest; the UI does not offer the button in the first
-    // place, so this is the guard behind that, not the thing that shows it.
+    // Two refusals, both of them the guard *behind* a UI that does not offer the
+    // button in the first place:
+    //
+    // - a Drive track, because the feature is the public library's (a Drive file
+    //   id means nothing outside the account that owns it, so a like there would
+    //   be a key that can never match a song again);
+    // - no QQ number, because a like belongs to a number now that it lives in
+    //   the database. That one *does* speak up: the heart is on screen, so a tap
+    //   has to say what is missing instead of doing nothing.
+    //
+    // The tap is answered immediately — the mirror is updated here and the
+    // request goes out on its own (see `applyLikeChange`), so nothing about this
+    // waits for a network.
     const toggleLike = useCallback(function (track) {
         if (!track) return;
         if (track.source === DRIVE_SOURCE) return;
+        if (!qq) {
+            setNotice('先绑定 QQ 号，才能喜欢歌曲');
+            return;
+        }
         const key = audioCacheKey(track);
         const { title } = parseTrackName(track.name);
         const wasLiked = likedSet.has(key);
-        setLiked((keys) => {
-            const next = wasLiked ? keys.filter((entry) => entry !== key) : keys.concat(key);
-            writeKeyList(LIKED_KEY, next);
-            return next;
-        });
+        setLiked((keys) => (wasLiked ? keys.filter((entry) => entry !== key) : keys.concat(key)));
         // Outside the updater on purpose: an updater has to be pure, and React
         // may run it more than once. `wasLiked` is read from the rendered set,
         // which is what the button the visitor just pressed was showing.
+        applyLikeChange(qq, track, !wasLiked);
         setNotice(wasLiked ? `已取消喜欢：${title}` : `已喜欢：${title}`);
-    }, [likedSet]);
+    }, [likedSet, qq]);
 
     const toggleLikedOnly = useCallback(function () {
         setLikedOnly((on) => !on);

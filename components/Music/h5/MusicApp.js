@@ -7,6 +7,7 @@ import {
 } from '../shared';
 import usePlayer from '../core/usePlayer';
 import usePlayStats from './usePlayStats';
+import useDataSync from './useDataSync';
 import PageHead from '../core/PageHead';
 import PlayerAudio from '../core/PlayerAudio';
 import Cover from '../Cover';
@@ -14,6 +15,7 @@ import Account from './Account';
 import CacheManager from './CacheManager';
 import DriveSheet from './DriveSheet';
 import Profile from './Profile';
+import StatsPage from './StatsPage';
 import MiniPlayer from './MiniPlayer';
 import NowPlaying from './NowPlaying';
 import TrackList from './TrackList';
@@ -133,7 +135,7 @@ const MusicApp = function () {
         onMetadata,
     } = player;
 
-    // 'list' | 'profile' | 'account' — which tab page is showing; the
+    // 'list' | 'profile' | 'account' | 'stats' — which tab page is showing; the
     // full-screen now-playing page floats above it while `playerOpen` is true.
     const [tab, setTab] = useState('list');
     // Scroll the body back to top whenever the active tab changes, so the
@@ -159,30 +161,36 @@ const MusicApp = function () {
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuClosing, setMenuClosing] = useState(false);
 
-    /* --- the visitor's avatar --- */
+    /* --- the visitor's own pages --- */
 
-    // The 账号 page's 听歌排行 card: the visitor's own play counts, all time and
-    // for the last seven days.
+    // 听歌排行: the visitor's play counts, all time and for the last seven days.
     //
     // `active` is "is that page on screen", not "is this component mounted":
-    // all three tab pages stay mounted so their scroll positions survive (see
+    // all four tab pages stay mounted so their scroll positions survive (see
     // the note on `tab`), so a ranking loaded on mount would be a request every
-    // time the app opens. It is owned here rather than inside `Account` for the
-    // same reason the cache manager's data is owned by the player — the page
-    // stays a view.
-    const playStats = usePlayStats({ qq, active: tab === 'account' });
+    // time the app opens. It is owned here rather than inside `StatsPage` for
+    // the same reason the cache manager's data is owned by the player — the
+    // page stays a view.
+    const playStats = usePlayStats({ qq, active: tab === 'stats' });
 
-    // The QQ number behind the header avatar. It lives in `usePlayer` now
+    // 账号's 数据同步 row: how much of the visitor's own data (plays *and*
+    // likes) is still only on this device, and the button that pushes it. Both
+    // queues, one row, one button — the visitor does not have two kinds of
+    // unsent data, they have unsent data.
+    const dataSync = useDataSync({ active: tab === 'account' });
+
+    // The QQ number behind the identity card. It lives in `usePlayer` now
     // rather than here, because it is no longer only about the avatar: it is
-    // also the key every play count is recorded under, and plays are recorded
-    // by the player — which all three layouts share. One storage read, one
-    // answer to "who is listening".
+    // also the key every play count and every like is recorded under, and both
+    // are recorded by the player — which all three layouts share. One storage
+    // read, one answer to "who is listening".
     //
     // What stays here is the *picture*: the URL and the "it failed to load"
-    // flag, because the same disc is drawn on two screens (the list's header
-    // and the 账号 page) and a fallback each caller decides for itself is two
-    // fallbacks that can disagree — one showing a QQ avatar while the other
-    // shows the note glyph.
+    // flag. The list's top bar draws the app's mark now, not a face, so 账号's
+    // identity card is the only caller — but the fallback stays here anyway,
+    // because that is where the number it depends on is turned into a URL, and
+    // a caller deciding for itself is a fallback that can disagree with the
+    // next one.
     const [avatarBroken, setAvatarBroken] = useState(false);
 
     // Cleared whenever the number changes, because "this picture failed" says
@@ -269,8 +277,8 @@ const MusicApp = function () {
             </div>
 
             <div className={styles.app}>
-                {/* Both tab pages stay mounted (scroll position survives the
-            switch); the shown one replays its enter transition. */}
+                {/* All four tab pages stay mounted (scroll position survives
+                    the switch); the shown one replays its enter transition. */}
                 <div
                     className={`${styles.view}${tab === 'list' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
                 >
@@ -293,8 +301,6 @@ const MusicApp = function () {
                         onToggleTrack={toggleTrack}
                         onGoProfile={() => setTab('profile')}
                         onGoAccount={() => setTab('account')}
-                        avatarUrl={avatarUrl}
-                        onAvatarError={onAvatarError}
                         menuOpen={menuOpen && !menuClosing}
                         onOpenMenu={openMenu}
                         rowMenuId={rowMenuId}
@@ -320,11 +326,11 @@ const MusicApp = function () {
                 <div
                     className={`${styles.view}${tab === 'account' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
                 >
-                    {/* The visitor's own page, opened by tapping the avatar.
+                    {/* The visitor's own page, opened by tapping the app's mark.
                         The appearance switch and the cache used to be entries in
                         the list's three-dots drawer, which mixed a library
                         action (谷歌云盘链接) with personal settings; the drawer
-                        is the library's now, and these are the face's. */}
+                        is the library's now, and these are the mark's. */}
                     <Account
                         qq={qq}
                         avatarUrl={avatarUrl}
@@ -334,11 +340,28 @@ const MusicApp = function () {
                         onToggleTheme={toggleTheme}
                         onOpenCache={goCacheManager}
                         onGoList={() => setTab('list')}
-                        // The 听歌排行 card's whole data source, as one prop:
-                        // it is a single hook's output and this page is its
-                        // only consumer, unlike the player's eighty fields
-                        // which each screen picks a different subset of.
-                        playStats={playStats}
+                        onGoStats={() => setTab('stats')}
+                        // The 数据同步 row's whole data source, as one prop: it
+                        // is a single hook's output and this page is its only
+                        // consumer, unlike the player's eighty fields which
+                        // each screen picks a different subset of.
+                        dataSync={dataSync}
+                    />
+                </div>
+                <div
+                    className={`${styles.view}${tab === 'stats' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
+                >
+                    {/* 听歌排行, one hop from 账号. It is a tab page like the
+                        others — kept mounted, animated in — rather than a
+                        sheet, because it is a place you can stay for a while
+                        and scroll, not a modal decision. */}
+                    <StatsPage
+                        qq={qq}
+                        stats={playStats.stats}
+                        loading={playStats.loading}
+                        error={playStats.error}
+                        reload={playStats.reload}
+                        onGoAccount={() => setTab('account')}
                     />
                 </div>
             </div>

@@ -200,6 +200,18 @@ export const IconPerson = () => (
     </SvgStroke>
 );
 
+// Three bars of different heights — 听歌排行's mark. Bars rather than a trophy
+// or a medal: the page is a list ordered by play count, and bars say "counts"
+// without promising a prize. Three strokes survive 16px where a bar chart with
+// a baseline or a grid would turn into a smudge.
+export const IconChart = ({ size = 20 }) => (
+    <SvgStroke size={size}>
+        <path d="M4.5 20V14" />
+        <path d="M12 20V4.5" />
+        <path d="M19.5 20v-8.5" />
+    </SvgStroke>
+);
+
 // Download-into-a-box — the cache manager's mark.
 export const IconArchive = ({ size = 20 }) => (
     <SvgStroke size={size}>

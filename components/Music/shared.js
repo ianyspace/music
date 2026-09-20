@@ -1,5 +1,7 @@
 /* Shared constants + pure helpers for the music app. */
 
+import { site } from 'config';
+
 export const GSI_SRC = 'https://accounts.google.com/gsi/client';
 export const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
@@ -42,19 +44,9 @@ export const DESKTOP_LIST_KEY = 'music:setting:desktopList';
 // Keeping them next to the theme/ripples keys also means "clear site data"
 // wipes the visitor's taste along with the rest of their settings.
 export const ORDER_KEY = 'music:setting:order';
-// 我喜欢 — a *keep-in* list: a JSON array of `<source>:<id>` keys in
-// localStorage. Same reasoning as above for not putting it in IndexedDB, and
-// the same consequence — "clear site data" takes the visitor's taste with it.
-//
-// 永不过期 is literal, and it is why there is no `expiresAt` here to read: the
-// list cache stores an expiry and therefore has to honour old entries, whereas
-// nothing ever invalidates a like. A song the visitor liked stays liked.
-//
-// Only the public library can be liked (`toggleLike` refuses a Drive track), so
-// in practice every entry starts with `cloud:`. The source is still part of the
-// key because that is what `audioCacheKey` builds, and a second key shape for
-// one list is exactly the kind of thing that silently stops matching later.
-export const LIKED_KEY = 'music:setting:liked';
+// 我喜欢 lives in the Worker's D1 database now, keyed by the visitor's QQ
+// number, with a local mirror per number — see `likes.js`, which owns all of
+// it (`LEGACY_KEY` there is the pre-D1 key this module used to export).
 // Last-played stamps for cached audio, as `{ '<source>:<id>': timestamp }`.
 //
 // Deliberately NOT stored inside the cached record itself. Refreshing a stamp
@@ -88,6 +80,21 @@ const ART_GRADIENTS = [
     ['#8e8ef7', '#4150d8'],
     ['#66d1ba', '#1d9a8a'],
 ];
+
+/**
+ * A URL for a file under `public/`.
+ *
+ * The basePath has to be added by hand: Next prefixes `next/link` and `_next/*`
+ * itself, but `public/**` is copied to the site root verbatim. On this project
+ * page (`/music/`) a bare `/icon-192.png` therefore points at the user's site
+ * root and 404s — which is exactly how the site had a broken favicon for a
+ * while. `pages/_document.js` spells the prefix out for the `<link>` tags for
+ * the same reason; this is the same rule for anything React renders.
+ */
+export const assetUrl = function (file) {
+    const path = String(file || '');
+    return `${site.pathPrefix || ''}${path.startsWith('/') ? path : `/${path}`}`;
+};
 
 export const formatSize = function (bytes) {
     const size = Number(bytes);

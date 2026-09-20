@@ -10,26 +10,31 @@ import {
     IconPause,
     IconSearch,
 } from '../icons';
-import { emptyListMessage, parseTrackName, trackGradient } from '../shared';
+import { assetUrl, emptyListMessage, parseTrackName, trackGradient } from '../shared';
 import { DRIVE_SOURCE } from '../librarySource';
 import Cover from '../Cover';
 
 import styles from './TrackList.module.scss';
 
 /**
- * The song list. The sticky top bar holds the visitor's avatar and the search /
+ * The song list. The sticky top bar holds the app's mark and the search /
  * 我喜欢 / three-dots actions; tapping search unfolds the field into that row
  * and focuses it. The three-dots button opens the bottom drawer owned by the
  * shell (see `MusicApp`), which reports whether the drawer is open through
  * `menuOpen` — the button only shows its expanded state. The track rows scroll
  * underneath.
  *
- * The avatar stands where the library's brand mark and name used to, and it is
- * the way into 账号: tapping it opens the page that holds the visitor's own
- * settings (appearance, cache, QQ number). The library's *name* did not leave
- * with the title, though: it is still here as the page's only `<h1>`, off
- * screen (see `.sr-only`). It is the one thing that says which library the rows
- * below belong to, and the smoke test watches it to see a source switch.
+ * The mark stands where the library's brand name used to, and it is the way
+ * into 账号: tapping it opens the page that holds the visitor's own settings
+ * (appearance, cache, QQ number, 听歌排行). It used to be the visitor's *avatar*
+ * — a QQ picture once a number was bound. That moved to the 账号 page's identity
+ * card, where it belongs: a face is about who is listening, and this button is
+ * about where the settings are. What is here now is the app itself.
+ *
+ * The library's *name* did not leave with the title, though: it is still here as
+ * the page's only `<h1>`, off screen (see `.sr-only`). It is the one thing that
+ * says which library the rows below belong to, and the smoke test watches it to
+ * see a source switch.
  *
  * Rows cover every audio file, sorted by name; the folder chosen on the
  * profile page filters the whole list.
@@ -49,8 +54,11 @@ import styles from './TrackList.module.scss';
  *
  * 我喜欢: the heart does not open a screen, it narrows this list to the liked
  * songs and narrows it back. `canLike` is false for a Drive library, where the
- * feature does not apply, and the button is not rendered at all in that case —
- * an entry that could only ever come back empty is worse than no entry.
+ * feature does not apply, **and for a visitor with no QQ number bound** — likes
+ * belong to a number now that they live in the database, so a filter with
+ * nothing behind it is not rendered at all. (The prompt for that case lives on
+ * the heart in the player and in the row drawer, which stay visible and say what
+ * is missing — see `toggleLike`.)
  */
 const TrackList = function ({
     connected,
@@ -68,8 +76,6 @@ const TrackList = function ({
     onToggleTrack,
     onGoProfile,
     onGoAccount,
-    avatarUrl,
-    onAvatarError,
     menuOpen,
     onOpenMenu,
     rowMenuId,
@@ -112,49 +118,38 @@ const TrackList = function ({
         <div className={styles.page}>
             <header className={styles.head}>
                 <div className={styles['head-row']}>
-                    {/* The visitor's avatar, standing where the library's brand
-                        mark and name used to, and now a **button**: tapping it
-                        opens 账号 (`onGoAccount`), which is where the appearance
-                        switch, the cache and the QQ number live. It used to be
-                        a picture on purpose — there was nothing behind it, and
-                        a control that does nothing is worse than a picture that
-                        does nothing. There is something behind it now, so it
-                        became the control.
+                    {/* The app's mark, standing where the library's brand name
+                        used to, and a **button**: tapping it opens 账号
+                        (`onGoAccount`), which is where the appearance switch,
+                        the cache, the QQ number and 听歌排行 live. It used to be
+                        the visitor's avatar; that moved to the 账号 page's
+                        identity card, because a face says *who is listening*
+                        and this button says *where the settings are*.
 
-                        What it shows is `avatarUrl` — the QQ picture once the
-                        visitor has bound a number, the note otherwise. The
-                        shell owns that URL (and the failed-load flag that turns
-                        it back into `''`) because the same picture is drawn on
-                        the 账号 page, and a fallback decided in two places is
-                        two fallbacks. */}
+                        The file is the published app icon — the same artwork as
+                        the favicon — so the tab and the page agree. It is a
+                        plain `<img>` rather than an `icon` component because it
+                        is a picture, and `assetUrl` is what adds the basePath
+                        (files under `public/` are not prefixed by Next). */}
                     <button
                         type="button"
-                        className={styles.avatar}
+                        className={styles.mark}
                         title="账号"
                         aria-label="账号"
                         onClick={onGoAccount}
                     >
-                        {avatarUrl ? (
-                            <img
-                                className={styles['avatar-img']}
-                                src={avatarUrl}
-                                alt=""
-                                onError={onAvatarError}
-                            />
-                        ) : (
-                            <IconNote filled />
-                        )}
+                        <img className={styles['mark-img']} src={assetUrl('/icon-192.png')} alt="" />
                     </button>
                     {/* The library's name is still here, just not on screen.
                         It is the page's only heading, and it is the one thing
                         that says which library the rows below belong to — so
                         it stays in the document (and stays readable to the
                         smoke test, which watches it to see a source switch)
-                        while the pixels go to the avatar. */}
+                        while the pixels go to the mark. */}
                     <h1 className={styles['sr-only']}>
                         {source === DRIVE_SOURCE ? 'Google Drive' : 'Music Space'}
                     </h1>
-                    {/* Unfolds between the avatar and the actions; its own
+                    {/* Unfolds between the mark and the actions; its own
                         toggle hides while it is open. */}
                     {connected && searchOpen && (
                         <label className={styles['search-box']}>
@@ -200,7 +195,10 @@ const TrackList = function ({
                             while the field is open, unlike the search button
                             itself. `aria-pressed` is what makes it a toggle to
                             a screen reader rather than two different buttons
-                            whose labels happen to alternate. */}
+                            whose labels happen to alternate.
+                            Not rendered without a QQ number: the likes it would
+                            filter live in the database under that number, so
+                            there is nothing for it to narrow to. */}
                         {connected && canLike && (
                             <button
                                 type="button"

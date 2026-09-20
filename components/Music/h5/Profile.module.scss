@@ -1,136 +1,77 @@
-// "我的" screen: sticky top bar + settings-style grouped cards.
+// "我的" screen: the library you are browsing — which one it is, which folder of
+// it, and the way back to the rows.
+//
+// The shell (page / head / title / nav-btn / refresh-btn / group / row / hint /
+// footnote) comes from `settingsPage.module.scss`, shared with 「账号」 and
+// 「听歌排行」; only what is *about this page's subject* is declared here. That
+// split is new: the shell used to be copied into each page, and the third
+// settings-style page was the agreed moment to extract it.
 
 .page {
-    box-sizing: border-box;
-    padding: 0 18px 48px; /* no mini bar on this page — just dock breathing */
+    composes: page from './settingsPage.module.scss';
 }
 
-/* --- sticky top bar --- */
-
 .head {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    margin: 0 -18px;
-    padding: 10px 18px 12px;
-    background: var(--glass);
-    border-bottom: 1px solid var(--hairline);
-    -webkit-backdrop-filter: blur(24px) saturate(1.8);
-    backdrop-filter: blur(24px) saturate(1.8);
+    composes: head from './settingsPage.module.scss';
 }
 
 .head-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    composes: head-row from './settingsPage.module.scss';
 }
 
 .title {
-    margin: 0;
-    font-size: 26px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: var(--text);
+    composes: title from './settingsPage.module.scss';
 }
 
 .head-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
+    composes: head-actions from './settingsPage.module.scss';
 }
 
-/* capsule entry back to the song list */
 .nav-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 34px;
-    padding: 0 13px;
-    border: 1px solid var(--glass-border);
-    border-radius: 17px;
-    background: var(--glass-strong);
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 700;
-    font-family: inherit;
-    cursor: pointer;
-    box-shadow: 0 4px 12px -6px rgba(31, 38, 79, 0.35);
-    transition: transform 0.15s, background-color 0.2s;
-
-    svg {
-        width: 16px;
-        height: 16px;
-    }
-
-    @media (hover: hover) {
-        &:hover {
-            transform: scale(1.04);
-        }
-    }
-
-    &:active {
-        transform: scale(0.95);
-    }
+    composes: nav-btn from './settingsPage.module.scss';
 }
 
 .refresh-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    border: 1px solid var(--glass-border);
-    border-radius: 50%;
-    background: var(--glass-strong);
-    color: var(--text);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: transform 0.15s;
-
-    @media (hover: hover) {
-        &:hover:not(:disabled) {
-            transform: scale(1.08);
-        }
-    }
-
-    &:disabled {
-        opacity: 0.5;
-        cursor: wait;
-    }
+    composes: refresh-btn from './settingsPage.module.scss';
 }
 
 .spinning {
-    animation: spin 0.9s linear infinite;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+    composes: spinning from './settingsPage.module.scss';
 }
 
 .group {
-    margin-bottom: 16px;
-    padding: 2px 14px 12px;
-    border-radius: 20px;
-    background: var(--card);
-    border: 1px solid var(--hairline);
-    box-shadow: var(--shadow-card);
+    composes: group from './settingsPage.module.scss';
 }
 
 .group-label {
-    padding: 10px 2px 6px;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    color: var(--text-2);
-    text-transform: uppercase;
+    composes: group-label from './settingsPage.module.scss';
 }
 
-/* --- account card --- */
+.row {
+    composes: row from './settingsPage.module.scss';
+}
+
+.row-btn {
+    composes: row-btn from './settingsPage.module.scss';
+}
+
+.row-icon {
+    composes: row-icon from './settingsPage.module.scss';
+}
+
+.row-label {
+    composes: row-label from './settingsPage.module.scss';
+}
+
+.row-chev {
+    composes: row-chev from './settingsPage.module.scss';
+}
+
+.footnote {
+    composes: footnote from './settingsPage.module.scss';
+}
+
+/* --- the library card --- */
 
 .account {
     display: flex;
@@ -179,62 +120,10 @@
     color: var(--text-2);
 }
 
-/* --- settings rows --- */
+/* --- folder picker --- */
 
-.row {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 13px 2px;
-    border: 0;
-    border-bottom: 1px solid var(--hairline);
-    background: transparent;
-    color: var(--text);
-    font-family: inherit;
-    text-align: left;
-
-    &:last-child {
-        border-bottom: 0;
-    }
-}
-
-.row-btn {
-    cursor: pointer;
-    border-radius: 10px;
-    transition: background-color 0.18s;
-
-    @media (hover: hover) {
-        &:hover {
-            background: var(--row-hover);
-        }
-    }
-}
-
-.row-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    flex-shrink: 0;
-    border-radius: 8px;
-    color: #fff;
-    background: linear-gradient(135deg, var(--accent-2), var(--accent));
-
-    svg {
-        width: 16px;
-        height: 16px;
-    }
-}
-
-.row-label {
-    flex: 1;
-    min-width: 0;
-    font-size: 15px;
-    font-weight: 600;
-}
-
+/* A `<select>` wearing the `.row` shape: the label is the row's label, the
+   control is the row's value, and the chevron is the same one. */
 .row-select {
     appearance: none;
     -webkit-appearance: none;
@@ -257,41 +146,5 @@
     option {
         color: var(--option-color);
         background: var(--option-bg);
-    }
-}
-
-.row-chev {
-    display: inline-flex;
-    flex-shrink: 0;
-    color: var(--text-2);
-    pointer-events: none;
-}
-
-.footnote {
-    margin: 4px 8px 0;
-    font-size: 11.5px;
-    line-height: 1.7;
-    color: var(--text-2);
-}
-
-@media (max-width: 520px) {
-    .page {
-        padding: 0 12px 48px;
-    }
-
-    .head {
-        margin: 0 -12px;
-        padding-left: 12px;
-        padding-right: 12px;
-    }
-
-    .title {
-        font-size: 22px;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .spinning {
-        animation: none;
     }
 }
