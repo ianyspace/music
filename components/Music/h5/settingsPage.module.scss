@@ -1,5 +1,6 @@
-// The settings-style page shell, shared by the phone's three of them: 「我的」
-// (Profile), 「账号」 (Account) and 「听歌排行」 (StatsPage).
+// The settings vocabulary, shared by the phone's settings-style screens: the page
+// shell (「听歌排行」) and the card / row / hint shapes (also 「账号」 and
+// 「音乐库」, which are sheets and take their frame from `SheetChrome` instead).
 //
 // These shapes used to be *copied* between Profile and Account, deliberately:
 // two pages did not justify a third file both import, and that file would have
@@ -8,17 +9,20 @@
 // the same time rather than leaving one page on the old copy. 听歌排行 is that
 // page, so this is that moment.
 //
-// What belongs here is only the **shell**: the sticky bar, the grouped cards,
-// the settings rows and the footnotes. Anything that is about one page's
-// subject stays in that page's own module (the QQ form and the sync row in
-// Account, the folder select in Profile, the ranking list in StatsPage), because
-// a shared file that grows a little of everything stops being a shell and
-// becomes the place nobody dares change.
+// What belongs here is only the **vocabulary**: the sticky bar a page wears, the
+// grouped cards, the settings rows and the footnotes. Anything that is about one
+// screen's subject stays in that screen's own module (the QQ form and the sync
+// row in Account, the folder select in Profile, the ranking list in StatsPage),
+// because a shared file that grows a little of everything stops being a
+// vocabulary and becomes the place nobody dares change.
 //
 // Everything here is shaped by the theme tokens (`--text`, `--card`,
 // `--hairline`, `--glass*`) that `MusicApp.module.scss` declares, so one
 // definition follows both palettes.
 
+/* The page shell — used by 「听歌排行」, which is a page. 账号 and 音乐库 are
+   sheets, so they compose `.body` from `core/sheetBase.module.scss` instead and
+   none of the bar classes below appear in them. */
 .page {
     box-sizing: border-box;
     padding: 0 18px 48px; /* no mini bar on these pages — just dock breathing */
@@ -122,11 +126,11 @@
     }
 }
 
-/* The one loud button a page owns: 确定 on 账号's QQ form, 去绑定 QQ 号 on
-   听歌排行的空态. It wears the same gradient as a settings row's icon chip, so
-   "this is the thing to press" looks the same on all three pages — and it lives
-   here rather than in one of them because the second page that needed it was
-   the moment it stopped being that page's button. */
+/* The one loud button a screen owns: 确认 on 账号's QQ form, 去确认 QQ 号 on
+   听歌排行's empty state. It wears the same gradient as a settings row's icon
+   chip, so "this is the thing to press" looks the same wherever it appears — and
+   it lives here rather than in one of them because the second screen that needed
+   it was the moment it stopped being that screen's button. */
 .primary-btn {
     height: 40px;
     padding: 0 18px;

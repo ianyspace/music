@@ -19,15 +19,25 @@ import { flushLikes, pendingLikeCount } from '../likes';
  * is the whole of what they need to know about it. Flushing is sequential
  * rather than parallel: this is a quiet background chore, not a race.
  *
- * `active` is the page being on screen, not the hook being mounted — all three
- * tab pages stay mounted (see `MusicApp`), and counting the queues on mount
- * would mean reading localStorage for a row nobody is looking at.
+ * `active` is the panel being on screen, not the hook being mounted — both tab
+ * pages stay mounted (see `MusicApp`), and counting the queues on mount would
+ * mean reading localStorage for a row nobody is looking at.
+ *
+ * `revision` is anything that can change the queues *while the row is up*.
+ * Confirming a number is the one that matters: it adopts whatever the visitor
+ * liked as a guest (`adoptGuestLikes`), which puts entries in the outbox without
+ * the visitor pressing anything. Without this the row would still be saying
+ * "本地记录已全部上传" over a queue that had just grown. (A play recorded while
+ * the panel is open is the other way the count can go stale, and it is left
+ * alone: music keeps playing under the panel, the number is refreshed on the
+ * next press of 同步, and a live counter for a background chore is not worth a
+ * timer.)
  *
  * `ready` is separate from `pending === 0` for the same reason as in
  * `usePlayStats`: before the queues have been counted, "已是最新" would be a
  * claim about a question nobody asked.
  */
-const useDataSync = function ({ active }) {
+const useDataSync = function ({ active, revision }) {
     const [pending, setPending] = useState(0);
     const [ready, setReady] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -37,7 +47,7 @@ const useDataSync = function ({ active }) {
         if (!active) return;
         setPending(pendingCount() + pendingLikeCount());
         setReady(true);
-    }, [active]);
+    }, [active, revision]);
 
     /**
      * 同步 — send both queues, then drop exactly what the server acknowledged.

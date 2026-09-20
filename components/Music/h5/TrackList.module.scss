@@ -1,11 +1,13 @@
-// "歌曲" screen: a sticky top bar (in-row search + icon actions + the app's
-// mark, at the far right); the track rows scroll underneath it.
+// "歌曲" screen: a sticky top bar (the app's mark at the leading end, then the
+// in-row search, the icon actions and the ⋮ at the trailing end); the track rows
+// scroll underneath.
 //
 // The bar is the original one — sticky, full-bleed, glass — with the brand mark
-// and the library's name taken out and, for a while, the visitor's avatar put in
-// their place. The avatar left for 账号's identity card and the mark came back
-// as the trailing control; the ⋮ that used to close the row is gone entirely
-// (its last entry moved to 「我的」).
+// taken out and, for a while, the visitor's avatar put in its place. The avatar
+// left for 账号's identity card, the mark came back (as a rounded square, so it
+// reads as an app icon rather than a face), and the ⋮ is back with it: the
+// drawer it opens holds three things again (音乐库 / 谷歌云盘链接 / 缓存管理),
+// which is what a three-dots button is for.
 //
 // (A short-lived version of this scrolled the bar away and floated a compact
 // glass copy in behind it. That is gone: two bars taking turns was more
@@ -43,7 +45,7 @@
     gap: 10px;
 }
 
-/* The app's mark at the trailing end of the bar — the way into 账号.
+/* The app's mark at the leading end of the bar — the way into 账号.
 
    A **rounded square**, not a circle. The artwork is an app icon, and the circle
    made it read as an avatar — which is exactly what this button used to be, and
@@ -131,12 +133,13 @@
     border: 0;
 }
 
-/* The trailing group, and **`margin-left: auto` is load-bearing**: the row's
-   only other child is the `sr-only` heading, which is `position: absolute` and
-   therefore not a flex item at all. With `justify-content: space-between` and a
-   single in-flow child, that child is laid out at the *start* — so without this
-   the whole group (search, heart, mark) would jump to the left edge the moment
-   the mark moved out of the leading position. */
+/* The trailing group (search / 我喜欢 / ⋮). `margin-left: auto` is belt and
+   braces: with the mark back as a real in-flow child, `space-between` already
+   has two edges to push apart, and with the search field unfolded its `flex: 1`
+   eats the free space before any auto margin sees it. It stays because it makes
+   the group's end-of-row position a property of the group rather than of the
+   row's child count — the row's other child is an `sr-only` heading, which is
+   `position: absolute` and therefore not a flex item at all. */
 .head-actions {
     display: flex;
     align-items: center;

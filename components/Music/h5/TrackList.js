@@ -17,34 +17,34 @@ import Cover from '../Cover';
 import styles from './TrackList.module.scss';
 
 /**
- * The song list. The sticky top bar holds the search / 我喜欢 actions and the
- * app's mark, at the far right; tapping search unfolds the field into that row
- * and focuses it. The track rows scroll underneath.
+ * The song list. The sticky top bar holds the app's mark at the leading end and
+ * the search / 我喜欢 / ⋮ actions at the trailing one; tapping search unfolds the
+ * field into that row and focuses it. The track rows scroll underneath.
  *
- * The bar has **no ⋮ any more**. It opened the shell's bottom drawer, which had
- * been reduced to a single entry (谷歌云盘链接) once 缓存管理 and 切换外观 moved
- * to 账号 — and a menu of one is worse than no menu: it costs a tap and a
- * decision to reach something that could have been a row. That entry is on
- * 「我的」 now, which is the page about *which songs are here*.
+ * The bar has the ⋮ back, and it is a *menu* again rather than the menu-of-one it
+ * had been reduced to: 音乐库 (the library sheet), 谷歌云盘链接 and 缓存管理. A
+ * three-dots button earns its place by holding more than one thing, and the
+ * things it holds are the ones about the library and the device rather than
+ * about the visitor — those live behind the mark.
  *
- * The mark is the way into 账号: tapping it opens the page that holds the
- * visitor's own things (the QQ number, 听歌排行, the sync button, appearance,
- * the cache). It used to be the visitor's *avatar* — a QQ picture once a number
- * was bound; that moved to 账号's identity card, where a face belongs. It also
- * used to sit on the left, where the library's brand name had been; it moved to
- * the trailing end because the left edge of a list is where the content starts.
+ * The mark is the way into 账号: tapping it opens the sheet that holds the
+ * visitor's own things (the QQ number, 听歌排行, the sync button, appearance). It
+ * used to be the visitor's *avatar* — a QQ picture once a number was bound; that
+ * moved to 账号's identity card, where a face belongs. It sits at the leading end
+ * because that is where the library's brand name was, and a bar with its mark on
+ * the left and its actions on the right is what a phone app looks like.
  *
  * `qqBound` is drawn as a dot on the mark's bottom-right corner (grey / green)
  * and spoken in its label: the button doubles as the "is my number in?" light,
- * so that question does not need a page visit to answer.
+ * so that question does not need a sheet visit to answer.
  *
  * The library's *name* did not leave with the title, though: it is still here as
  * the page's only `<h1>`, off screen (see `.sr-only`). It is the one thing that
  * says which library the rows below belong to, and the smoke test watches it to
  * see a source switch.
  *
- * Rows cover every audio file, sorted by name; the folder chosen on the
- * profile page filters the whole list.
+ * Rows cover every audio file, sorted by name; the folder chosen in the library
+ * sheet (or in the Drive sheet) filters the whole list.
  *
  * Two list-scoped behaviours are handed upward rather than implemented here:
  * the "jump to the playing track" button lives in `MiniPlayer` (it is anchored
@@ -54,18 +54,15 @@ import styles from './TrackList.module.scss';
  * `track-pulse` class.
  *
  * Each row's three-dots button opens a per-song drawer (置顶 / 喜欢)
- * that the shell owns, for the same reason the list's own drawer lived there: a
+ * that the shell owns, for the same reason the list's own drawer lives there: a
  * `position: fixed` child would be trapped by this column's `transform`ed
  * ancestor. `rowMenuId` is the track whose drawer is open, so the button can
  * report its expanded state.
  *
  * 我喜欢: the heart does not open a screen, it narrows this list to the liked
  * songs and narrows it back. `canLike` is false for a Drive library, where the
- * feature does not apply, **and for a visitor with no QQ number bound** — likes
- * belong to a number now that they live in the database, so a filter with
- * nothing behind it is not rendered at all. (The prompt for that case lives on
- * the heart in the player and in the row drawer, which stay visible and say what
- * is missing — see `toggleLike`.)
+ * feature does not apply. It is *not* gated on a QQ number: likes work for a
+ * guest too, they just stay in this browser (see `likes.js`).
  */
 const TrackList = function ({
     connected,
@@ -81,8 +78,10 @@ const TrackList = function ({
     loadingId,
     isPlaying,
     onToggleTrack,
-    onGoProfile,
+    onOpenDrive,
     onGoAccount,
+    menuOpen,
+    onOpenMenu,
     qqBound,
     rowMenuId,
     onOpenRowMenu,
@@ -93,7 +92,7 @@ const TrackList = function ({
     // `likedOnly` has to go in, or an empty 我喜欢 reads as "there are no
     // audio files here" — see `emptyListMessage`.
     const empty = visibleTracks.length === 0 || listLoading
-        ? emptyListMessage({ listLoading, keyword, folderHint: '我的', likedOnly })
+        ? emptyListMessage({ listLoading, keyword, folderHint: '音乐库', likedOnly })
         : '';
     // The search field only exists while unfolded; a tap on the search button
     // reveals it and puts the caret straight inside.
@@ -129,17 +128,53 @@ const TrackList = function ({
                         that says which library the rows below belong to — so
                         it stays in the document (and stays readable to the
                         smoke test, which watches it to see a source switch)
-                        while the pixels go to the mark on the right.
+                        while the pixels go to the mark beside it.
 
-                        It is also the *only* thing on the left now: the mark
-                        moved to the trailing end of the row (see below), so
-                        with no search open the bar is this heading and three
-                        buttons. `position: absolute` takes it out of the flex
-                        flow, which is why its position in the markup does not
-                        matter. */}
+                        `position: absolute` takes it out of the flex flow, which
+                        is why its position in the markup does not matter: the
+                        row's two in-flow children are the mark and the actions,
+                        and `space-between` puts them at the two edges. */}
                     <h1 className={styles['sr-only']}>
                         {source === DRIVE_SOURCE ? 'Google Drive' : 'Music Space'}
                     </h1>
+                    {/* The app's mark, at the **leading end** of the bar, and the
+                        way into 账号 — the sheet holding the QQ number, 听歌排行,
+                        the sync button and the appearance switch.
+
+                        It is the published app icon — the same artwork as the
+                        favicon, so the tab and the page agree. It is a plain
+                        `<img>` rather than an `icon` component because it is a
+                        picture, and `assetUrl` is what adds the basePath (files
+                        under `public/` are not prefixed by Next).
+
+                        Two details are the button's whole look:
+                        - it is a **rounded square**, not a circle, so the
+                          artwork reads as an app icon rather than as an
+                          avatar (the visitor's face is on 账号's identity
+                          card, where a face belongs);
+                        - the **dot at its bottom-right** is the QQ state:
+                          grey = 未确认, green = 已确认. It is the answer to
+                          "did my number actually take?" at a glance, before
+                          opening a sheet to find out — the button *is* the
+                          indicator, so the state is legible from the list. */}
+                    <button
+                        type="button"
+                        className={styles.mark}
+                        title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
+                        aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
+                        onClick={onGoAccount}
+                    >
+                        <img className={styles['mark-img']} src={assetUrl('/icon-192.png')} alt="" />
+                        {/* Decorative: the state is already in the label
+                            above, and a screen reader does not need to be
+                            told about a coloured pixel. */}
+                        <span
+                            className={qqBound
+                                ? `${styles['mark-dot']} ${styles['mark-dot-on']}`
+                                : styles['mark-dot']}
+                            aria-hidden="true"
+                        />
+                    </button>
                     {/* Unfolds between the mark and the actions; its own
                         toggle hides while it is open. */}
                     {connected && searchOpen && (
@@ -187,9 +222,8 @@ const TrackList = function ({
                             itself. `aria-pressed` is what makes it a toggle to
                             a screen reader rather than two different buttons
                             whose labels happen to alternate.
-                            Not rendered without a QQ number: the likes it would
-                            filter live in the database under that number, so
-                            there is nothing for it to narrow to. */}
+                            Rendered for a guest as well: their likes are real
+                            likes, they simply live in this browser. */}
                         {connected && canLike && (
                             <button
                                 type="button"
@@ -204,53 +238,27 @@ const TrackList = function ({
                                 <IconHeart filled={likedOnly} />
                             </button>
                         )}
-                        {/* The app's mark, at the **far right** of the bar, and
-                            the way into 账号 — the page holding the QQ number,
-                            听歌排行, the sync button, appearance and the cache.
+                        {/* ⋮ — the app's menu: 音乐库, 谷歌云盘链接, 缓存管理. It
+                            opens a drawer owned by the shell (this column sits
+                            under a `transform`ed ancestor, so a `position:
+                            fixed` child here would be trapped). `aria-expanded`
+                            is the drawer's state, not this button's.
 
-                            It used to sit on the left, where the library's brand
-                            name had been; it moved because the left edge of a
-                            list is where the *content* starts, and a control
-                            that leaves the list should not be the first thing
-                            the eye lands on. The ⋮ that used to close this row
-                            is gone: its only remaining entry (谷歌云盘链接) is
-                            on 「我的」 now, and a button whose whole job is to
-                            open a menu of one is worse than no button.
-
-                            Two details are the button's whole look:
-                            - it is a **rounded square**, not a circle, so the
-                              artwork reads as an app icon rather than as an
-                              avatar (the visitor's face is on 账号's identity
-                              card, where a face belongs);
-                            - the **dot at its bottom-right** is the QQ state:
-                              grey = 未确认, green = 已确认. It is the answer to
-                              "did my number actually take?" at a glance, before
-                              opening a page to find out — the button *is* the
-                              indicator, so the state is legible from the list.
-
-                            The file is the published app icon — the same artwork
-                            as the favicon, so the tab and the page agree. It is
-                            a plain `<img>` rather than an `icon` component
-                            because it is a picture, and `assetUrl` is what adds
-                            the basePath (files under `public/` are not prefixed
-                            by Next). */}
+                            Not gated on `connected`: an empty library is
+                            exactly when 谷歌云盘链接 is worth reaching, and the
+                            cache manager does not care what the list holds. */}
                         <button
                             type="button"
-                            className={styles.mark}
-                            title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
-                            aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
-                            onClick={onGoAccount}
+                            className={menuOpen
+                                ? `${styles['nav-btn']} ${styles['nav-btn-on']}`
+                                : styles['nav-btn']}
+                            title="更多"
+                            aria-label="更多功能"
+                            aria-haspopup="menu"
+                            aria-expanded={Boolean(menuOpen)}
+                            onClick={onOpenMenu}
                         >
-                            <img className={styles['mark-img']} src={assetUrl('/icon-192.png')} alt="" />
-                            {/* Decorative: the state is already in the label
-                                above, and a screen reader does not need to be
-                                told about a coloured pixel. */}
-                            <span
-                                className={qqBound
-                                    ? `${styles['mark-dot']} ${styles['mark-dot-on']}`
-                                    : styles['mark-dot']}
-                                aria-hidden="true"
-                            />
+                            <IconMoreVertical />
                         </button>
                     </div>
                 </div>
@@ -267,11 +275,14 @@ const TrackList = function ({
                     <span className={styles['connect-icon']}><IconNoteList /></span>
                     <h2 className={styles['connect-title']}>曲库里还没有歌曲</h2>
                     <p className={styles['connect-sub']}>
-                        公共曲库暂时是空的；也可以在「我的」页面连接 Google 云盘，
-                        播放你自己云盘里的音乐。
+                        公共曲库暂时是空的；也可以连接 Google 云盘，播放你自己云盘里的音乐。
                     </p>
-                    <button type="button" className={styles['connect-btn']} onClick={onGoProfile}>
-                        去看看
+                    {/* Straight into the Drive sheet rather than into a menu: an
+                        empty library has exactly one useful next step, and a
+                        prompt that opens a list of options would be asking the
+                        visitor to guess which one. */}
+                    <button type="button" className={styles['connect-btn']} onClick={onOpenDrive}>
+                        连接 Google 云盘
                     </button>
                 </section>
             ) : (

@@ -1,42 +1,17 @@
-// "我的" screen: the library you are browsing — which one it is, which folder of
+// "音乐库" sheet: the library you are browsing — which one it is, which folder of
 // it, and the way back to the rows.
 //
-// The shell (page / head / title / nav-btn / refresh-btn / group / row / hint /
-// footnote) comes from `settingsPage.module.scss`, shared with 「账号」 and
-// 「听歌排行」; only what is *about this page's subject* is declared here. That
-// split is new: the shell used to be copied into each page, and the third
-// settings-style page was the agreed moment to extract it.
+// The frame comes from `SheetChrome` and the scrolling body from
+// `core/sheetBase.module.scss`; the card/row vocabulary comes from
+// `settingsPage.module.scss`, shared with 「账号」 and 「听歌排行」. Only what is
+// *about this panel's subject* is declared here. It has no page header — a sheet
+// is dismissed by its own collapse button.
 
-.page {
-    composes: page from './settingsPage.module.scss';
-}
+/* The scrolling body every sheet shares. */
+.body {
+    composes: body from '../core/sheetBase.module.scss';
 
-.head {
-    composes: head from './settingsPage.module.scss';
-}
-
-.head-row {
-    composes: head-row from './settingsPage.module.scss';
-}
-
-.title {
-    composes: title from './settingsPage.module.scss';
-}
-
-.head-actions {
-    composes: head-actions from './settingsPage.module.scss';
-}
-
-.nav-btn {
-    composes: nav-btn from './settingsPage.module.scss';
-}
-
-.refresh-btn {
-    composes: refresh-btn from './settingsPage.module.scss';
-}
-
-.spinning {
-    composes: spinning from './settingsPage.module.scss';
+    padding-top: 10px;
 }
 
 .group {
@@ -67,8 +42,19 @@
     composes: row-chev from './settingsPage.module.scss';
 }
 
+.hint {
+    composes: hint from './settingsPage.module.scss';
+}
+
 .footnote {
     composes: footnote from './settingsPage.module.scss';
+}
+
+/* Spins the refresh glyph while the list is loading — the chrome's action button
+   is disabled then, so this is what says "working" rather than "broken". */
+.spinning {
+    display: inline-flex;
+    composes: spinning from './settingsPage.module.scss';
 }
 
 /* --- the library card --- */

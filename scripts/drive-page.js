@@ -45,6 +45,11 @@
  *      a feature wired into only one of them looks finished until a person
  *      notices. 取消置顶 is checked by the *whole row order* coming back, not
  *      by the first row — see the stage.
+ *   8. **The phone's navigation is what it says it is.** The ⋮ drawer holds the
+ *      three entries it should, 音乐库 and 账号 arrive as *sheets* (no page
+ *      header, a collapse button), and a like made before a QQ number is
+ *      confirmed stays in this browser — then goes with the number when one is
+ *      confirmed, which the 数据同步 row is read to prove. See `target.shell`.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -189,6 +194,14 @@ const PAGES = [
             player: '[aria-label="打开播放页"]',
             heart: 'button[aria-label="喜欢"], button[aria-label="取消喜欢"]',
         },
+        // The shell's own structure: the ⋮ and the drawer it opens, the app's
+        // mark (which raises 账号), and the row drawer this stage likes a song
+        // through. See `the phone's shell` below.
+        shell: {
+            more: 'header button[aria-label="更多功能"]',
+            mark: 'header button[aria-label^="账号"]',
+            rowDrawer: ROW_DRAWER,
+        },
     },
 ];
 
@@ -270,6 +283,9 @@ const drive = async (target, index) => {
     // anyway" look identical from the outside, and only one of them means the
     // Drive path was tested.
     let driveStubHits = 0;
+    // How many requests to the likes API were stopped. Same reason as above —
+    // and it is the only evidence that the write never reached the database.
+    let likesStubHits = 0;
 
     socket.addEventListener('message', (event) => {
         const msg = JSON.parse(event.data);
@@ -303,8 +319,26 @@ const drive = async (target, index) => {
             const cors = [
                 { name: 'Access-Control-Allow-Origin', value: '*' },
                 { name: 'Access-Control-Allow-Headers', value: '*' },
-                { name: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS' },
+                { name: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,POST' },
             ];
+            // The likes API is answered here too — and always with a failure.
+            // Two reasons, and the second is the important one: this file must
+            // never write a row into the real database, and a queue that *can*
+            // drain says nothing, because "已全部上传" is what an empty queue
+            // says as well. See `failLikes`.
+            if (request.url.includes('/likes')) {
+                const preflight = request.method === 'OPTIONS';
+                if (!preflight) likesStubHits += 1;
+                send('Fetch.fulfillRequest', {
+                    requestId,
+                    responseCode: preflight ? 204 : 503,
+                    responseHeaders: cors,
+                    ...(preflight
+                        ? {}
+                        : { body: Buffer.from('{"error":"stubbed"}').toString('base64') }),
+                }).catch(() => {});
+                return;
+            }
             const reply = request.method === 'OPTIONS'
                 ? { responseCode: 204, responseHeaders: cors }
                 : {
@@ -448,6 +482,30 @@ const drive = async (target, index) => {
                 urlPattern: 'https://www.googleapis.com/drive/v3/files*',
                 requestStage: 'Request',
             }],
+        });
+    };
+
+    /**
+     * Stop the likes API, at the network layer — see the branch in the
+     * `Fetch.requestPaused` handler.
+     *
+     * Two jobs. The first is safety: the endpoint writes to a real D1 database,
+     * and a test run must not leave rows behind under a number nobody owns. The
+     * second is that the failure is the state worth testing: 数据同步's whole
+     * subject is a queue that has *not* arrived, and a queue that drains
+     * instantly looks exactly like an empty one.
+     *
+     * The Drive pattern is repeated because `Fetch.enable` replaces the set
+     * rather than adding to it — dropping it would un-stub a stage that already
+     * ran, which is harmless, but keeping it is what makes this call idempotent
+     * with respect to order.
+     */
+    const failLikes = async () => {
+        await send('Fetch.enable', {
+            patterns: [
+                { urlPattern: 'https://www.googleapis.com/drive/v3/files*', requestStage: 'Request' },
+                { urlPattern: '*://*/likes*', requestStage: 'Request' },
+            ],
         });
     };
 
@@ -817,6 +875,257 @@ const drive = async (target, index) => {
         );
         // Leave the page as the next stage expects to find it: no drawer open.
         await closeDrawer();
+    }
+
+    /* --- the phone's shell: the ⋮ drawer, the two sheets, a guest's likes ---
+     *
+     * The phone has no tab bar. Its navigation is three taps: the app's mark
+     * (leading end of the list's bar) raises 账号, the ⋮ raises a drawer holding
+     * 音乐库 / 谷歌云盘链接 / 缓存管理, and 听歌排行 is a row inside 账号. This
+     * stage is here because all of that is *structure*, and structure is the one
+     * thing a build and a screenshot both pass over: a sheet that quietly grew a
+     * page header back, or a drawer that lost an entry, looks fine.
+     *
+     * The guest half is the other reason. 喜欢 works without a confirmed QQ
+     * number now, and the likes made that way are *only* local — which is a
+     * claim about where a write did **not** go. So the API is stopped
+     * (`failLikes`), the number is confirmed on the sheet, and what is checked
+     * is what the sheet then says about its own queue.
+     */
+    if (target.shell) {
+        const spec = target.shell;
+        const menu = '[role="menu"][aria-label="更多功能"]';
+        const sheetOf = (title) => `[role="dialog"][aria-label=${JSON.stringify(title)}]`;
+        const sheetState = (title) => evaluate(`(() => {
+            const s = document.querySelector(${JSON.stringify(sheetOf(title))});
+            if (!s) return null;
+            return {
+                header: Boolean(s.querySelector('header')),
+                collapse: Boolean(s.querySelector('button[title="收起"]')),
+                text: (s.innerText || '').replace(/\\s+/g, ' ').trim(),
+            };
+        })()`);
+
+        // --- the ⋮ and its drawer -------------------------------------------
+        const moreClicked = await evaluate(`(() => {
+            const b = document.querySelector(${JSON.stringify(spec.more)});
+            if (!b) return 'missing';
+            b.click();
+            return 'clicked';
+        })()`);
+        check('the ⋮ is on the bar', moreClicked === 'clicked', String(moreClicked));
+        await sleep(800);
+        await shot('drawer');
+        const menuTitles = await evaluate(`(() => {
+            const m = document.querySelector(${JSON.stringify(menu)});
+            if (!m) return null;
+            return [...m.querySelectorAll('[role="menuitem"]')]
+                .map((b) => ((b.innerText || '').split('\\n')[0] || '').trim());
+        })()`);
+        check(
+            'the drawer holds the library, the drive and the cache',
+            Array.isArray(menuTitles) && menuTitles.join('/') === '音乐库/谷歌云盘链接/缓存管理',
+            Array.isArray(menuTitles) ? menuTitles.join('/') : 'no drawer',
+        );
+
+        // --- 音乐库 is a sheet, not a page ----------------------------------
+        const libraryPicked = await evaluate(`(() => {
+            const m = document.querySelector(${JSON.stringify(menu)});
+            if (!m) return 'no drawer';
+            const item = [...m.querySelectorAll('[role="menuitem"]')]
+                .find((b) => ((b.innerText || '').split('\\n')[0] || '').trim() === '音乐库');
+            if (!item) return 'no 音乐库 entry';
+            item.click();
+            return 'clicked';
+        })()`);
+        check('音乐库 is one of them', libraryPicked === 'clicked', String(libraryPicked));
+        await sleep(900);
+        await shot('library-sheet');
+        const library = await sheetState('音乐库');
+        check('the library sheet opened', Boolean(library), library ? 'open' : '(not found)');
+        check(
+            '...as a sheet, not a page with a header',
+            Boolean(library) && library.header === false && library.collapse === true,
+            library ? `header=${library.header} collapse=${library.collapse}` : '',
+        );
+        check(
+            '...and the drawer got out of the way',
+            (await evaluate(`!document.querySelector(${JSON.stringify(menu)})`)) === true,
+            'drawer closed',
+        );
+
+        await evaluate(`(() => {
+            const s = document.querySelector(${JSON.stringify(sheetOf('音乐库'))});
+            const b = s && s.querySelector('button[title="收起"]');
+            if (b) b.click();
+        })()`);
+        await sleep(800);
+        check(
+            'its collapse button shuts it',
+            (await evaluate(`!document.querySelector(${JSON.stringify(sheetOf('音乐库'))})`)) === true,
+            'gone',
+        );
+
+        // Escape is the drawer's only other way out — it has a scrim, but a
+        // keyboard is what a wide-screen visitor reaches for.
+        await evaluate(`(() => {
+            const b = document.querySelector(${JSON.stringify(spec.more)});
+            if (b) b.click();
+        })()`);
+        await sleep(700);
+        await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+        await sleep(800);
+        check(
+            'Escape shuts the drawer',
+            (await evaluate(`!document.querySelector(${JSON.stringify(menu)})`)) === true,
+            'closed',
+        );
+
+        // --- a guest likes a song, and nothing leaves the device -------------
+        await failLikes();
+        const likedId = await evaluate(`(() => {
+            const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
+            const row = ${pick};
+            if (!row) return '';
+            const li = row.closest('li');
+            return li ? (li.getAttribute('data-track-id') || '') : '';
+        })()`);
+        const likedTitle = await openRowDrawer(spec.rowDrawer, `${pick} || rows[0]`);
+        await sleep(900);
+        await shot('guest-drawer');
+        const guestLabel = await clickDrawerItem(spec.rowDrawer, ['喜欢', '取消喜欢']);
+        check('a guest is offered 喜欢', guestLabel === '喜欢', String(guestLabel));
+        await sleep(900);
+
+        const stored = await evaluate(`(() => ({
+            guest: JSON.parse(localStorage.getItem('music:likes:guest') || '[]').map((e) => e.id),
+            queued: JSON.parse(localStorage.getItem('music:likesPending') || '{}'),
+        }))()`);
+        check(
+            '...and it lands in this browser',
+            Array.isArray(stored.guest) && stored.guest.includes(likedId),
+            `${likedId} in [${(stored.guest || []).join(',')}]`,
+        );
+        check(
+            '...and is queued for nobody',
+            Object.keys(stored.queued || {}).length === 0,
+            JSON.stringify(stored.queued),
+        );
+
+        // --- the mark raises 账号, and confirming a number adopts those likes --
+        const markClicked = await evaluate(`(() => {
+            const b = document.querySelector(${JSON.stringify(spec.mark)});
+            if (!b) return 'missing';
+            b.click();
+            return 'clicked';
+        })()`);
+        check('the mark is on the bar', markClicked === 'clicked', String(markClicked));
+        await sleep(900);
+        await shot('account-sheet');
+        const account = await sheetState('账号');
+        check('the mark opens 账号', Boolean(account), account ? 'open' : '(not found)');
+        check(
+            '...as a sheet, not a page with a header',
+            Boolean(account) && account.header === false && account.collapse === true,
+            account ? `header=${account.header} collapse=${account.collapse}` : '',
+        );
+        check(
+            '...and it says the number is not confirmed',
+            Boolean(account) && account.text.includes('访客') && account.text.includes('未确认'),
+            account ? account.text.slice(0, 90) : '',
+        );
+
+        const saved = await evaluate(`(() => {
+            const s = document.querySelector(${JSON.stringify(sheetOf('账号'))});
+            if (!s) return 'no sheet';
+            const input = s.querySelector('input[aria-label="QQ 号"]');
+            const form = s.querySelector('form');
+            if (!input || !form) return 'no field';
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setter.call(input, '10001');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            form.requestSubmit();
+            return 'submitted';
+        })()`);
+        check('the number can be confirmed on the sheet', saved === 'submitted', String(saved));
+        await sleep(1600);
+        await shot('account-confirmed');
+        const confirmed = await sheetState('账号');
+        check(
+            '...and the sheet says so',
+            Boolean(confirmed) && confirmed.text.includes('QQ 10001') && confirmed.text.includes('已确认'),
+            confirmed ? confirmed.text.slice(0, 90) : '',
+        );
+        // The claim under test: the likes made as a guest went *with* the number,
+        // and they are still waiting because the API was stopped. Read from the
+        // sheet, not from localStorage — the row is the visitor's evidence.
+        check(
+            '...and the guest likes are now queued for it',
+            Boolean(confirmed) && /本地还有 \d+ 条数据没上传/.test(confirmed.text),
+            confirmed ? confirmed.text.slice(0, 140) : '',
+        );
+        const handedOver = await evaluate(`(() => ({
+            guest: JSON.parse(localStorage.getItem('music:likes:guest') || '[]').length,
+            queued: Object.keys(JSON.parse(localStorage.getItem('music:likesPending') || '{}')[10001] || {}),
+        }))()`);
+        check(
+            '...and this browser no longer holds them as a guest',
+            handedOver.guest === 0 && handedOver.queued.includes(likedId),
+            `guest=${handedOver.guest} queued=[${handedOver.queued.join(',')}]`,
+        );
+        check(
+            'the likes API was stopped, not called',
+            likesStubHits > 0,
+            `${likesStubHits} request(s)`,
+        );
+
+        // --- 听歌排行 is a row on 账号, and 账号 comes back from it -----------
+        const toStats = await evaluate(`(() => {
+            const s = document.querySelector(${JSON.stringify(sheetOf('账号'))});
+            if (!s) return 'no sheet';
+            const row = [...s.querySelectorAll('button')]
+                .find((b) => ((b.innerText || '').split('\\n')[0] || '').trim() === '听歌排行');
+            if (!row) return 'no 听歌排行 row';
+            row.click();
+            return 'clicked';
+        })()`);
+        check('听歌排行 is a row on 账号', toStats === 'clicked', String(toStats));
+        await sleep(1500);
+        await shot('stats');
+        check(
+            '...and it opens as a page, with the sheet out of the way',
+            (await evaluate(`Boolean(document.querySelector('[role="tablist"][aria-label="排行范围"]'))`)) === true
+                && (await evaluate(`!document.querySelector(${JSON.stringify(sheetOf('账号'))})`)) === true,
+            'ranking up, 账号 down',
+        );
+
+        const backToAccount = await evaluate(`(() => {
+            const b = [...document.querySelectorAll('button')]
+                .find((x) => x.getAttribute('title') === '账号');
+            if (!b) return 'no 账号 button';
+            b.click();
+            return 'clicked';
+        })()`);
+        check('the 账号 button on the ranking raises it again', backToAccount === 'clicked', String(backToAccount));
+        await sleep(1000);
+        check(
+            '...as the same sheet',
+            (await evaluate(`Boolean(document.querySelector(${JSON.stringify(sheetOf('账号'))}))`)) === true,
+            'sheet up',
+        );
+
+        // Leave the run clean for the 我喜欢 stage, which expects a public
+        // library with no number confirmed and nothing liked. This is the one
+        // place this file writes storage itself, and it is undoing its own
+        // side effects rather than arranging a state to be tested.
+        await evaluate(`(() => {
+            ['music:setting:qq', 'music:likes:guest', 'music:likesPending', 'music:likes:10001']
+                .forEach((k) => localStorage.removeItem(k));
+        })()`);
+        await send('Page.reload', {});
+        await sleep(3000);
+        const restored = await waitFor(rowTitles, (v) => Array.isArray(v) && v.length > 0, 30000);
+        check('the list comes back for the next stage', restored.value.length > 0, `${restored.value.length} rows`);
     }
 
     /* --- 我喜欢, end to end ------------------------------------------------

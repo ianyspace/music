@@ -1,35 +1,20 @@
-// "账号" screen: the visitor's own page — who they are, and how their data gets
+// "账号" sheet: the visitor's own panel — who they are, and how their data gets
 // to the database.
 //
-// The shell (page / head / title / nav-btn / group / row / hint / footnote)
-// comes from `settingsPage.module.scss`, shared with 「我的」 and 「听歌排行」.
-// What is declared here is only what is about *this* page: the identity card,
-// the QQ form, and the sync row. The ranking card that used to live here moved
-// to its own page (`StatsPage.module.scss`), which is also what made the shell
-// worth extracting.
+// The card/row/hint/footnote vocabulary comes from `settingsPage.module.scss`,
+// shared with 「听歌排行」; the *frame* comes from `SheetChrome` and the scrolling
+// body from `core/sheetBase.module.scss`. What is declared here is only what is
+// about this panel: the identity card, the QQ form, and the sync row. It has no
+// page header — a sheet is dismissed by its own collapse button, so the title
+// bar and the navigation capsules that used to open this file are gone.
 
-.page {
-    composes: page from './settingsPage.module.scss';
-}
+/* The scrolling body every sheet shares (no scrollbar, safe-area padding at the
+   bottom). The top padding is this panel's: the identity card should not touch
+   the title bar. */
+.body {
+    composes: body from '../core/sheetBase.module.scss';
 
-.head {
-    composes: head from './settingsPage.module.scss';
-}
-
-.head-row {
-    composes: head-row from './settingsPage.module.scss';
-}
-
-.title {
-    composes: title from './settingsPage.module.scss';
-}
-
-.head-actions {
-    composes: head-actions from './settingsPage.module.scss';
-}
-
-.nav-btn {
-    composes: nav-btn from './settingsPage.module.scss';
+    padding-top: 10px;
 }
 
 .group {

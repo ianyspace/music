@@ -22,10 +22,14 @@ import styles from './StatsPage.module.scss';
  * 最近 7 天 with no memory of why would read as a bug.
  *
  * The data is fetched by the hook while `active` (the page being *on screen*,
- * not merely mounted — all three tab pages stay mounted, see `MusicApp`).
+ * not merely mounted — both tab pages stay mounted, see `MusicApp`).
  * Uploading what is still local is deliberately *not* here: it is one row on
  * 账号, next to the number it is about, and a page about listening is not the
  * place to administer a queue.
+ *
+ * 账号 is a *sheet*, so the button in the header raises it rather than navigating
+ * to it — and the sheet is where this page was opened from, which is why the
+ * button is the only entry here: it is the way back, not a third destination.
  */
 const StatsPage = function ({ qq, stats, loading, error, reload, onGoAccount }) {
     const [scope, setScope] = useState('all');
@@ -87,10 +91,10 @@ const StatsPage = function ({ qq, stats, loading, error, reload, onGoAccount }) 
                 <div className={styles['head-row']}>
                     <h1 className={styles.title}>听歌排行</h1>
                     <div className={styles['head-actions']}>
-                        {/* Back where the visitor came from. This page has no
-                            list to go to — 歌曲 is one hop further, through the
-                            page that opened this one — so the single entry here
-                            is the page above it, not a third destination. */}
+                        {/* Back where the visitor came from — the 账号 sheet.
+                            This page has no list to go to (歌曲 is one hop
+                            further, under the sheet), so the single entry here
+                            is the panel above it, not a third destination. */}
                         <button
                             type="button"
                             className={styles['nav-btn']}
@@ -122,15 +126,15 @@ const StatsPage = function ({ qq, stats, loading, error, reload, onGoAccount }) 
                 <section className={styles.group}>
                     <div className={styles.empty}>
                         <p className={styles.hint}>
-                            听歌次数按 QQ 号记录，所以要先绑定一个号码。
-                            绑定之后这里会显示你自己的播放次数排行，可以看全部，也可以看最近 7 天。
+                            听歌次数按 QQ 号记录，所以要先确认一个号码。
+                            确认之后这里会显示你自己的播放次数排行，可以看全部，也可以看最近 7 天。
                         </p>
                         <button
                             type="button"
                             className={styles['primary-btn']}
                             onClick={onGoAccount}
                         >
-                            去绑定 QQ 号
+                            去确认 QQ 号
                         </button>
                     </div>
                 </section>

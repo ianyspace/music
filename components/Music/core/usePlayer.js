@@ -32,6 +32,7 @@ import {
 } from '../shared';
 import { recordPlay } from '../playStats';
 import {
+    adoptGuestLikes,
     applyLikeChange,
     flushLikes,
     migrateLegacyLikes,
@@ -117,10 +118,11 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     const [order, setOrder] = useState([]);
     // 我喜欢 — the other list preference, and the only one that is a *keep-in*
     // list rather than an arrangement. It is a feature of the public library
-    // specifically, so `toggleLike` refuses a Drive track; and it belongs to a
-    // QQ number, so it also refuses a visitor who has not bound one. The keys
-    // come from the local mirror of the database — see `likes.js` for why there
-    // is a mirror at all and what it is allowed to do.
+    // specifically, so `toggleLike` refuses a Drive track. It belongs to a QQ
+    // number when there is one, and to this browser when there is not: a visitor
+    // who has not confirmed a number can still like songs, and those likes stay
+    // on the device (the `guest` bucket in `likes.js`). The keys come from the
+    // local mirror — see that file for why there is a mirror at all.
     const [liked, setLiked] = useState([]);
     // 只看喜欢 — whether the list is narrowed to the liked songs. Deliberately
     // *not* persisted, and it sits next to `search` rather than next to the
@@ -391,7 +393,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         setQq(digits);
     }, []);
 
-    /* --- 我喜欢 (a local mirror of the database, per QQ number) --- */
+    /* --- 我喜欢 (a local mirror of the database, per visitor) --- */
 
     // Paint from the mirror, let the server correct it, and push whatever a
     // previous session left queued. Three steps in this order on purpose:
@@ -407,18 +409,24 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // A failed fetch is deliberately silent. The visitor keeps the likes they
     // can see, the queue keeps whatever did not make it, and nothing about a
     // song starting depends on either.
+    //
+    // With no number there is only the first step: a guest's likes are read from
+    // their own bucket and that is the whole story — nothing to fetch, nothing to
+    // send. Confirming a number *adopts* those likes into it (`adoptGuestLikes`),
+    // which is why that runs before the mirror is read back here.
     useEffect(() => {
         if (!qq) {
-            setLiked([]);
-            // 只看喜欢 is a filter over a set that no longer exists. Leaving it
-            // on would show an empty list with no way to explain why.
-            setLikedOnly(false);
+            // A pre-D1 local list belongs to the guest bucket too — it was this
+            // browser's, which is exactly what a guest is.
+            migrateLegacyLikes('');
+            setLiked(readLikedKeys(''));
             return undefined;
         }
         // A pre-D1 local list, if this browser still has one, joins the queue
         // first — its entries are part of the mirror as well, so this has to
         // happen before the mirror is read back.
         migrateLegacyLikes(qq);
+        adoptGuestLikes(qq);
         setLiked(readLikedKeys(qq));
         flushLikes().catch(() => { });
         let cancelled = false;
@@ -513,26 +521,22 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // follows its state. Toggling rather than two functions keeps the state and
     // the toast reading from the same decision, so they cannot disagree.
     //
-    // Two refusals, both of them the guard *behind* a UI that does not offer the
-    // button in the first place:
+    // One refusal, and it is the guard *behind* a UI that does not offer the
+    // button in the first place: a Drive track, because the feature is the public
+    // library's (a Drive file id means nothing outside the account that owns it,
+    // so a like there would be a key that can never match a song again).
     //
-    // - a Drive track, because the feature is the public library's (a Drive file
-    //   id means nothing outside the account that owns it, so a like there would
-    //   be a key that can never match a song again);
-    // - no QQ number, because a like belongs to a number now that it lives in
-    //   the database. That one *does* speak up: the heart is on screen, so a tap
-    //   has to say what is missing instead of doing nothing.
+    // No QQ number is **not** a refusal. Likes belong to a number when there is
+    // one and to this browser when there is not, so a guest can like and unlike
+    // freely; the toast says where it landed, because "is this saved anywhere
+    // but here?" is the one thing the visitor cannot see.
     //
-    // The tap is answered immediately — the mirror is updated here and the
-    // request goes out on its own (see `applyLikeChange`), so nothing about this
-    // waits for a network.
+    // The tap is answered immediately — the mirror is updated here and, for a
+    // number, the request goes out on its own (see `applyLikeChange`), so
+    // nothing about this waits for a network.
     const toggleLike = useCallback(function (track) {
         if (!track) return;
         if (track.source === DRIVE_SOURCE) return;
-        if (!qq) {
-            setNotice('先绑定 QQ 号，才能喜欢歌曲');
-            return;
-        }
         const key = audioCacheKey(track);
         const { title } = parseTrackName(track.name);
         const wasLiked = likedSet.has(key);
@@ -541,7 +545,9 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         // may run it more than once. `wasLiked` is read from the rendered set,
         // which is what the button the visitor just pressed was showing.
         applyLikeChange(qq, track, !wasLiked);
-        setNotice(wasLiked ? `已取消喜欢：${title}` : `已喜欢：${title}`);
+        setNotice(wasLiked
+            ? `已取消喜欢：${title}`
+            : `已喜欢：${title}${qq ? '' : '（只存在本机）'}`);
     }, [likedSet, qq]);
 
     const toggleLikedOnly = useCallback(function () {

@@ -42,7 +42,16 @@ const SheetChrome = function ({
             onAnimationEnd={() => { if (closing) onClosed(); }}
             onPointerDown={() => { if (closing) onCancelClose(); }}
         >
-            <div className={closing ? `${styles.page} ${styles['page-out']}` : styles.page}>
+            <div
+                className={closing ? `${styles.page} ${styles['page-out']}` : styles.page}
+                /* A modal panel, said out loud. The title is what the panel is,
+                   so it is what the panel is called — and it is also the handle
+                   the smoke test opens it by, which is the only reason a
+                   selector for these does not have to know a hashed class. */
+                role="dialog"
+                aria-modal="true"
+                aria-label={title}
+            >
                 <div className={styles.topbar}>
                     <button type="button" className={styles['top-btn']} title="收起" aria-label="收起" onClick={onClose}>
                         <IconChevronDown />
