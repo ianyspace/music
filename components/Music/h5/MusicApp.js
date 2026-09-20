@@ -1,25 +1,26 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
-import { parseTrackName, trackGradient } from '../shared';
+import {
+    normalizeQq,
+    parseTrackName,
+    qqAvatarUrl,
+    QQ_KEY,
+    storageGet,
+    storageSet,
+    trackGradient,
+} from '../shared';
 import usePlayer from '../core/usePlayer';
 import PageHead from '../core/PageHead';
 import PlayerAudio from '../core/PlayerAudio';
 import Cover from '../Cover';
+import Account from './Account';
 import CacheManager from './CacheManager';
 import DriveSheet from './DriveSheet';
 import Profile from './Profile';
 import MiniPlayer from './MiniPlayer';
 import NowPlaying from './NowPlaying';
 import TrackList from './TrackList';
-import {
-    IconArchive,
-    IconGoogleDrive,
-    IconHeart,
-    IconMoon,
-    IconNote,
-    IconPin,
-    IconSun,
-} from '../icons';
+import { IconGoogleDrive, IconHeart, IconNote, IconPin } from '../icons';
 import { DRIVE_SOURCE } from '../librarySource';
 
 import styles from './MusicApp.module.scss';
@@ -35,11 +36,16 @@ import styles from './MusicApp.module.scss';
  *
  * Everything stateful comes from `usePlayer`; what is left here is genuinely
  * phone-only UI state — which tab is showing, whether the full-screen player is
- * up, and whether the list's three-dots drawer is open. All three live in this
- * shell rather than the hook because the desktop has no equivalent of any of
- * them, and the drawer has to be mounted at this level anyway: the list column
- * sits under a `transform`ed ancestor, which would break `position: fixed`
- * inside it.
+ * up, whether the list's three-dots drawer is open, and who the avatar is. All
+ * of it lives in this shell rather than the hook because the desktop has no
+ * equivalent of any of it, and the drawer has to be mounted at this level
+ * anyway: the list column sits under a `transform`ed ancestor, which would break
+ * `position: fixed` inside it.
+ *
+ * The avatar URL is derived here rather than inside `TrackList` for the same
+ * reason: the same picture is drawn on the 账号 page, and a load-failure
+ * fallback that each caller decides for itself is two fallbacks that can
+ * disagree.
  */
 const MusicApp = function () {
     const player = usePlayer({ lyricsAutoOpen: false });
@@ -128,8 +134,8 @@ const MusicApp = function () {
         onMetadata,
     } = player;
 
-    // 'list' | 'profile' — which tab page is showing; the full-screen
-    // now-playing page floats above it while `playerOpen` is true.
+    // 'list' | 'profile' | 'account' — which tab page is showing; the
+    // full-screen now-playing page floats above it while `playerOpen` is true.
     const [tab, setTab] = useState('list');
     // Scroll the body back to top whenever the active tab changes, so the
     // visitor does not land in the middle of a page they have never seen.
@@ -153,6 +159,45 @@ const MusicApp = function () {
     // animation first (the sheet-unmount-via-animation-end trick).
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuClosing, setMenuClosing] = useState(false);
+
+    /* --- the visitor's avatar --- */
+
+    // The QQ number behind the header avatar, read from this browser on mount
+    // and written back when the visitor confirms one on 账号.
+    //
+    // Restoring in an effect rather than in `useState` is deliberate: this is a
+    // static export, so an initialiser that touches localStorage would also run
+    // during prerender and hand the client markup that disagrees with what it
+    // reads (the same reasoning as the theme in `usePlayer`).
+    //
+    // The stored value is re-validated on the way in, so a hand-edited key
+    // degrades to "not bound" instead of becoming a request for a nonsense
+    // picture.
+    const [qq, setQq] = useState('');
+    // Set when the QQ picture fails to load, so the disc falls back to the note
+    // glyph. Kept here rather than inside the avatar for the same reason as the
+    // URL — see the file comment. Cleared whenever the number changes, because
+    // "this picture failed" says nothing about the next one.
+    const [avatarBroken, setAvatarBroken] = useState(false);
+
+    useEffect(() => {
+        setQq(normalizeQq(storageGet(QQ_KEY)));
+    }, []);
+
+    const saveQq = useCallback(function (next) {
+        const digits = normalizeQq(next);
+        storageSet(QQ_KEY, digits);
+        setQq(digits);
+        setAvatarBroken(false);
+    }, []);
+
+    // '' means "draw the note": either no number is bound, or its picture did
+    // not arrive. Both callers get the same answer.
+    const avatarUrl = qq && !avatarBroken ? qqAvatarUrl(qq) : '';
+
+    const onAvatarError = useCallback(function () {
+        setAvatarBroken(true);
+    }, []);
 
     /* --- three-dots drawer --- */
 
@@ -247,6 +292,9 @@ const MusicApp = function () {
                         isPlaying={isPlaying}
                         onToggleTrack={toggleTrack}
                         onGoProfile={() => setTab('profile')}
+                        onGoAccount={() => setTab('account')}
+                        avatarUrl={avatarUrl}
+                        onAvatarError={onAvatarError}
                         menuOpen={menuOpen && !menuClosing}
                         onOpenMenu={openMenu}
                         rowMenuId={rowMenuId}
@@ -266,6 +314,25 @@ const MusicApp = function () {
                         onRefresh={refreshTracks}
                         loading={listLoading}
                         trackCount={tracks.length}
+                        onGoList={() => setTab('list')}
+                    />
+                </div>
+                <div
+                    className={`${styles.view}${tab === 'account' ? ` ${styles['view-in']}` : ` ${styles['view-off']}`}`}
+                >
+                    {/* The visitor's own page, opened by tapping the avatar.
+                        The appearance switch and the cache used to be entries in
+                        the list's three-dots drawer, which mixed a library
+                        action (谷歌云盘链接) with personal settings; the drawer
+                        is the library's now, and these are the face's. */}
+                    <Account
+                        qq={qq}
+                        avatarUrl={avatarUrl}
+                        onAvatarError={onAvatarError}
+                        onSaveQq={saveQq}
+                        theme={theme}
+                        onToggleTheme={toggleTheme}
+                        onOpenCache={goCacheManager}
                         onGoList={() => setTab('list')}
                     />
                 </div>
@@ -322,7 +389,13 @@ const MusicApp = function () {
 
             {/* Bottom drawer opened by the song list's three-dots button. It
                 belongs to the shell, so on a wide screen it stays centred over
-                the phone column instead of hanging off the list. */}
+                the phone column instead of hanging off the list.
+
+                It holds one entry, and that is the point: 缓存管理 and 切换外观
+                moved to 账号 (behind the avatar) because a library action and
+                personal settings are not the same kind of thing, and the ⋮ sits
+                on the library. What is left is the one entry that is about the
+                library you are browsing. */}
             {menuOpen && (
                 <div
                     className={menuClosing
@@ -360,41 +433,6 @@ const MusicApp = function () {
                             <span className={styles['menu-text']}>
                                 <span className={styles['menu-title']}>谷歌云盘链接</span>
                                 <span className={styles['menu-sub']}>连接或切换自己的云盘曲库</span>
-                            </span>
-                        </button>
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={() => { closeMenu(); goCacheManager(); }}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                <IconArchive size={20} />
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>缓存管理</span>
-                                <span className={styles['menu-sub']}>查看已缓存的歌曲，可单独或全部删除</span>
-                            </span>
-                        </button>
-                        {/* Appearance sits below the cache entry so the drawer
-                            reads as app actions first, display preference last. */}
-                        <button
-                            type="button"
-                            className={styles['menu-item']}
-                            role="menuitem"
-                            onClick={toggleTheme}
-                        >
-                            <span className={styles['menu-icon']} aria-hidden="true">
-                                {theme === 'dark' ? <IconSun size={20} /> : <IconMoon size={20} />}
-                            </span>
-                            <span className={styles['menu-text']}>
-                                <span className={styles['menu-title']}>切换外观</span>
-                                <span className={styles['menu-sub']}>
-                                    {theme === 'dark' ? '当前深色模式，点击切换到浅色' : '当前浅色模式，点击切换到深色'}
-                                </span>
-                            </span>
-                            <span className={styles['menu-value']}>
-                                {theme === 'dark' ? '深色' : '浅色'}
                             </span>
                         </button>
                     </div>

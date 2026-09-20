@@ -64,6 +64,16 @@ export const LIKED_KEY = 'music:setting:liked';
 // the whole write, which on a phone is the difference between the next song
 // starting and never loading. A stamp is a few bytes; the blob is megabytes.
 export const CACHE_PLAYED_KEY = 'music:cachePlayed';
+// The visitor's QQ number, typed on the phone's 账号 page. It buys exactly one
+// thing: the header avatar.
+//
+// Stored as bare digits rather than as JSON, because it is a single value and
+// "nothing saved yet" is a state of its own (the note placeholder) rather than
+// something a parsed object has to encode — the same shape as `THEME_KEY`. The
+// value is re-validated on the way out (`normalizeQq`), so a hand-edited or
+// half-written key degrades to "not bound" instead of becoming a broken image.
+export const QQ_KEY = 'music:setting:qq';
+
 // Drive returns at most `pageSize` files per response; follow nextPageToken
 // so libraries bigger than one page still show up (capped to stay sane).
 export const LIST_HARD_CAP = 1000;
@@ -155,6 +165,42 @@ export const writeKeyList = function (key, keys) {
     try {
         storageSet(key, JSON.stringify(keys || []));
     } catch (err) { /* see storageSet */ }
+};
+
+/**
+ * The digits of a QQ number, or `''` if what was typed is not one.
+ *
+ * One place decides what a valid QQ number is, and it decides it by *length*
+ * only (5–11 digits, which is what the service has ever issued). There is no
+ * check digit, no prefix rule and no way to verify an account from here, so
+ * anything stricter would be inventing authority the app does not have — the
+ * number is the visitor's own label for their avatar, not a credential.
+ *
+ * Everything else is stripped first: people paste "QQ：1234567" or a number
+ * with spaces from a contact card, and rejecting that teaches nothing.
+ */
+export const normalizeQq = function (value) {
+    const digits = String(value == null ? '' : value).replace(/\D/g, '');
+    return /^\d{5,11}$/.test(digits) ? digits : '';
+};
+
+/**
+ * The avatar image for a QQ number, from Tencent's public head-image endpoint.
+ *
+ * It is the endpoint every third-party client uses (`q1.qlogo.cn` with
+ * `b=qq`), and it needs no key, no token and no CORS: it is consumed as an
+ * `<img src>`, which is not a cross-origin request the page has to be allowed
+ * to make. That is also the whole of the guarantee — the app cannot tell a
+ * wrong number from a right one, because the service answers a nonexistent QQ
+ * with a *placeholder picture* rather than a 404. So the fallback below is for
+ * the network being unreachable, not for the number being wrong.
+ *
+ * Returns `''` when there is nothing to ask for, which is what the avatar
+ * reads as "draw the note instead".
+ */
+export const qqAvatarUrl = function (qq) {
+    const digits = normalizeQq(qq);
+    return digits ? `https://q1.qlogo.cn/g?b=qq&nk=${digits}&s=100` : '';
 };
 
 /**

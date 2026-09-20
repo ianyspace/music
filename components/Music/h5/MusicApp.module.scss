@@ -329,7 +329,6 @@
     flex-direction: column;
     gap: 3px;
     min-width: 0;
-    /* Takes the row's slack so a trailing `.menu-value` sits flush right. */
     flex: 1;
 }
 
@@ -340,14 +339,6 @@
 
 .menu-sub {
     font-size: 12.5px;
-    color: var(--text-2);
-}
-
-/* Trailing state on a menu row (currently: the theme in use). */
-.menu-value {
-    flex-shrink: 0;
-    margin-left: 8px;
-    font-size: 13px;
     color: var(--text-2);
 }
 

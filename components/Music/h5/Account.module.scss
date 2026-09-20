@@ -1,0 +1,345 @@
+// "账号" screen: the visitor's own page, opened by tapping the avatar in the
+// song list's top bar. Sticky top bar + settings-style grouped cards.
+//
+// The shapes here (page / head / title / nav-btn / group / group-label / row /
+// row-icon / row-label / row-chev / footnote) are the ones `Profile.module.scss`
+// uses for 「我的」, deliberately written out again rather than shared: two
+// pages is not enough to justify a third module both import, and the shared
+// version would have to live somewhere that belongs to neither page. If a third
+// settings-style page ever shows up, that is the moment to extract it — and to
+// fold 我的 in at the same time, rather than leaving one page on the old copy.
+
+.page {
+    box-sizing: border-box;
+    padding: 0 18px 48px; /* no mini bar on this page — just dock breathing */
+}
+
+/* --- sticky top bar --- */
+
+.head {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: 0 -18px;
+    padding: 10px 18px 12px;
+    background: var(--glass);
+    border-bottom: 1px solid var(--hairline);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(24px) saturate(1.8);
+}
+
+.head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.title {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: var(--text);
+}
+
+/* capsule entry back to the song list */
+.nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 13px;
+    border: 1px solid var(--glass-border);
+    border-radius: 17px;
+    background: var(--glass-strong);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 4px 12px -6px rgba(31, 38, 79, 0.35);
+    transition: transform 0.15s, background-color 0.2s;
+
+    svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.04);
+        }
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+}
+
+/* --- cards --- */
+
+.group {
+    margin-bottom: 16px;
+    padding: 2px 14px 12px;
+    border-radius: 20px;
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-card);
+}
+
+.group-label {
+    padding: 10px 2px 6px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: var(--text-2);
+    text-transform: uppercase;
+}
+
+/* --- identity card --- */
+
+.identity {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 2px 10px;
+}
+
+/* The same disc as the header avatar, one size up — `--avatar-bg` /
+   `--avatar-fg` are the theme tokens, so the two can never drift apart in
+   colour, and the picture (when there is one) is simply the disc covered by the
+   image. The image inherits the radius instead of the wrapper clipping it, the
+   same way the header's does. */
+.identity-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--avatar-bg);
+    color: var(--avatar-fg);
+    box-shadow: 0 10px 22px -10px rgba(0, 0, 0, 0.45);
+
+    svg {
+        display: block;
+        width: 30px;
+        height: 30px;
+    }
+
+    img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: inherit;
+        object-fit: cover;
+    }
+}
+
+.identity-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.identity-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.identity-sub {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-2);
+}
+
+/* --- QQ number --- */
+
+.qq-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 2px 8px;
+}
+
+.qq-input {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 0 13px;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: var(--field);
+    color: var(--text);
+    /* 16px floor — a focused input zooms the page on iOS just like a select. */
+    font-size: 16px;
+    font-family: inherit;
+
+    &::placeholder {
+        color: var(--text-2);
+    }
+
+    &:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+}
+
+.qq-save {
+    flex-shrink: 0;
+    height: 40px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+    color: #fff;
+    font-size: 14.5px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.2s;
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.04);
+        }
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+}
+
+/* Clearing is the same class of action as 取消置顶: the visitor typed the
+   number, so they have to be able to take it back. Quiet, next to 确定. */
+.qq-clear {
+    flex-shrink: 0;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.18s;
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--row-hover);
+        }
+    }
+}
+
+.hint {
+    margin: 0 2px;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text-2);
+}
+
+/* The only state that needs colour: the visitor pressed 确定 and nothing
+   happened, so the line above has to say why. */
+.hint-bad {
+    color: #ff453a;
+}
+
+/* --- settings rows --- */
+
+.row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 2px;
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    text-align: left;
+
+    &:last-child {
+        border-bottom: 0;
+    }
+}
+
+.row-btn {
+    cursor: pointer;
+    border-radius: 10px;
+    transition: background-color 0.18s;
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--row-hover);
+        }
+    }
+}
+
+.row-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+
+    svg {
+        width: 16px;
+        height: 16px;
+    }
+}
+
+.row-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* A row that reports a value instead of opening something (外观). */
+.row-value {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--text-2);
+}
+
+.row-chev {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--text-2);
+    pointer-events: none;
+}
+
+.footnote {
+    margin: 4px 8px 0;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text-2);
+}
+
+@media (max-width: 520px) {
+    .page {
+        padding: 0 12px 48px;
+    }
+
+    .head {
+        margin: 0 -12px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .title {
+        font-size: 22px;
+    }
+}

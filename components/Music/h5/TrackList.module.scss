@@ -41,7 +41,11 @@
 
 /* The visitor's avatar, standing where the brand mark and the library's name
    used to — a **filled disc with the glyph knocked out in white**, the fill
-   Apple Music's red ramp (both themes).
+   Apple Music's red ramp (both themes). It is a button: tapping it opens 账号.
+   It spent a while as a picture because there was nothing behind it; now there
+   is, so the disc is the control and carries the usual affordances (a cursor,
+   a press-scale) rather than looking like a decoration that happens to be
+   clickable.
 
    It used to be a pale `--field` disc with a dark glyph under a `--glass` pane,
    which in light mode came out as an empty white circle — a hole in the header
@@ -56,8 +60,7 @@
    put a cover back when the ramp changes: `--avatar-bg` is the whole story.
 
    `position` / `isolation` left with the pane — they were there to anchor an
-   absolutely-positioned child and to keep its blending inside the disc. Nothing
-   is stacked here any more. Not a button: there is nothing behind it yet. */
+   absolutely-positioned child and to keep its blending inside the disc. */
 .avatar {
     display: inline-flex;
     align-items: center;
@@ -65,9 +68,24 @@
     flex-shrink: 0;
     width: 40px;
     height: 40px;
+    padding: 0;
+    border: 0;
     border-radius: 50%;
     background: var(--avatar-bg);
     color: var(--avatar-fg);
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s;
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.06);
+        }
+    }
+
+    &:active {
+        transform: scale(0.94);
+    }
 
     /* Centring here is the flex box; centring *within* the box is the glyph's
        own bounding box, which `IconNote filled` shifts onto the middle of its
@@ -78,6 +96,18 @@
         width: 21px;
         height: 21px;
     }
+}
+
+/* The QQ picture, when the visitor has bound a number: it covers the disc
+   rather than replacing it, so the ramp is still there during the load and a
+   picture that never arrives leaves an avatar rather than a hole. Clipped by
+   the disc's own radius. */
+.avatar-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
 }
 
 /* The library's name, off screen but in the document — the page's heading, and

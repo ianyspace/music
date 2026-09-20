@@ -24,13 +24,12 @@ import styles from './TrackList.module.scss';
  * `menuOpen` — the button only shows its expanded state. The track rows scroll
  * underneath.
  *
- * The avatar stands where the library's brand mark and name used to. It is a
- * placeholder — a music note knocked out of a red disc, and deliberately not a
- * button, because a control that does nothing is worse than a picture that does
- * nothing. The library's *name* did not leave with the title, though: it is
- * still here as the page's only `<h1>`, off screen (see `.sr-only`). It is the
- * one thing that says which library the rows below belong to, and the smoke
- * test watches it to see a source switch.
+ * The avatar stands where the library's brand mark and name used to, and it is
+ * the way into 账号: tapping it opens the page that holds the visitor's own
+ * settings (appearance, cache, QQ number). The library's *name* did not leave
+ * with the title, though: it is still here as the page's only `<h1>`, off
+ * screen (see `.sr-only`). It is the one thing that says which library the rows
+ * below belong to, and the smoke test watches it to see a source switch.
  *
  * Rows cover every audio file, sorted by name; the folder chosen on the
  * profile page filters the whole list.
@@ -68,6 +67,9 @@ const TrackList = function ({
     isPlaying,
     onToggleTrack,
     onGoProfile,
+    onGoAccount,
+    avatarUrl,
+    onAvatarError,
     menuOpen,
     onOpenMenu,
     rowMenuId,
@@ -111,18 +113,38 @@ const TrackList = function ({
             <header className={styles.head}>
                 <div className={styles['head-row']}>
                     {/* The visitor's avatar, standing where the library's brand
-                        mark and name used to. A filled disc with a music note
-                        knocked out of it, and deliberately not a button: a
-                        control that does nothing is worse than a picture that
-                        does nothing.
+                        mark and name used to, and now a **button**: tapping it
+                        opens 账号 (`onGoAccount`), which is where the appearance
+                        switch, the cache and the QQ number live. It used to be
+                        a picture on purpose — there was nothing behind it, and
+                        a control that does nothing is worse than a picture that
+                        does nothing. There is something behind it now, so it
+                        became the control.
 
-                        The fill is Apple Music's red ramp and it is all there
-                        is — the low-blur pane that used to sit over the glyph
-                        is gone, because a pane over a ramp has nothing to do
-                        but dull the note. */}
-                    <span className={styles.avatar} role="img" aria-label="用户头像">
-                        <IconNote filled />
-                    </span>
+                        What it shows is `avatarUrl` — the QQ picture once the
+                        visitor has bound a number, the note otherwise. The
+                        shell owns that URL (and the failed-load flag that turns
+                        it back into `''`) because the same picture is drawn on
+                        the 账号 page, and a fallback decided in two places is
+                        two fallbacks. */}
+                    <button
+                        type="button"
+                        className={styles.avatar}
+                        title="账号"
+                        aria-label="账号"
+                        onClick={onGoAccount}
+                    >
+                        {avatarUrl ? (
+                            <img
+                                className={styles['avatar-img']}
+                                src={avatarUrl}
+                                alt=""
+                                onError={onAvatarError}
+                            />
+                        ) : (
+                            <IconNote filled />
+                        )}
+                    </button>
                     {/* The library's name is still here, just not on screen.
                         It is the page's only heading, and it is the one thing
                         that says which library the rows below belong to — so

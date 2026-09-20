@@ -15,9 +15,12 @@ import styles from './Profile.module.scss';
  * current library card and, once Drive is connected, the folder picker.
  *
  * The connect flow itself lives in its own sheet (`DriveSheet`), opened from
- * the song list's drawer next to "缓存管理" — that keeps this page about the
- * library you are browsing, not about a form. The public R2 catalogue is the
- * default, so this page never blocks playback behind an authorization step.
+ * the song list's drawer — that keeps this page about the library you are
+ * browsing, not about a form. The visitor's *own* settings (appearance, cache,
+ * the QQ number behind the avatar) are on 账号, the page the avatar opens: this
+ * one is about which songs are here, that one is about who is listening. The
+ * public R2 catalogue is the default, so this page never blocks playback behind
+ * an authorization step.
  */
 const Profile = function ({
     sourceName,
@@ -102,8 +105,9 @@ const Profile = function ({
 
             <p className={styles.footnote}>
                 公共曲库来自 Cloudflare R2，无需登录即可播放。想改用自己云盘里的歌曲，
-                在歌曲列表右上角的菜单里打开「谷歌云盘链接」；外观切换也在同一个菜单。
-                授权令牌与客户端 ID 只保存在本机浏览器，音频缓存同样只存在本地。
+                在歌曲列表右上角的菜单里打开「谷歌云盘链接」；外观切换和缓存管理在
+                列表左上角头像进入的「账号」页里。授权令牌与客户端 ID 只保存在本机浏览器，
+                音频缓存同样只存在本地。
             </p>
         </div>
     );
