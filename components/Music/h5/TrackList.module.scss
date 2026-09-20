@@ -1,34 +1,31 @@
-// "歌曲" screen: a top bar (avatar + in-row search + icon actions) that scrolls
-// away with the list; the rows scroll underneath it.
+// "歌曲" screen: a sticky top bar (avatar + in-row search + icon actions); the
+// track rows scroll underneath it.
 //
-// The bar used to be `position: sticky` at `top: 0`. It is deliberately not any
-// more: it leaves with the content, and the shell floats a compact glass
-// version of the same controls in behind it (`MusicApp`'s `.float`). A sticky
-// bar plus a floating bar would be two bars on screen at once at the top.
-//
-// **It is still a bar.** Dropping the stickiness once took the surface with it
-// (the glass, the shadow, the full-bleed edge) and left the avatar and the
-// buttons floating on the page with nothing holding them — which reads as "the
-// container is gone", not as "the bar scrolled away". What changed is where it
-// sits, not what it is.
+// The bar is the original one — sticky, full-bleed, glass — with the brand mark
+// and the library's name taken out and the visitor's avatar put in their place.
+// (A short-lived version of this scrolled the bar away and floated a compact
+// glass copy in behind it. That is gone: two bars taking turns was more
+// machinery than the header was worth, and the handover was the only thing the
+// eye noticed.)
 
 .page {
     box-sizing: border-box;
     padding: 0 18px 92px; /* bottom = mini bar (58) + dock (14) */
 }
 
-/* --- top bar (in flow, so it leaves with the list) --- */
+/* --- sticky top bar --- */
 
 .head {
+    position: sticky;
+    top: 0;
+    z-index: 10;
     margin: 0 -18px;
     padding: 10px 18px;
     background: var(--glass);
-    /* Square and full-bleed on purpose: this is the top edge of the list, not a
-       card floating over it. The shadow is what separates the bar from the
-       first rows — no radius, no hairline, nothing that would draw a border
-       around it. It had a second job while the bar was sticky (keeping rows
-       from colliding with the title as they scrolled *under* it); now nothing
-       scrolls under it, so it is only the edge. */
+    /* Square and full-bleed on purpose: the header is the top edge of the list,
+       not a card floating over it. The shadow is only here to keep rows from
+       colliding with the bar as they scroll under — no radius, no hairline,
+       nothing that would draw a border around it. */
     border-radius: 0;
     box-shadow: 0 6px 16px -14px rgba(31, 38, 79, 0.18), 0 1px 4px -3px rgba(31, 38, 79, 0.06);
     -webkit-backdrop-filter: blur(24px) saturate(1.8);
@@ -42,9 +39,12 @@
     gap: 10px;
 }
 
-/* The visitor's avatar, standing where the library's name used to. A plain
-   disc rather than a button: there is nothing behind it yet. */
+/* The visitor's avatar, standing where the brand mark and the library's name
+   used to. A music note behind a frosted pane, and not a button: there is
+   nothing behind it yet, and a control that does nothing is worse than a
+   picture that does nothing. */
 .avatar {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -53,12 +53,36 @@
     height: 40px;
     border-radius: 50%;
     background: var(--field);
-    color: var(--text-2);
+    /* `--text`, not `--text-2`: the glyph has to survive the cover. The pane
+       takes ~60% of the contrast out of whatever is under it, so a note drawn
+       in the muted colour arrives at roughly a quarter strength — legible in a
+       4x render and invisible at 40px, which is the only size that ships. */
+    color: var(--text);
+    /* The glyph is clipped to the disc by the radius rather than by
+       `overflow: hidden`, which would also clip the cover's own edge. */
+    isolation: isolate;
 
     svg {
         width: 21px;
         height: 21px;
     }
+}
+
+/* The frosted cover: a low-blur pane laid over the glyph, so the note reads as
+   something *under* glass instead of a flat icon in a circle.
+
+   "Low" is the point and it is a narrow window. `backdrop-filter` blurs what is
+   painted behind it, so the blur radius *is* how much of the note survives —
+   past ~4px it stops being a music note and becomes a smudge. The `--glass`
+   fill on top is what makes it read as glass rather than as a blurred icon;
+   without it the note just looks out of focus. */
+.avatar-glass {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(3px) saturate(1.6);
+    backdrop-filter: blur(3px) saturate(1.6);
 }
 
 /* The library's name, off screen but in the document — the page's heading, and
@@ -85,9 +109,57 @@
     flex-shrink: 0;
 }
 
-/* The three icon buttons themselves live in `ListActions.module.scss`: they
-   are shown twice (this bar, and the shell's floating bar), so their recipe is
-   defined once beside the component that renders them. */
+/* bare icon buttons (search / 我喜欢 / more) — no circle frame */
+.nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.15s, background-color 0.2s, color 0.2s;
+
+    svg {
+        width: 19px;
+        height: 19px;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--row-hover);
+            transform: scale(1.08);
+        }
+    }
+
+    &:active {
+        transform: scale(0.92);
+    }
+}
+
+/* The 我喜欢 filter, while it is on.
+   Three signals rather than one, because each fails somewhere: the filled heart
+   carries it without colour, the accent colour carries it at a glance, and the
+   tinted disc gives the lit button the same footprint as its neighbours so the
+   header does not shift when it toggles. Colour alone would be nothing at all
+   in a greyscale screenshot. */
+.nav-btn-on {
+    background: var(--row-active);
+    color: var(--accent);
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--row-active);
+            color: var(--accent);
+        }
+    }
+}
 
 /* --- in-row search pill (between the title and the icon buttons) --- */
 

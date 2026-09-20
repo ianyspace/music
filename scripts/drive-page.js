@@ -45,11 +45,6 @@
  *      a feature wired into only one of them looks finished until a person
  *      notices. 取消置顶 is checked by the *whole row order* coming back, not
  *      by the first row — see the stage.
- *   8. **The phone's top bar hands over to the floating bar.** The header
- *      scrolls away and a glass bar fades in behind it. The bar is mounted the
- *      whole time, so it is read through `visibility` rather than by looking
- *      for it, and the handover is driven by the header's own rect rather than
- *      by a scroll offset — see the stage.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -181,17 +176,6 @@ const PAGES = [
         keys: [{ key: 'Escape', paused: false }],
         // 置顶 / 取消置顶, same stage as the desktop's — see `pin` above.
         pin: ROW_DRAWER,
-        // The top bar scrolls away, and a floating glass bar takes over.
-        //
-        // `:has()` rather than a bare `header`, and not out of tidiness: the
-        // profile page renders a `<header>` of its own, both tab pages stay
-        // mounted, and `visibility: hidden` is not `display: none` — so the
-        // wrong element still has a box and would answer a different question
-        // with a confident number. The avatar is what makes this the list's bar.
-        top: {
-            head: 'header:has([role="img"][aria-label="用户头像"])',
-            bar: '[data-float="list-bar"]',
-        },
         // 我喜欢 — the one feature this file exercises in full, because it is
         // the only one with state that has to survive a reload. See
         // `exerciseLike`.
@@ -394,6 +378,12 @@ const drive = async (target, index) => {
      * own drive is connected — which makes it the one place a source *switch*
      * is observable, as opposed to the list, which keeps showing the previous
      * library until the new one arrives.
+     *
+     * It is the header's `<h1>`, and that heading is off screen (`.sr-only`) now
+     * that the avatar has the pixels — but `innerText` reads a clipped element
+     * all the same. `display: none` would not, which is why the heading is
+     * hidden the way it is: this lookup is the only observable a source switch
+     * has.
      */
     const SOURCE_TITLE = `(() => {
         const head = document.querySelector('h1');
@@ -827,136 +817,6 @@ const drive = async (target, index) => {
         );
         // Leave the page as the next stage expects to find it: no drawer open.
         await closeDrawer();
-    }
-
-    /* --- 顶部栏滚走，浮动条接管 ---------------------------------------------
-     *
-     * The phone's header used to stick to the top. It leaves with the list now,
-     * and the shell floats a glass bar in behind it: the visitor's avatar on
-     * the left, the same three actions in one capsule on the right.
-     *
-     * "Is the bar there?" is the wrong question and this stage does not ask it.
-     * The bar is in the document the whole time — it has to be, or there would
-     * be nothing to fade — so a presence check passes with the page at the top,
-     * which is precisely the state where it must *not* be showing. `visibility`
-     * is what the CSS flips, and it is also the property that keeps the hidden
-     * bar out of the tab order, so that is what is read.
-     *
-     * The switch is caused by the header leaving the viewport, so the stage
-     * scrolls first and then reads the header's own rect rather than assuming
-     * an offset: how tall the library's rows are is not this file's business,
-     * and a fixed offset would start asserting the wrong thing the first time
-     * the list is short enough for it to land mid-header.
-     */
-    if (target.top) {
-        const spec = target.top;
-        const read = `(() => {
-            const head = document.querySelector(${JSON.stringify(spec.head)});
-            const bar = document.querySelector(${JSON.stringify(spec.bar)});
-            const rect = head ? head.getBoundingClientRect() : null;
-            const style = bar ? getComputedStyle(bar) : null;
-            const labels = (root) => root
-                ? [...root.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || b.title || '')
-                : null;
-            return {
-                headTop: rect ? Math.round(rect.top) : null,
-                headBottom: rect ? Math.round(rect.bottom) : null,
-                bar: style ? style.visibility : null,
-                barButtons: labels(bar),
-                headButtons: labels(head),
-            };
-        })()`;
-
-        await evaluate('window.scrollTo(0, 0)');
-        await sleep(1200);
-        const home = await evaluate(read);
-        check('the list has a top bar to scroll away', home.headTop !== null, `top=${home.headTop}`);
-        check(
-            'the floating bar is hidden while that bar is on screen',
-            home.headBottom > 0 && home.bar === 'hidden',
-            `header bottom=${home.headBottom}, bar visibility=${home.bar}`,
-        );
-
-        // The header is the avatar plus the actions now. The library's name did
-        // not go away with the title, though — it is off screen in a 1px box,
-        // and that is load-bearing: it is the page's only heading, and it is
-        // how the Drive stage below sees a source switch. `display: none` would
-        // hide it from `innerText` as well and quietly delete that observable.
-        const shape = await evaluate(`(() => {
-            const head = document.querySelector(${JSON.stringify(spec.head)});
-            if (!head) return null;
-            const title = head.querySelector('h1');
-            const rect = title ? title.getBoundingClientRect() : null;
-            return {
-                avatar: Boolean(head.querySelector('[role="img"][aria-label="用户头像"]')),
-                title: title ? (title.innerText || '').trim() : '',
-                titleWidth: rect ? Math.round(rect.width) : null,
-            };
-        })()`);
-        check(
-            'the header leads with the avatar',
-            Boolean(shape) && shape.avatar === true,
-            shape ? `avatar=${shape.avatar}` : '(no header)',
-        );
-        check(
-            '...and the library name is still in the document, just off screen',
-            Boolean(shape) && Boolean(shape.title) && shape.titleWidth !== null && shape.titleWidth <= 1,
-            shape ? `"${shape.title}" in a ${shape.titleWidth}px box` : '(no title)',
-        );
-
-        // Scrolled as far as the page goes, so the header is unambiguously
-        // gone rather than nearly gone.
-        await evaluate('window.scrollTo(0, document.documentElement.scrollHeight)');
-        await sleep(1600);
-        const away = await evaluate(read);
-        check('the header scrolls away with the list', away.headBottom <= 0, `header bottom=${away.headBottom}`);
-        check('...and the floating bar takes over', away.bar === 'visible', `visibility=${away.bar}`);
-        await shot('float-bar');
-
-        // The claim is not "three buttons" but "the same three": compared as
-        // whole arrays, because a bar that dropped one and doubled another
-        // would still have the right count and the right first label.
-        check(
-            'the capsule holds the actions the header held',
-            Array.isArray(away.barButtons) && Array.isArray(away.headButtons)
-                && away.barButtons.length > 0
-                && JSON.stringify(away.barButtons) === JSON.stringify(away.headButtons),
-            `capsule=${(away.barButtons || []).join('/')} header=${(away.headButtons || []).join('/')}`,
-        );
-
-        // And they are wired, not painted. 搜索 is the one action that cannot
-        // be done from where the visitor is standing — the field it unfolds
-        // lives in the header, which is off screen — so the tap has to come
-        // home as well, and that makes it the one button whose effect is
-        // visible from both ends of the transition.
-        await evaluate(`(() => {
-            const bar = document.querySelector(${JSON.stringify(spec.bar)});
-            const button = bar && bar.querySelector('button[aria-label="搜索"]');
-            if (button) button.click();
-        })()`);
-        await sleep(1800);
-        await shot('float-search');
-        const field = await evaluate('Boolean(document.querySelector(\'input[aria-label="搜索歌曲"]\'))');
-        check(
-            'a button in the capsule does what the header\'s did',
-            field === true,
-            field ? 'the search field unfolded' : 'nothing happened',
-        );
-        const returned = await evaluate(read);
-        check(
-            '...and coming home puts the bar away again',
-            returned.headTop !== null && returned.headTop >= 0 && returned.bar === 'hidden',
-            `header top=${returned.headTop}, bar visibility=${returned.bar}`,
-        );
-
-        // Fold the field back up: the next stage drives the header's own
-        // buttons, and the field takes the search button's slot while it is
-        // open.
-        await evaluate(`(() => {
-            const button = document.querySelector('button[aria-label="关闭搜索"]');
-            if (button) button.click();
-        })()`);
-        await sleep(1000);
     }
 
     /* --- 我喜欢, end to end ------------------------------------------------
