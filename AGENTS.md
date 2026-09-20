@@ -541,7 +541,7 @@ components/Music/three/
 - `node scripts/preview-desktop-list.js` — 生成列表面板的可量尺寸预览页（先 `npm run build`）
 - `node scripts/preview-covers.js` — 生成封面的可量尺寸预览页：列表/抽屉/缓存/唱片四种形状，每种都放了「有封面」和「没封面」两个对照
 - `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
-- `node scripts/drive-page.js <url> [--insecure] [--track=X] [--size=WxH] [--out=前缀]` — 用真 Chrome 打开页面并点一遍，报告 DOM 状态、失败请求和全部异常；有异常就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）
+- `node scripts/drive-page.js <url>|--all [--insecure] [--track=X] [--size=WxH] [--out=前缀]` — 用真 Chrome 打开页面、点一遍、按断言判成败，并报告失败请求和全部异常；有异常或断言不过就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）。`--all` 跑三棵树（`/3d/`、`/desktop/`、`/h5/`）
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 ### 要看「画出来是什么样」的时候
@@ -598,21 +598,43 @@ chrome --headless=new --window-size=1440,810 --timeout=25000 \
 关掉同源策略：
 
 ```bash
-# 线上：直接跑，什么都别加
-node scripts/drive-page.js https://ianyspace.github.io/music/3d/ --track=夜曲
+# 线上：直接跑，什么都别加。三棵树全跑，跑完看 summary
+node scripts/drive-page.js --all --track=夜曲
 
 # 本地：必须 --insecure，否则列表是空的（见上）
-node scripts/drive-page.js http://127.0.0.1:8899/music/3d/ --insecure --track=夜曲
+node scripts/drive-page.js --all --insecure --base=http://127.0.0.1:8899/music --track=夜曲
+
+# 单个页面 / 换窗口尺寸（歌词平面的机位跟比例走，窄窗口要单独扫）
+node scripts/drive-page.js http://127.0.0.1:8899/music/3d/ --insecure --track=夜曲 --size=960x1080
 ```
 
 `--insecure` 加的是 `--disable-web-security`，只在那个一次性 profile 里生效。
 `--track=X` 点包含 X 的那一行而不是第一行 —— 值得用：**只有一部分歌有歌词**，
 随便点一首多半走不到歌词那条路径。`--out=前缀` 会在每步存一张截图。
 
+它断言六件事，按页面在 `PAGES` 表里配：不自动播放、列表真的到了、点一行真的在播、
+快捷键真的做了它说的事、两个开关真的翻转了、没有任何异常。列表和播放都是**轮询**等
+而不是睡固定秒数，并把等到用了多久打出来 —— 于是「慢」和「坏」是两个答案。
+**只有 3D 版绑了全局快捷键**（空格播放暂停、左右方向键是 seek 不是切歌、`L`、`Escape`）；
+desktop 和 h5 只有 `Escape`。
+
+三处写法上的坑，都是这个脚本自己踩出来的：
+
+- **断言别挂在会变的文案上。** desktop 的歌词按钮没有 `aria-label`，而且打开后文案是
+  「收起歌词」不是「隐藏歌词」，所以拿「显示歌词」这个单态选择器去复查会**匹配不到任何东西**，
+  点击变成空操作、检查变成在量空气。选择器一律写**两个文案的并集**，状态去读
+  `aria-pressed` / `aria-expanded`。
+- **不是每个开关都能断言一个来回。** desktop 的 `aria-expanded` 报的是
+  `listOpen && !autoHidden`，是面板的**可见性**而不是用户的选择 —— 播放三秒后面板自己会折，
+  于是两次点击里第一次落在已经折好的面板上、什么都看不出来。这种就配 `cycle: false`，
+  只断言「点了不是没反应」。
+- **快捷键要连期望一起写。** 早期版本按了空格（暂停）然后断言「还在播」，这个断言
+  按构造就不可能成立。`keys` 的每一项写成 `{ key, paused }`。
+
 脚本打印每一步的 DOM 状态、所有 4xx/5xx 的真实 URL、以及**全部
-`console.error` 和未捕获异常**，最后按「有没有异常」决定退出码，所以它也能当检查用。
-异常是这套东西最值钱的产出：它给出压缩后的堆栈，对着 chunk 的字节偏移就能翻回
-源码那一行 —— 上面那个点歌崩页的 bug 就是这么定位到 `ex` = `ThreeHud` 的。
+`console.error` 和未捕获异常**，异常是这套东西最值钱的产出：它给出压缩后的堆栈，
+对着 chunk 的字节偏移就能翻回源码那一行 —— 上面那个点歌崩页的 bug 就是这么定位到
+`ex` = `ThreeHud` 的。
 
 两个坑：**URL 要放在 Chrome 命令行上，不要用 `Page.navigate`**（驱动空白页有竞态，
 第一次探测会打在 `about:blank` 上，看到 `title: ""` 和空 DOM，然后误判成「页面是坏的」）；
