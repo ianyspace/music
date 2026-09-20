@@ -237,6 +237,11 @@ const drive = async (target, index) => {
     // Set by the 我喜欢 stage to answer the Drive files API with a canned list.
     // Null means "do not intercept anything". See `stubDriveFiles`.
     let driveStub = null;
+    // How many requests the stub actually answered. Counted rather than assumed:
+    // "the list is right" and "the stub never fired and the list is right
+    // anyway" look identical from the outside, and only one of them means the
+    // Drive path was tested.
+    let driveStubHits = 0;
 
     socket.addEventListener('message', (event) => {
         const msg = JSON.parse(event.data);
@@ -279,6 +284,7 @@ const drive = async (target, index) => {
                     responseHeaders: cors.concat([{ name: 'Content-Type', value: 'application/json' }]),
                     body: Buffer.from(JSON.stringify(driveStub)).toString('base64'),
                 };
+            if (request.method !== 'OPTIONS') driveStubHits += 1;
             send('Fetch.fulfillRequest', { requestId, ...reply }).catch(() => {});
         }
         if (msg.method === 'Network.responseReceived') {
@@ -364,15 +370,26 @@ const drive = async (target, index) => {
     const waitFor = async (expression, ok, timeoutMs) => {
         const started = Date.now();
         let last;
+        // Every distinct value seen, in order, capped. "gave up" on its own is
+        // not a diagnosis: `[62]` means it never changed, `[62,2]` means the
+        // state arrived and was then put back, and those are different bugs.
+        const seen = [];
         for (;;) {
             last = await evaluate(expression);
-            if (ok(last)) return { value: last, ms: Date.now() - started, timedOut: false };
+            const stamp = JSON.stringify(last);
+            if (!seen.includes(stamp)) seen.push(stamp);
+            if (ok(last)) {
+                return { value: last, ms: Date.now() - started, timedOut: false, seen };
+            }
             if (Date.now() - started >= timeoutMs) {
-                return { value: last, ms: Date.now() - started, timedOut: true };
+                return { value: last, ms: Date.now() - started, timedOut: true, seen };
             }
             await sleep(400);
         }
     };
+
+    /** The `seen` trace as a short string, for a check's detail. */
+    const trace = (waited) => (waited.seen || []).slice(0, 6).join(' -> ');
 
     /**
      * Answer the Drive files API with a canned list, at the network layer.
@@ -767,7 +784,24 @@ const drive = async (target, index) => {
             String(switched.value) || '(no header)',
         );
         const driveRows = await waitFor(rowCount, (n) => n === 2, 30000);
-        check('...and lists the Drive files', driveRows.value === 2, `${driveRows.value} rows`);
+        check('...and lists the Drive files', driveRows.value === 2, `${driveRows.value} rows, saw ${trace(driveRows)}`);
+        // Reported separately from the row count, because these two failures
+        // have nothing in common: no hits means the request never reached the
+        // stub, hits-but-wrong-rows means the list arrived and something put it
+        // back. The row count alone cannot tell them apart.
+        check('the Drive API request was intercepted', driveStubHits > 0, `${driveStubHits} request(s)`);
+
+        // Settle before believing it.
+        //
+        // On mount the public library starts a fetch of its own, and `loadTracks`
+        // has no staleness guard — whichever source resolves last owns `tracks`.
+        // So "the Drive rows are on screen" is only half the claim; the other
+        // half is that they are still there a moment later. One run of this
+        // stage failed here and never reproduced, and this check is what turns
+        // that from a mystery into a finding.
+        await sleep(2500);
+        const settledRows = await evaluate(rowCount);
+        check('...and the public library did not land on top of it', settledRows === 2, `${settledRows} rows`);
         await shot('drive-list');
 
         const driveTitles = await evaluate(`(() => {
