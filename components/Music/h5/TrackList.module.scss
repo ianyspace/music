@@ -5,17 +5,34 @@
 // more: it leaves with the content, and the shell floats a compact glass
 // version of the same controls in behind it (`MusicApp`'s `.float`). A sticky
 // bar plus a floating bar would be two bars on screen at once at the top.
+//
+// **It is still a bar.** Dropping the stickiness once took the surface with it
+// (the glass, the shadow, the full-bleed edge) and left the avatar and the
+// buttons floating on the page with nothing holding them — which reads as "the
+// container is gone", not as "the bar scrolled away". What changed is where it
+// sits, not what it is.
 
 .page {
     box-sizing: border-box;
     padding: 0 18px 92px; /* bottom = mini bar (58) + dock (14) */
 }
 
-/* --- top bar --- */
+/* --- top bar (in flow, so it leaves with the list) --- */
 
 .head {
     margin: 0 -18px;
     padding: 10px 18px;
+    background: var(--glass);
+    /* Square and full-bleed on purpose: this is the top edge of the list, not a
+       card floating over it. The shadow is what separates the bar from the
+       first rows — no radius, no hairline, nothing that would draw a border
+       around it. It had a second job while the bar was sticky (keeping rows
+       from colliding with the title as they scrolled *under* it); now nothing
+       scrolls under it, so it is only the edge. */
+    border-radius: 0;
+    box-shadow: 0 6px 16px -14px rgba(31, 38, 79, 0.18), 0 1px 4px -3px rgba(31, 38, 79, 0.06);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(24px) saturate(1.8);
 }
 
 .head-row {
