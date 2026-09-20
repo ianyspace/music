@@ -41,7 +41,9 @@
 
 /* The visitor's avatar, standing where the brand mark and the library's name
    used to — the app's one Apple thing, so it is built the way Apple builds a
-   default avatar: a **solid grey disc with the glyph knocked out in white**.
+   default avatar: a **filled disc with the glyph knocked out in white**, the
+   fill now a soft diagonal gradient (Apple's greys, light → dark) so the disc
+   reads as a lit surface instead of a flat swatch.
 
    It used to be a pale `--field` disc with a dark glyph under a `--glass` pane,
    which in light mode came out as an empty white circle — a hole in the header
@@ -63,7 +65,12 @@
        `overflow: hidden`, which would also clip the cover's own edge. */
     isolation: isolate;
 
+    /* Centring here is the flex box; centring *within* the box is the glyph's
+       own bounding box, which `IconNote filled` shifts onto the middle of its
+       viewBox. Both halves are needed — a glyph drawn off-centre stays
+       off-centre no matter how the box is aligned. */
     svg {
+        display: block;
         width: 21px;
         height: 21px;
     }

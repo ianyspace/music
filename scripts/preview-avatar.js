@@ -33,8 +33,10 @@ const avatar = idOf('TrackList_avatar');
 const glass = idOf('TrackList_avatar-glass');
 
 // The same glyph the component renders (`IconNote filled`), inline so this page
-// needs no bundle — stems and beam as filled shapes, heads as slanted ovals.
-const note = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7.8" y="4" width="2.4" height="14" rx="1.2"/><rect x="18.8" y="2" width="2.4" height="14" rx="1.2"/><path d="M7.8 3.8 21.2 1.4v2.4L7.8 6.2z"/><ellipse cx="6" cy="18" rx="3.2" ry="2.8" transform="rotate(-18 6 18)"/><ellipse cx="17" cy="16" rx="3.2" ry="2.8" transform="rotate(-18 17 16)"/></svg>`;
+// needs no bundle — stems and beam as filled shapes, heads as slanted ovals,
+// the whole thing nudged down 0.88 so its bounding box is centred on the
+// viewBox. Keep this verbatim: a stale copy here is a harness that lies.
+const note = `<svg viewBox="0 0 24 24" fill="currentColor"><g transform="translate(0 0.88)"><rect x="7.8" y="4" width="2.4" height="14" rx="1.2"/><rect x="18.8" y="2" width="2.4" height="14" rx="1.2"/><path d="M7.8 3.8 21.2 1.4v2.4L7.8 6.2z"/><ellipse cx="6" cy="18" rx="3.2" ry="2.8" transform="rotate(-18 6 18)"/><ellipse cx="17" cy="16" rx="3.2" ry="2.8" transform="rotate(-18 17 16)"/></g></svg>`;
 
 // Stand-ins for the three icon buttons the header also holds, so the avatar is
 // judged at its real weight next to them. Deliberately *not* the note: two of

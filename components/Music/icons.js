@@ -118,16 +118,25 @@ export const IconRefresh = () => (
  * mark. The avatar turns it on because it sits behind a blur — a 1.75px stroke
  * does not survive one, and what is left is a smudge with two dots in it. The
  * row thumbnails keep the outline.
+ *
+ * The solid drawing is nudged down by 0.88 so that its **bounding box** is
+ * centred on the viewBox: the beam reaches y 1.4 while the lowest head stops at
+ * y 20.84, so the mark is drawn about 0.9 units (most of a pixel at 21px) above
+ * the middle. The box is what gets centred, not the ink: the weight sits low
+ * (the two heads), so centring the ink would lift the beam and leave the mark
+ * riding high.
  */
 export const IconNote = ({ filled = false }) => {
     if (filled) {
         return (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <rect x="7.8" y="4" width="2.4" height="14" rx="1.2" />
-                <rect x="18.8" y="2" width="2.4" height="14" rx="1.2" />
-                <path d="M7.8 3.8 21.2 1.4v2.4L7.8 6.2z" />
-                <ellipse cx="6" cy="18" rx="3.2" ry="2.8" transform="rotate(-18 6 18)" />
-                <ellipse cx="17" cy="16" rx="3.2" ry="2.8" transform="rotate(-18 17 16)" />
+                <g transform="translate(0 0.88)">
+                    <rect x="7.8" y="4" width="2.4" height="14" rx="1.2" />
+                    <rect x="18.8" y="2" width="2.4" height="14" rx="1.2" />
+                    <path d="M7.8 3.8 21.2 1.4v2.4L7.8 6.2z" />
+                    <ellipse cx="6" cy="18" rx="3.2" ry="2.8" transform="rotate(-18 6 18)" />
+                    <ellipse cx="17" cy="16" rx="3.2" ry="2.8" transform="rotate(-18 17 16)" />
+                </g>
             </svg>
         );
     }
