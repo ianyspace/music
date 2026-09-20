@@ -534,6 +534,7 @@ components/Music/three/
 - `node scripts/preview-desktop-list.js` — 生成列表面板的可量尺寸预览页（先 `npm run build`）
 - `node scripts/preview-covers.js` — 生成封面的可量尺寸预览页：列表/抽屉/缓存/唱片四种形状，每种都放了「有封面」和「没封面」两个对照
 - `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
+- `node scripts/drive-page.js <url> [--insecure] [--track=X] [--out=前缀]` — 用真 Chrome 打开页面并点一遍，报告 DOM 状态、失败请求和全部异常；有异常就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 ### 要看「画出来是什么样」的时候
@@ -590,15 +591,21 @@ chrome --headless=new --window-size=1440,810 --timeout=25000 \
 关掉同源策略：
 
 ```bash
-# 零依赖：Node 22 自带 WebSocket，直接说 DevTools 协议
-node .workbuddy-ai/drive.mjs http://127.0.0.1:8899/music/3d/ .workbuddy-ai/out --insecure
-node .workbuddy-ai/drive.mjs https://ianyspace.github.io/music/3d/ .workbuddy-ai/live
+# 线上：直接跑，什么都别加
+node scripts/drive-page.js https://ianyspace.github.io/music/3d/ --track=夜曲
+
+# 本地：必须 --insecure，否则列表是空的（见上）
+node scripts/drive-page.js http://127.0.0.1:8899/music/3d/ --insecure --track=夜曲
 ```
 
 `--insecure` 加的是 `--disable-web-security`，只在那个一次性 profile 里生效。
-脚本会打印每一步的 DOM 状态、所有 4xx/5xx 的真实 URL、以及全部
-`console.error` / 未捕获异常 —— **异常是这套东西最值钱的产出**，
-它直接给出了压缩后的堆栈，对着 chunk 的字节偏移就能翻回源码那一行。
+`--track=X` 点包含 X 的那一行而不是第一行 —— 值得用：**只有一部分歌有歌词**，
+随便点一首多半走不到歌词那条路径。`--out=前缀` 会在每步存一张截图。
+
+脚本打印每一步的 DOM 状态、所有 4xx/5xx 的真实 URL、以及**全部
+`console.error` 和未捕获异常**，最后按「有没有异常」决定退出码，所以它也能当检查用。
+异常是这套东西最值钱的产出：它给出压缩后的堆栈，对着 chunk 的字节偏移就能翻回
+源码那一行 —— 上面那个点歌崩页的 bug 就是这么定位到 `ex` = `ThreeHud` 的。
 
 两个坑：**URL 要放在 Chrome 命令行上，不要用 `Page.navigate`**（驱动空白页有竞态，
 第一次探测会打在 `about:blank` 上，看到 `title: ""` 和空 DOM，然后误判成「页面是坏的」）；
