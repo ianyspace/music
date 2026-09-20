@@ -25,7 +25,7 @@ import styles from './TrackList.module.scss';
  * underneath.
  *
  * The avatar stands where the library's brand mark and name used to. It is a
- * placeholder — a music note behind a frosted cover, and deliberately not a
+ * placeholder — a music note knocked out of a red disc, and deliberately not a
  * button, because a control that does nothing is worse than a picture that does
  * nothing. The library's *name* did not leave with the title, though: it is
  * still here as the page's only `<h1>`, off screen (see `.sr-only`). It is the
@@ -111,18 +111,17 @@ const TrackList = function ({
             <header className={styles.head}>
                 <div className={styles['head-row']}>
                     {/* The visitor's avatar, standing where the library's brand
-                        mark and name used to. Apple's default-avatar shape — a
-                        solid grey disc with the glyph knocked out — carrying a
-                        music note instead of a person, and deliberately not a
-                        button: a control that does nothing is worse than a
-                        picture that does nothing.
+                        mark and name used to. A filled disc with a music note
+                        knocked out of it, and deliberately not a button: a
+                        control that does nothing is worse than a picture that
+                        does nothing.
 
-                        The cover is the point — a low-blur glass pane over the
-                        glyph, so the note reads as something *under* glass
-                        rather than as a flat icon on a disc. */}
+                        The fill is Apple Music's red ramp and it is all there
+                        is — the low-blur pane that used to sit over the glyph
+                        is gone, because a pane over a ramp has nothing to do
+                        but dull the note. */}
                     <span className={styles.avatar} role="img" aria-label="用户头像">
                         <IconNote filled />
-                        <span className={styles['avatar-glass']} aria-hidden="true" />
                     </span>
                     {/* The library's name is still here, just not on screen.
                         It is the page's only heading, and it is the one thing
