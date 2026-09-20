@@ -2,36 +2,49 @@ import React, { useState } from 'react';
 
 import { formatAgo } from '../playStats';
 import { parseTrackName } from '../shared';
-import { IconPerson, IconRefresh } from '../icons';
+import { IconRefresh } from '../icons';
 
+import SheetChrome from './SheetChrome';
 import styles from './StatsPage.module.scss';
 
 /**
- * 听歌排行 — the visitor's own play counts, as a page of its own.
+ * 听歌排行 — the visitor's own play counts, raised as a sheet from 账号.
  *
- * It used to be a card at the bottom of 账号. It moved out for two reasons: a
- * list of up to fifty songs is a *destination*, not a settings card, and it is
- * only meaningful for a visitor who has bound a QQ number — so as a page it can
- * simply not exist for everyone else, instead of being a card that has to
- * explain its own emptiness.
+ * It has been three things. A card at the bottom of 账号 (wrong: a list of up to
+ * fifty songs is a destination, not a settings card). Then a tab page of its
+ * own (wrong differently: it had no tab bar to sit in, so its only entry was a
+ * 账号 capsule in its own header and its only exit was the same capsule back —
+ * two screens pointing at each other with no way out of the pair).
+ *
+ * It is a **panel** now, the same `SheetChrome` as 账号 / 音乐库 / 缓存管理: raised
+ * by the 听歌排行 row on 账号, dismissed by its own 收起 button, which puts the
+ * visitor back on the song list. That is the whole fix for the loop — a sheet
+ * leaves, it does not navigate.
  *
  * Everything stateful arrives as props (`stats` / `loading` / `error` /
- * `reload`, from `usePlayStats`), and the page owns only `scope`: which of the
+ * `reload`, from `usePlayStats`), and the panel owns only `scope`: which of the
  * two rankings is on screen. That is view state, like the search box — the
- * choice is not worth remembering across visits, and a page that came back on
- * 最近 7 天 with no memory of why would read as a bug.
+ * choice is not worth remembering across visits, and a panel that came back on
+ * 最近 7 天 with no memory of why would read as a bug. It resets on every open
+ * for free, because the shell mounts this only while it is up.
  *
- * The data is fetched by the hook while `active` (the page being *on screen*,
- * not merely mounted — both tab pages stay mounted, see `MusicApp`).
+ * The data is fetched by the hook while the panel is *up* (see `usePlayStats`).
  * Uploading what is still local is deliberately *not* here: it is one row on
- * 账号, next to the number it is about, and a page about listening is not the
- * place to administer a queue.
- *
- * 账号 is a *sheet*, so the button in the header raises it rather than navigating
- * to it — and the sheet is where this page was opened from, which is why the
- * button is the only entry here: it is the way back, not a third destination.
+ * 账号, next to the number it is about, and a ranking is not the place to
+ * administer a queue.
  */
-const StatsPage = function ({ qq, stats, loading, error, reload, onGoAccount }) {
+const StatsPage = function ({
+    qq,
+    stats,
+    loading,
+    error,
+    reload,
+    onGoAccount,
+    closing,
+    onClosed,
+    onCancelClose,
+    onClose,
+}) {
     const [scope, setScope] = useState('all');
     const recent = scope === 'recent';
     const list = recent ? (stats ? stats.recent.list : []) : (stats ? stats.all : []);
@@ -86,98 +99,89 @@ const StatsPage = function ({ qq, stats, loading, error, reload, onGoAccount }) 
     };
 
     return (
-        <div className={styles.page}>
-            <header className={styles.head}>
-                <div className={styles['head-row']}>
-                    <h1 className={styles.title}>听歌排行</h1>
-                    <div className={styles['head-actions']}>
-                        {/* Back where the visitor came from — the 账号 sheet.
-                            This page has no list to go to (歌曲 is one hop
-                            further, under the sheet), so the single entry here
-                            is the panel above it, not a third destination. */}
-                        <button
-                            type="button"
-                            className={styles['nav-btn']}
-                            title="账号"
-                            onClick={onGoAccount}
-                        >
-                            <IconPerson />
-                            <span>账号</span>
-                        </button>
-                        {/* Reloads both rankings, so it belongs to the page
-                            rather than to the 全部 / 最近 7 天 control: it is
-                            not "refresh this tab", it is "ask the database
-                            again". */}
-                        <button
-                            type="button"
-                            className={`${styles['refresh-btn']}${loading ? ` ${styles.spinning}` : ''}`}
-                            title="刷新排行"
-                            aria-label="刷新排行"
-                            disabled={loading}
-                            onClick={reload}
-                        >
-                            <IconRefresh />
-                        </button>
-                    </div>
-                </div>
-            </header>
-
-            {!qq ? (
-                <section className={styles.group}>
-                    <div className={styles.empty}>
-                        <p className={styles.hint}>
-                            听歌次数按 QQ 号记录，所以要先确认一个号码。
-                            确认之后这里会显示你自己的播放次数排行，可以看全部，也可以看最近 7 天。
-                        </p>
-                        <button
-                            type="button"
-                            className={styles['primary-btn']}
-                            onClick={onGoAccount}
-                        >
-                            去确认 QQ 号
-                        </button>
-                    </div>
-                </section>
-            ) : (
-                <section className={styles.group}>
-                    <div className={styles['rank-head']}>
-                        <div className={styles['rank-tabs']} role="tablist" aria-label="排行范围">
+        <SheetChrome
+            title="听歌排行"
+            closing={closing}
+            onClosed={onClosed}
+            onCancelClose={onCancelClose}
+            onClose={onClose}
+            /* The panel's one control, where 音乐库 keeps its ⟳: it re-asks the
+               database for *both* rankings, so it belongs to the panel rather
+               than to the 全部 / 最近 7 天 switch — it is not "refresh this tab",
+               it is "ask again". */
+            action={{
+                onClick: reload,
+                disabled: loading,
+                title: '刷新排行',
+                icon: (
+                    <span className={loading ? styles.spinning : undefined}>
+                        <IconRefresh />
+                    </span>
+                ),
+            }}
+        >
+            <div className={styles.body}>
+                {!qq ? (
+                    /* Reachable only if the number is cleared while this panel is
+                       up (another tab, a second window). The panel has no way of
+                       its own to fix that, so it says the one useful thing and
+                       hands over to 账号. */
+                    <section className={styles.group}>
+                        <div className={styles.empty}>
+                            <p className={styles.hint}>
+                                听歌次数按 QQ 号记录，所以要先确认一个号码。
+                                确认之后这里会显示你自己的播放次数排行，可以看全部，也可以看最近 7 天。
+                            </p>
                             <button
                                 type="button"
-                                role="tab"
-                                aria-selected={!recent}
-                                className={`${styles['rank-tab']}${!recent ? ` ${styles['rank-tab-on']}` : ''}`}
-                                onClick={() => setScope('all')}
+                                className={styles['primary-btn']}
+                                onClick={onGoAccount}
                             >
-                                全部
-                            </button>
-                            <button
-                                type="button"
-                                role="tab"
-                                aria-selected={recent}
-                                className={`${styles['rank-tab']}${recent ? ` ${styles['rank-tab-on']}` : ''}`}
-                                onClick={() => setScope('recent')}
-                            >
-                                最近 7 天
+                                去确认 QQ 号
                             </button>
                         </div>
-                    </div>
-                    {/* Only when there is a list under it: with nothing to show,
-                        "共播放 0 次" and the empty message are the same sentence
-                        twice. */}
-                    {summary && list.length > 0 && (
-                        <p className={styles['rank-summary']}>{summary}</p>
-                    )}
-                    {ranking()}
-                </section>
-            )}
+                    </section>
+                ) : (
+                    <section className={styles.group}>
+                        <div className={styles['rank-head']}>
+                            <div className={styles['rank-tabs']} role="tablist" aria-label="排行范围">
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={!recent}
+                                    className={`${styles['rank-tab']}${!recent ? ` ${styles['rank-tab-on']}` : ''}`}
+                                    onClick={() => setScope('all')}
+                                >
+                                    全部
+                                </button>
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={recent}
+                                    className={`${styles['rank-tab']}${recent ? ` ${styles['rank-tab-on']}` : ''}`}
+                                    onClick={() => setScope('recent')}
+                                >
+                                    最近 7 天
+                                </button>
+                            </div>
+                        </div>
+                        {/* Only when there is a list under it: with nothing to show,
+                            "共播放 0 次" and the empty message are the same sentence
+                            twice. */}
+                        {summary && list.length > 0 && (
+                            <p className={styles['rank-summary']}>{summary}</p>
+                        )}
+                        {ranking()}
+                    </section>
+                )}
 
-            <p className={styles.footnote}>
-                {qq
-                    ? '只统计绑定 QQ 号之后的播放；记录先写在本机，联网时自动上传，也可以在账号页手动同步。'
-                    : '播放记录先写在本机，联网时再上传；上传失败也不会影响听歌。'}
-            </p>
-        </div>
+                <p className={styles.footnote}>
+                    {qq
+                        ? '只统计确认 QQ 号之后的播放；记录先写在本机，联网时自动上传，也可以在账号面板里手动同步。'
+                        : '播放记录先写在本机，联网时再上传；上传失败也不会影响听歌。'}
+                </p>
+            </div>
+        </SheetChrome>
     );
 };
 

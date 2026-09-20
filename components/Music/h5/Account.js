@@ -4,10 +4,8 @@ import { normalizeQq } from '../shared';
 import {
     IconChart,
     IconChevronRight,
-    IconMoon,
     IconNote,
     IconRefresh,
-    IconSun,
 } from '../icons';
 
 import SheetChrome from './SheetChrome';
@@ -18,16 +16,27 @@ import styles from './Account.module.scss';
  * bar.
  *
  * It holds everything about *this visitor*: who they are, what data of theirs is
- * still only on this device, the appearance switch, and the way to 听歌排行. The
- * cache used to live here too; it is back in the list's ⋮ drawer, which is the
- * menu about this device and this library, and this sheet is about the person.
+ * still only on this device, and the way to 听歌排行. 缓存管理 and 音乐库 are in
+ * the list's ⋮ drawer, which is the menu about this device and this library, and
+ * 切换外观 is in there too — how the app is painted is a property of the screen,
+ * not of the person looking at it.
  *
  * **It is a panel, not a page** (`SheetChrome`, the same chrome as 缓存管理 and
- * 谷歌云盘链接): it rises over whatever you were looking at and its collapse
- * button puts you back. That is why there is no page header with navigation
- * capsules any more — a sheet that carried a second row of destinations would be
- * a page wearing a panel's clothes, and the drawer already holds the other
- * screens.
+ * 音乐库): it rises over whatever you were looking at and its collapse button
+ * puts you back. That is why there is no page header with navigation capsules
+ * any more — a sheet that carried a second row of destinations would be a page
+ * wearing a panel's clothes, and the drawer already holds the other screens.
+ *
+ * **The number is one card, in two states.** It used to be two blocks: an
+ * identity card showing whatever was stored, and a form under it holding
+ * whatever was typed — which meant the same question ("is my number in?") had
+ * two half-answers on screen at once, and a visitor could read the card, the
+ * field's placeholder and the avatar and still not know. Now the sheet shows
+ * exactly one of them: with a number, the card (name, 已确认 badge, avatar) and a
+ * 清除 button on it; without one, the confirm block — the field, 确认 and the
+ * hint. Clearing is the same class of action as 取消置顶: the visitor typed the
+ * number, so they have to be able to take it back, and taking it back returns
+ * the block they typed it in.
  *
  * The QQ number is the visitor's, not the app's: it is stored in this browser
  * (`QQ_KEY`) and it is the key *everything personal* is recorded under — play
@@ -37,13 +46,9 @@ import styles from './Account.module.scss';
  * put your own data — and the sheet says so out loud rather than hiding it in a
  * privacy footnote.
  *
- * **It says whether the number took, twice.** The identity card carries a
- * 已确认 / 未确认 badge (the word), and the list's app mark carries a dot in the
- * same colour (the glance). Before this, "did my number get saved?" had no answer
- * on screen: the field kept whatever was typed, the title showed a number either
- * way, and the avatar might not have loaded — three signals, none of which was a
- * confirmation. The word 确认 is used throughout rather than 绑定, because that is
- * the verb the visitor performs.
+ * The word 确认 is used throughout rather than 绑定, because that is the verb the
+ * visitor performs. The state is *also* legible without opening this sheet at
+ * all: the list's app mark carries a dot in the same green.
  *
  * 喜欢 does **not** need a number — it works either way, and a guest's likes stay
  * in this browser (see `likes.js`) — so the number is not a gate here. It is
@@ -55,8 +60,6 @@ const Account = function ({
     avatarUrl,
     onAvatarError,
     onSaveQq,
-    theme,
-    onToggleTheme,
     onGoStats,
     dataSync,
     closing,
@@ -114,83 +117,76 @@ const Account = function ({
         >
             <div className={styles.body}>
                 <section className={styles.group}>
-                    <div className={styles.identity}>
-                        <span className={styles['identity-avatar']}>
-                            {avatarUrl ? (
-                                <img src={avatarUrl} alt="" onError={onAvatarError} />
-                            ) : (
-                                <IconNote filled />
-                            )}
-                        </span>
-                        <span className={styles['identity-text']}>
-                            {/* Name and state on one line, so the badge sits
-                                next to the thing it describes rather than
-                                floating at the card's edge. The name is what
-                                changes; the badge is the *verdict*, in a word.
-
-                                Green, and the same green as the dot on the
-                                list's app mark: one state, one colour, wherever
-                                it is drawn. */}
-                            <span className={styles['identity-head']}>
-                                <span className={styles['identity-name']}>
-                                    {qq ? `QQ ${qq}` : '访客'}
+                    {qq ? (
+                        <div className={styles.identity}>
+                            <span className={styles['identity-avatar']}>
+                                {avatarUrl ? (
+                                    <img src={avatarUrl} alt="" onError={onAvatarError} />
+                                ) : (
+                                    <IconNote filled />
+                                )}
+                            </span>
+                            <span className={styles['identity-text']}>
+                                {/* Name and verdict on one line, so the badge
+                                    sits next to the thing it describes rather
+                                    than floating at the card's edge. */}
+                                <span className={styles['identity-head']}>
+                                    <span className={styles['identity-name']}>{`QQ ${qq}`}</span>
+                                    <span className={`${styles.badge} ${styles['badge-on']}`}>已确认</span>
                                 </span>
-                                <span className={qq ? `${styles.badge} ${styles['badge-on']}` : styles.badge}>
-                                    {qq ? '已确认' : '未确认'}
+                                {/* Two things, said plainly: where the picture
+                                    came from, and what the number is *for* —
+                                    the second used to be the form's hint line,
+                                    and it has to stay somewhere now that the
+                                    form is not on screen. A number whose
+                                    picture did not arrive admits it, otherwise
+                                    the note disc looks like the app ignored
+                                    what was just typed. */}
+                                <span className={styles['identity-sub']}>
+                                    {avatarUrl
+                                        ? '头像来自 QQ 的公开头像接口；听歌次数和喜欢都记在这个号码下'
+                                        : 'QQ 头像暂时取不到，先用默认音符；听歌次数和喜欢仍记在这个号码下'}
                                 </span>
                             </span>
-                            {/* Three states, said plainly: no number, a number
-                                whose picture is on screen, and a number whose
-                                picture did not arrive. The middle one is the only
-                                one that needs no explanation, and the last one
-                                has to admit it — otherwise the note disc looks
-                                like the app ignored what was just typed.
-
-                                The guest line says what *is* still available
-                                rather than only what is missing: 喜欢 works
-                                without a number, and the copy should not read as
-                                a locked door. */}
-                            <span className={styles['identity-sub']}>
-                                {!qq
-                                    ? '没确认 QQ 号：喜欢只存在本机，听歌次数不上传'
-                                    : (avatarUrl
-                                        ? '头像来自 QQ 的公开头像接口'
-                                        : 'QQ 头像暂时取不到，先用默认音符')}
-                            </span>
-                        </span>
-                    </div>
-                </section>
-
-                <section className={styles.group}>
-                    <div className={styles['group-label']}>QQ 号</div>
-                    <form className={styles['qq-form']} onSubmit={submit}>
-                        <input
-                            className={styles['qq-input']}
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            placeholder={qq ? '换一个 QQ 号' : '输入 QQ 号'}
-                            aria-label="QQ 号"
-                            value={draft}
-                            onChange={(event) => {
-                                setDraft(event.target.value);
-                                setInvalid(false);
-                            }}
-                        />
-                        <button type="submit" className={styles['qq-save']}>确认</button>
-                        {qq && (
-                            <button type="button" className={styles['qq-clear']} onClick={clear}>
+                            {/* The card's own way out, at its trailing edge
+                                where a row's value goes. Quiet: taking a number
+                                back is not a decision to shout about, but it
+                                has to be *on the card*, because the card is the
+                                only thing standing there. */}
+                            <button
+                                type="button"
+                                className={styles['identity-clear']}
+                                onClick={clear}
+                            >
                                 清除
                             </button>
-                        )}
-                    </form>
-                    <p className={`${styles.hint}${invalid ? ` ${styles['hint-bad']}` : ''}`}>
-                        {invalid
-                            ? 'QQ 号是 5–11 位数字，再看一眼？'
-                            : (qq
-                                ? `当前按 ${qq} 记录听歌次数和喜欢。换号后新的记录算在新号码下，旧的不会跟过来。`
-                                : '5–11 位数字，保存在这台设备的浏览器里。确认之后听歌次数按这个号码记录，本机喜欢的歌也会一起上传。')}
-                    </p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className={styles['group-label']}>QQ 号</div>
+                            <form className={styles['qq-form']} onSubmit={submit}>
+                                <input
+                                    className={styles['qq-input']}
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    placeholder="输入 QQ 号"
+                                    aria-label="QQ 号"
+                                    value={draft}
+                                    onChange={(event) => {
+                                        setDraft(event.target.value);
+                                        setInvalid(false);
+                                    }}
+                                />
+                                <button type="submit" className={styles['qq-save']}>确认</button>
+                            </form>
+                            <p className={`${styles.hint}${invalid ? ` ${styles['hint-bad']}` : ''}`}>
+                                {invalid
+                                    ? 'QQ 号是 5–11 位数字，再看一眼？'
+                                    : '5–11 位数字，保存在这台设备的浏览器里。确认之后听歌次数按这个号码记录，本机喜欢的歌也会一起上传。'}
+                            </p>
+                        </>
+                    )}
                 </section>
 
                 {/* 我的数据: the visitor's own numbers, and the only place the two
@@ -202,9 +198,9 @@ const Account = function ({
                         <div className={styles['group-label']}>我的数据</div>
                         {/* Only with a number: the ranking is per QQ, so with
                             none confirmed there is nothing to open — and the
-                            empty page it would lead to is worse than a row that
-                            is not there. (The prompt to confirm one lives on the
-                            page that needs it: 听歌排行 itself.) */}
+                            empty panel it would lead to is worse than a row
+                            that is not there. (The prompt to confirm one lives
+                            on the panel that needs it: 听歌排行 itself.) */}
                         {qq && (
                             <button
                                 type="button"
@@ -252,20 +248,9 @@ const Account = function ({
                     </section>
                 )}
 
-                <section className={styles.group}>
-                    <div className={styles['group-label']}>偏好</div>
-                    <button type="button" className={`${styles.row} ${styles['row-btn']}`} onClick={onToggleTheme}>
-                        <span className={styles['row-icon']} aria-hidden="true">
-                            {theme === 'dark' ? <IconSun size={20} /> : <IconMoon size={20} />}
-                        </span>
-                        <span className={styles['row-label']}>切换外观</span>
-                        <span className={styles['row-value']}>{theme === 'dark' ? '深色' : '浅色'}</span>
-                    </button>
-                </section>
-
                 <p className={styles.footnote}>
                     QQ 号只保存在这台设备的浏览器里，没有验证，只用来给听歌次数和喜欢找一个归属。
-                    缓存管理、谷歌云盘链接和音乐库都在歌曲列表右上角的菜单里。
+                    音乐库、缓存管理和切换外观都在歌曲列表右上角的菜单里。
                 </p>
             </div>
         </SheetChrome>

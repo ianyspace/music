@@ -22,17 +22,18 @@ import styles from './TrackList.module.scss';
  * field into that row and focuses it. The track rows scroll underneath.
  *
  * The bar has the ⋮ back, and it is a *menu* again rather than the menu-of-one it
- * had been reduced to: 音乐库 (the library sheet), 谷歌云盘链接 and 缓存管理. A
- * three-dots button earns its place by holding more than one thing, and the
- * things it holds are the ones about the library and the device rather than
+ * had been reduced to: 音乐库 (the library sheet — which songs are here, which
+ * folder of them, and where they come from), 缓存管理, and 切换外观. A three-dots
+ * button earns its place by holding more than one thing, and the things it holds
+ * are the ones about the library, the device and how it is painted, rather than
  * about the visitor — those live behind the mark.
  *
  * The mark is the way into 账号: tapping it opens the sheet that holds the
- * visitor's own things (the QQ number, 听歌排行, the sync button, appearance). It
- * used to be the visitor's *avatar* — a QQ picture once a number was bound; that
- * moved to 账号's identity card, where a face belongs. It sits at the leading end
- * because that is where the library's brand name was, and a bar with its mark on
- * the left and its actions on the right is what a phone app looks like.
+ * visitor's own things (the QQ number, 听歌排行, the sync button). It used to be
+ * the visitor's *avatar* — a QQ picture once a number was bound; that moved to
+ * 账号's identity card, where a face belongs. It sits at the leading end because
+ * that is where the library's brand name was, and a bar with its mark on the
+ * left and its actions on the right is what a phone app looks like.
  *
  * `qqBound` is drawn as a dot on the mark's bottom-right corner (grey / green)
  * and spoken in its label: the button doubles as the "is my number in?" light,
@@ -238,15 +239,17 @@ const TrackList = function ({
                                 <IconHeart filled={likedOnly} />
                             </button>
                         )}
-                        {/* ⋮ — the app's menu: 音乐库, 谷歌云盘链接, 缓存管理. It
-                            opens a drawer owned by the shell (this column sits
-                            under a `transform`ed ancestor, so a `position:
-                            fixed` child here would be trapped). `aria-expanded`
-                            is the drawer's state, not this button's.
+                        {/* ⋮ — the app's menu: 音乐库, 缓存管理, 切换外观. It
+                            opens a drawer owned by the shell (this column is
+                            the screen the panels rise over, so a `position:
+                            fixed` child here would be sized to the column
+                            instead of the viewport). `aria-expanded` is the
+                            drawer's state, not this button's.
 
                             Not gated on `connected`: an empty library is
-                            exactly when 谷歌云盘链接 is worth reaching, and the
-                            cache manager does not care what the list holds. */}
+                            exactly when 音乐库 is worth reaching — it is where
+                            the Drive library is connected — and the cache
+                            manager does not care what the list holds. */}
                         <button
                             type="button"
                             className={menuOpen

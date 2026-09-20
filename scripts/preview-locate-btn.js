@@ -4,6 +4,11 @@
  * hard-coded markup) into a single HTML file, so the button's placement can be
  * eyeballed and measured in a browser without the app's audio/Auth plumbing.
  *
+ * The icon markup is duplicated from `icons.js`'s `IconLocate` on purpose — this
+ * file has no bundler, so the glyph is copied rather than imported. Change one
+ * and change the other; the number this page exists to check is the vertical
+ * gap, and it is printed at the top left of the render.
+ *
  * Run: node scripts/preview-locate-btn.js [outFile]
  */
 
@@ -64,6 +69,12 @@ const html = `<!doctype html>
   #out { position: fixed; left: 8px; top: 8px; z-index: 1000; background: rgba(0,0,0,.82);
     color: #7ee787; font: 11px/1.5 ui-monospace, monospace; padding: 8px 10px;
     border-radius: 6px; white-space: pre; }
+  /* Both boxes being measured carry an enter animation — the bar rises
+     (translateY(18px)) and the button pops in (translateY(8px) scale(0.9)).
+     A page that is only ever screenshotted never ticks them, so both sit on
+     their 0% keyframe and every number below is 10px off and 10% small. Off,
+     so what is measured is the layout. */
+  .${cls.wrap}, .${cls.locate} { animation: none !important; }
 </style>
 </head>
 <body>
@@ -89,7 +100,7 @@ const html = `<!doctype html>
     </button>
   </div>
   <button type="button" class="${cls.locate}" aria-label="回到正在播放">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 9.5 12 14l4.5-4.5"/><path d="M5.5 18.5h13" stroke-width="1.7"/></svg>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.8v9.2"/><path d="M8.2 9.4 12 13l3.8-3.6"/><circle cx="12" cy="18" r="2.2" fill="currentColor" stroke="none"/></svg>
   </button>
 </div>
 
@@ -110,7 +121,7 @@ const html = `<!doctype html>
     row('wrap rect', [w.left, w.top, w.right, w.bottom].map(n => n.toFixed(1)).join('  ')),
     row('btn  rect', [t.left, t.top, t.right, t.bottom].map(n => n.toFixed(1)).join('  ')),
     row('btn → bar right edge', (b.right - t.right).toFixed(1) + ' px'),
-    row('btn bottom → bar top', (b.top - t.bottom).toFixed(1) + ' px (want 6)'),
+    row('btn bottom → bar top', (b.top - t.bottom).toFixed(1) + ' px (want 14)'),
     row('btn centre x → viewport centre', (t.left + t.width / 2 - innerWidth / 2).toFixed(1) + ' px'),
     row('btn inside bar horizontally?', (t.left >= b.left && t.right <= b.right) ? 'yes' : 'NO'),
     row('btn overlaps bar box?', (t.bottom > b.top && t.top < b.bottom) ? 'NO (good)' : 'no'),

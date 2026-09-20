@@ -1,136 +1,38 @@
-// The settings vocabulary, shared by the phone's settings-style screens: the page
-// shell (「听歌排行」) and the card / row / hint shapes (also 「账号」 and
-// 「音乐库」, which are sheets and take their frame from `SheetChrome` instead).
+// The settings vocabulary, shared by the phone's three settings-style panels:
+// 「账号」, 「音乐库」 and 「听歌排行」. It is the card / row / hint / footnote
+// shapes and the two buttons that go with them — *not* a frame: all three take
+// theirs from `SheetChrome`, and none of them is a page.
 //
 // These shapes used to be *copied* between Profile and Account, deliberately:
 // two pages did not justify a third file both import, and that file would have
 // had to live somewhere belonging to neither. The note in both said the third
-// settings-style page would be the moment to extract — and to fold 我的 in at
-// the same time rather than leaving one page on the old copy. 听歌排行 is that
-// page, so this is that moment.
+// settings-style screen would be the moment to extract — and to fold 我的 in at
+// the same time rather than leaving one screen on the old copy. 听歌排行 was
+// that screen, so this is that moment.
 //
-// What belongs here is only the **vocabulary**: the sticky bar a page wears, the
-// grouped cards, the settings rows and the footnotes. Anything that is about one
-// screen's subject stays in that screen's own module (the QQ form and the sync
-// row in Account, the folder select in Profile, the ranking list in StatsPage),
-// because a shared file that grows a little of everything stops being a
-// vocabulary and becomes the place nobody dares change.
+// **The page shell left with the last page.** `.page` / `.head` / `.title` /
+// `.nav-btn` / `.refresh-btn` were here for 听歌排行 while it was a tab page, and
+// they are gone now that it is a sheet: every screen that wears these shapes
+// rises from the bottom edge and is dismissed by its own collapse button, so
+// there is no sticky bar, no page title and no navigation capsule left to
+// declare. What remains is the vocabulary — the grouped cards, the settings
+// rows, the footnotes and the one loud button a screen owns.
+//
+// What belongs here is only the **vocabulary**. Anything that is about one
+// panel's subject stays in that panel's own module (the identity card and the
+// QQ form in Account, the folder select in Profile, the ranking list in
+// StatsPage), because a shared file that grows a little of everything stops
+// being a vocabulary and becomes the place nobody dares change.
 //
 // Everything here is shaped by the theme tokens (`--text`, `--card`,
 // `--hairline`, `--glass*`) that `MusicApp.module.scss` declares, so one
 // definition follows both palettes.
 
-/* The page shell — used by 「听歌排行」, which is a page. 账号 and 音乐库 are
-   sheets, so they compose `.body` from `core/sheetBase.module.scss` instead and
-   none of the bar classes below appear in them. */
-.page {
-    box-sizing: border-box;
-    padding: 0 18px 48px; /* no mini bar on these pages — just dock breathing */
-}
-
-/* --- sticky top bar --- */
-
-.head {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    margin: 0 -18px;
-    padding: 10px 18px 12px;
-    background: var(--glass);
-    border-bottom: 1px solid var(--hairline);
-    -webkit-backdrop-filter: blur(24px) saturate(1.8);
-    backdrop-filter: blur(24px) saturate(1.8);
-}
-
-.head-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.title {
-    margin: 0;
-    font-size: 26px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: var(--text);
-}
-
-.head-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-}
-
-/* capsule entry to another page (「歌曲」 / 「账号」) */
-.nav-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 34px;
-    padding: 0 13px;
-    border: 1px solid var(--glass-border);
-    border-radius: 17px;
-    background: var(--glass-strong);
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 700;
-    font-family: inherit;
-    cursor: pointer;
-    box-shadow: 0 4px 12px -6px rgba(31, 38, 79, 0.35);
-    transition: transform 0.15s, background-color 0.2s;
-
-    svg {
-        width: 16px;
-        height: 16px;
-    }
-
-    @media (hover: hover) {
-        &:hover {
-            transform: scale(1.04);
-        }
-    }
-
-    &:active {
-        transform: scale(0.95);
-    }
-}
-
-/* round ⟳ next to a nav button */
-.refresh-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    border: 1px solid var(--glass-border);
-    border-radius: 50%;
-    background: var(--glass-strong);
-    color: var(--text);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: transform 0.15s;
-
-    @media (hover: hover) {
-        &:hover:not(:disabled) {
-            transform: scale(1.08);
-        }
-    }
-
-    &:disabled {
-        opacity: 0.5;
-        cursor: wait;
-    }
-}
-
-/* The one loud button a screen owns: 确认 on 账号's QQ form, 去确认 QQ 号 on
+/* The one loud button a panel owns: 确认 on 账号's QQ form, 去确认 QQ 号 on
    听歌排行's empty state. It wears the same gradient as a settings row's icon
    chip, so "this is the thing to press" looks the same wherever it appears — and
-   it lives here rather than in one of them because the second screen that needed
-   it was the moment it stopped being that screen's button. */
+   it lives here rather than in one of them because the second panel that needed
+   it was the moment it stopped being that panel's button. */
 .primary-btn {
     height: 40px;
     padding: 0 18px;
@@ -241,7 +143,7 @@
     font-weight: 600;
 }
 
-/* A row that reports a value instead of opening something (外观, 数据同步). */
+/* A row that reports a value instead of opening something (数据同步). */
 .row-value {
     flex-shrink: 0;
     font-size: 14px;
@@ -275,22 +177,6 @@
     font-size: 11.5px;
     line-height: 1.7;
     color: var(--text-2);
-}
-
-@media (max-width: 520px) {
-    .page {
-        padding: 0 12px 48px;
-    }
-
-    .head {
-        margin: 0 -12px;
-        padding-left: 12px;
-        padding-right: 12px;
-    }
-
-    .title {
-        font-size: 22px;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {

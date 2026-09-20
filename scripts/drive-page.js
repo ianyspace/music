@@ -46,10 +46,13 @@
  *      notices. 取消置顶 is checked by the *whole row order* coming back, not
  *      by the first row — see the stage.
  *   8. **The phone's navigation is what it says it is.** The ⋮ drawer holds the
- *      three entries it should, 音乐库 and 账号 arrive as *sheets* (no page
- *      header, a collapse button), and a like made before a QQ number is
- *      confirmed stays in this browser — then goes with the number when one is
- *      confirmed, which the 数据同步 row is read to prove. See `target.shell`.
+ *      three entries it should, 音乐库 / 账号 / 听歌排行 all arrive as *sheets*
+ *      (no page header, a collapse button), and a like made before a QQ number
+ *      is confirmed stays in this browser — then goes with the number when one
+ *      is confirmed, which the 数据同步 row is read to prove. The panel pair is
+ *      checked for the thing it used to be: 听歌排行's 收起 button puts the
+ *      visitor back on the list with no sheet left standing, instead of the
+ *      two-screen loop it used to be. See `target.shell`.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -877,14 +880,20 @@ const drive = async (target, index) => {
         await closeDrawer();
     }
 
-    /* --- the phone's shell: the ⋮ drawer, the two sheets, a guest's likes ---
+    /* --- the phone's shell: the ⋮ drawer, the sheets, a guest's likes --------
      *
      * The phone has no tab bar. Its navigation is three taps: the app's mark
      * (leading end of the list's bar) raises 账号, the ⋮ raises a drawer holding
-     * 音乐库 / 谷歌云盘链接 / 缓存管理, and 听歌排行 is a row inside 账号. This
-     * stage is here because all of that is *structure*, and structure is the one
+     * 音乐库 / 缓存管理 / 切换外观, and 听歌排行 is a row inside 账号. This stage
+     * is here because all of that is *structure*, and structure is the one
      * thing a build and a screenshot both pass over: a sheet that quietly grew a
      * page header back, or a drawer that lost an entry, looks fine.
+     *
+     * It also guards the shape of the panel pair. 听歌排行 used to be a page
+     * whose only entry was a 账号 capsule in its own header, while 账号's only
+     * way to it was the row that opened it — a loop with no exit. As a sheet it
+     * closes, and closing it has to land on the list: that is what the check
+     * below presses the 收起 button to see.
      *
      * The guest half is the other reason. 喜欢 works without a confirmed QQ
      * number now, and the likes made that way are *only* local — which is a
@@ -902,9 +911,17 @@ const drive = async (target, index) => {
             return {
                 header: Boolean(s.querySelector('header')),
                 collapse: Boolean(s.querySelector('button[title="收起"]')),
+                form: Boolean(s.querySelector('form')),
                 text: (s.innerText || '').replace(/\\s+/g, ' ').trim(),
             };
         })()`);
+        const shut = async (title) => {
+            await evaluate(`(() => {
+                const s = document.querySelector(${JSON.stringify(sheetOf(title))});
+                const b = s && s.querySelector('button[title="收起"]');
+                if (b) b.click();
+            })()`);
+        };
 
         // --- the ⋮ and its drawer -------------------------------------------
         const moreClicked = await evaluate(`(() => {
@@ -923,8 +940,8 @@ const drive = async (target, index) => {
                 .map((b) => ((b.innerText || '').split('\\n')[0] || '').trim());
         })()`);
         check(
-            'the drawer holds the library, the drive and the cache',
-            Array.isArray(menuTitles) && menuTitles.join('/') === '音乐库/谷歌云盘链接/缓存管理',
+            'the drawer holds the library, the cache and the appearance',
+            Array.isArray(menuTitles) && menuTitles.join('/') === '音乐库/缓存管理/切换外观',
             Array.isArray(menuTitles) ? menuTitles.join('/') : 'no drawer',
         );
 
@@ -953,12 +970,16 @@ const drive = async (target, index) => {
             (await evaluate(`!document.querySelector(${JSON.stringify(menu)})`)) === true,
             'drawer closed',
         );
+        // The merge: 谷歌云盘链接 is a row *in here* now, not a drawer entry
+        // beside this panel. Reading the row's own label is the only way to see
+        // the two halves arrive as one screen.
+        check(
+            '...and it carries the way to a Drive library',
+            Boolean(library) && library.text.includes('连接 Google 云盘'),
+            library ? library.text.slice(0, 120) : '',
+        );
 
-        await evaluate(`(() => {
-            const s = document.querySelector(${JSON.stringify(sheetOf('音乐库'))});
-            const b = s && s.querySelector('button[title="收起"]');
-            if (b) b.click();
-        })()`);
+        await shut('音乐库');
         await sleep(800);
         check(
             'its collapse button shuts it',
@@ -1030,9 +1051,9 @@ const drive = async (target, index) => {
             account ? `header=${account.header} collapse=${account.collapse}` : '',
         );
         check(
-            '...and it says the number is not confirmed',
-            Boolean(account) && account.text.includes('访客') && account.text.includes('未确认'),
-            account ? account.text.slice(0, 90) : '',
+            '...and it asks for a number instead of showing one',
+            Boolean(account) && account.form === true && !account.text.includes('已确认'),
+            account ? `form=${account.form} ${account.text.slice(0, 80)}` : '',
         );
 
         const saved = await evaluate(`(() => {
@@ -1052,9 +1073,10 @@ const drive = async (target, index) => {
         await shot('account-confirmed');
         const confirmed = await sheetState('账号');
         check(
-            '...and the sheet says so',
-            Boolean(confirmed) && confirmed.text.includes('QQ 10001') && confirmed.text.includes('已确认'),
-            confirmed ? confirmed.text.slice(0, 90) : '',
+            '...and the card replaces the form it was typed into',
+            Boolean(confirmed) && confirmed.form === false
+                && confirmed.text.includes('QQ 10001') && confirmed.text.includes('已确认'),
+            confirmed ? `form=${confirmed.form} ${confirmed.text.slice(0, 90)}` : '',
         );
         // The claim under test: the likes made as a guest went *with* the number,
         // and they are still waiting because the API was stopped. Read from the
@@ -1079,7 +1101,7 @@ const drive = async (target, index) => {
             `${likesStubHits} request(s)`,
         );
 
-        // --- 听歌排行 is a row on 账号, and 账号 comes back from it -----------
+        // --- 听歌排行 is a sheet, and closing it lands on the list -----------
         const toStats = await evaluate(`(() => {
             const s = document.querySelector(${JSON.stringify(sheetOf('账号'))});
             if (!s) return 'no sheet';
@@ -1092,26 +1114,59 @@ const drive = async (target, index) => {
         check('听歌排行 is a row on 账号', toStats === 'clicked', String(toStats));
         await sleep(1500);
         await shot('stats');
+        const ranking = await sheetState('听歌排行');
         check(
-            '...and it opens as a page, with the sheet out of the way',
-            (await evaluate(`Boolean(document.querySelector('[role="tablist"][aria-label="排行范围"]'))`)) === true
-                && (await evaluate(`!document.querySelector(${JSON.stringify(sheetOf('账号'))})`)) === true,
-            'ranking up, 账号 down',
+            '...and it rises as a sheet, not a page with a header',
+            Boolean(ranking) && ranking.header === false && ranking.collapse === true,
+            ranking ? `header=${ranking.header} collapse=${ranking.collapse}` : '(not found)',
+        );
+        check(
+            '...with 账号 out of the way underneath',
+            (await evaluate(`!document.querySelector(${JSON.stringify(sheetOf('账号'))})`)) === true,
+            '账号 down',
+        );
+        check(
+            '...showing the two rankings',
+            (await evaluate(`Boolean(document.querySelector('[role="tablist"][aria-label="排行范围"]'))`)) === true,
+            '全部 / 最近 7 天',
         );
 
-        const backToAccount = await evaluate(`(() => {
-            const b = [...document.querySelectorAll('button')]
-                .find((x) => x.getAttribute('title') === '账号');
-            if (!b) return 'no 账号 button';
+        // The loop this used to be: 听歌排行's only control was a 账号 capsule in
+        // its own header, and 账号's only way here was the row that opened it.
+        // A sheet closes instead, so the check is that closing it leaves
+        // *nothing* standing — not 账号, not the ranking.
+        await shut('听歌排行');
+        await sleep(1000);
+        check(
+            'its 收起 button puts the visitor back on the list',
+            (await evaluate(`!document.querySelector(${JSON.stringify(sheetOf('听歌排行'))})`)) === true
+                && (await evaluate(`!document.querySelector(${JSON.stringify(sheetOf('账号'))})`)) === true,
+            'no sheet left standing',
+        );
+
+        // --- the number card and the confirm block are one thing ------------
+        await evaluate(`(() => {
+            const b = document.querySelector(${JSON.stringify(spec.mark)});
+            if (b) b.click();
+        })()`);
+        await sleep(900);
+        const cleared = await evaluate(`(() => {
+            const s = document.querySelector(${JSON.stringify(sheetOf('账号'))});
+            if (!s) return 'no sheet';
+            const b = [...s.querySelectorAll('button')]
+                .find((x) => (x.innerText || '').trim() === '清除');
+            if (!b) return 'no 清除 button';
             b.click();
             return 'clicked';
         })()`);
-        check('the 账号 button on the ranking raises it again', backToAccount === 'clicked', String(backToAccount));
-        await sleep(1000);
+        check('the number card carries its own 清除 button', cleared === 'clicked', String(cleared));
+        await sleep(900);
+        await shot('account-cleared');
+        const afterClear = await sheetState('账号');
         check(
-            '...as the same sheet',
-            (await evaluate(`Boolean(document.querySelector(${JSON.stringify(sheetOf('账号'))}))`)) === true,
-            'sheet up',
+            '...and clearing it leaves the confirm block, nothing else',
+            Boolean(afterClear) && afterClear.form === true && !afterClear.text.includes('已确认'),
+            afterClear ? `form=${afterClear.form} ${afterClear.text.slice(0, 80)}` : '',
         );
 
         // Leave the run clean for the 我喜欢 stage, which expects a public

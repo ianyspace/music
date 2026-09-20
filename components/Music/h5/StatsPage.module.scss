@@ -1,42 +1,25 @@
-// "听歌排行" screen: the visitor's own play counts, all time and for the last
+// "听歌排行" sheet: the visitor's own play counts, all time and for the last
 // seven days.
 //
-// The shell (page / head / title / nav-btn / group / hint / footnote) comes from
-// `settingsPage.module.scss`, shared with 「我的」 and 「账号」. What is declared
-// here is only what is about *this* page: the scope tabs and the numbered list.
+// The frame comes from `SheetChrome` and the scrolling body from
+// `core/sheetBase.module.scss`; the card / hint / footnote vocabulary comes from
+// `settingsPage.module.scss`, shared with 「账号」 and 「音乐库」. What is declared
+// here is only what is about *this* panel: the scope tabs and the numbered list.
 // It used to be a card inside `Account.module.scss`, which is why the ranking
 // shapes below look familiar — they moved rather than being rewritten.
+//
+// There is no `.page` / `.head` / `.nav-btn` here any more. This panel wore a
+// page header while it was a tab page, and that header was the loop the visitor
+// could not get out of: the only thing in it was a 账号 capsule, and 账号's only
+// way here was the row that opened this. A sheet is dismissed by its own 收起
+// button, so a second row of destinations inside it would be a page pretending
+// to be a panel.
 
-.page {
-    composes: page from './settingsPage.module.scss';
-}
+/* The scrolling body every sheet shares. */
+.body {
+    composes: body from '../core/sheetBase.module.scss';
 
-.head {
-    composes: head from './settingsPage.module.scss';
-}
-
-.head-row {
-    composes: head-row from './settingsPage.module.scss';
-}
-
-.title {
-    composes: title from './settingsPage.module.scss';
-}
-
-.head-actions {
-    composes: head-actions from './settingsPage.module.scss';
-}
-
-.nav-btn {
-    composes: nav-btn from './settingsPage.module.scss';
-}
-
-.refresh-btn {
-    composes: refresh-btn from './settingsPage.module.scss';
-}
-
-.spinning {
-    composes: spinning from './settingsPage.module.scss';
+    padding-top: 10px;
 }
 
 .group {
@@ -53,6 +36,14 @@
 
 .footnote {
     composes: footnote from './settingsPage.module.scss';
+}
+
+/* Spins the ⟳ in the chrome's action button while a ranking is being fetched —
+   the button is disabled then, so this is what says "working" rather than
+   "broken". */
+.spinning {
+    display: inline-flex;
+    composes: spinning from './settingsPage.module.scss';
 }
 
 /* --- the scope tabs --- */
@@ -138,7 +129,7 @@
     color: var(--text-2);
 }
 
-/* The top three get the accent — the one piece of colour on the page, and the
+/* The top three get the accent — the one piece of colour on the panel, and the
    only thing a ranking can usefully do with a colour. */
 .rank-item:nth-child(-n + 3) .rank-index {
     color: var(--accent);

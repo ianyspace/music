@@ -2,11 +2,17 @@
 // to the database.
 //
 // The card/row/hint/footnote vocabulary comes from `settingsPage.module.scss`,
-// shared with 「听歌排行」; the *frame* comes from `SheetChrome` and the scrolling
-// body from `core/sheetBase.module.scss`. What is declared here is only what is
-// about this panel: the identity card, the QQ form, and the sync row. It has no
-// page header — a sheet is dismissed by its own collapse button, so the title
-// bar and the navigation capsules that used to open this file are gone.
+// shared with 「音乐库」 and 「听歌排行」; the *frame* comes from `SheetChrome` and
+// the scrolling body from `core/sheetBase.module.scss`. What is declared here is
+// only what is about this panel: the identity card, the QQ form and the sync
+// row. It has no page header — a sheet is dismissed by its own collapse button,
+// so the title bar and the navigation capsules that used to open this file are
+// gone.
+//
+// The card and the form are the *same block in two states* (with a number /
+// without one), so they are declared next to each other and neither is ever on
+// screen at the same time as the other. The clear button belongs to the card,
+// because when the card is up it is the only thing standing.
 
 /* The scrolling body every sheet shares (no scrollbar, safe-area padding at the
    bottom). The top padding is this panel's: the identity card should not touch
@@ -203,17 +209,24 @@
     flex-shrink: 0;
 }
 
-/* Clearing is the same class of action as 取消置顶: the visitor typed the
-   number, so they have to be able to take it back. Quiet, next to 确定. */
-.qq-clear {
+/* 清除 — the card's own way out, at its trailing edge (where a settings row
+   puts its value). It sits *on* the card rather than under it because the card
+   is the only block standing while a number is confirmed: there is no form
+   below to clear. Quiet, the same weight as 取消置顶 — taking a number back is
+   not a decision to shout about, but it has to be reachable.
+
+   Clearing does not clear what is already queued under that number (see
+   `likes.js` / `playStats.js`): the 我的数据 card stays until the queue is
+   empty, and the row that pushes it stays with it. */
+.identity-clear {
     flex-shrink: 0;
-    height: 40px;
+    height: 30px;
     padding: 0 12px;
     border: 1px solid var(--hairline);
-    border-radius: 12px;
+    border-radius: 15px;
     background: transparent;
     color: var(--text-2);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;

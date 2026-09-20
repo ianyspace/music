@@ -165,55 +165,14 @@
     box-sizing: border-box;
 }
 
-/* --- tab page transitions --- */
-
-.view {
-    min-height: 100vh;
-    box-sizing: border-box;
-}
-
-/* A tab that is not shown is removed from layout completely so it cannot
-   leak scrollbars or keep the document taller than the active tab.
-   
-   `display: none` alone should be enough, but some mobile browsers keep the
-   scrollbar gutter if the element had overflow before hiding. The extra
-   declarations here (height:0, overflow:hidden, visibility:hidden) are
-   defensive: they ensure the hidden tab contributes zero to document metrics
-   and cannot be reached by scroll, touch, or screen-reader navigation. */
-.view-off {
-    display: none;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-    pointer-events: none;
-}
-
-/* Applied to whichever view is shown — remounting the class replays the
-   fade-rise on every tab switch (both views stay mounted for scroll memory). */
-.view-in {
-    animation: view-in 0.3s cubic-bezier(0.32, 0.72, 0.2, 1) both;
-}
-
-@keyframes view-in {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 /* --- three-dots bottom drawer (opened from the song list's top bar) --- */
 
-/* Lives here rather than inside `TrackList`: the list column sits under
-   ancestors carrying a `transform` (the tab transition), which would turn any
-   `position: fixed` descendant into a box sized to those ancestors instead of
-   the viewport — the drawer ended up parked at the bottom of the whole scroll
-   range. Rendered at the root of the phone layout, `fixed` means the viewport
-   again. */
+/* Lives here rather than inside `TrackList` — like every other panel in this
+   file, and for the same reason: the list is the screen these rise *over*, and
+   a `position: fixed` box nested inside a scrolling column is sized to that
+   column's containing block rather than to the viewport. It was worse while the
+   column carried the tab transition's `transform`: the drawer parked itself at
+   the bottom of the whole scroll range. */
 .menu-scrim {
     position: fixed;
     inset: 0;
@@ -443,7 +402,6 @@
 @media (prefers-reduced-motion: reduce) {
 
     .blob,
-    .view-in,
     .menu-scrim,
     .menu {
         animation: none;

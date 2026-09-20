@@ -160,22 +160,30 @@ export const IconNoteList = () => (
     </svg>
 );
 
-// "Jump to the playing track": a downward chevron into a tray.
+// "Jump to the playing track": an arrow pointing down at the row that is playing.
 //
-// A crosshair was the first attempt, but two concentric rings read as "target"
-// (focus / aim) and look like a camera mark at a glance — this button is
-// literally "scroll the list down to the row that is playing", and the chevron
-// says that with no explanation. It also survives 15px, where the crosshair's
-// rings started to blur together.
+// Two earlier drawings are worth recording, because each failed for a different
+// reason. A crosshair came first — two concentric rings read as "aim / focus",
+// like a camera mark. A chevron into a tray replaced it and had the opposite
+// problem: a chevron pointing down is this app's *collapse* glyph (the sheets'
+// 收起 button wears exactly that shape), and with a tray under it the mark read
+// as "download". On a button labelled 回到正在播放, both readings are wrong.
 //
-// Geometry tuned for a 24 viewBox: the chevron spans x 7.5→16.5 with its apex
-// at y=15, and the tray sits at y=18.5 — a 3.5-unit drop, so the two strokes
-// stay clearly separate at 15px. Widths stay under the frame (1.5 → 22.5) so
-// nothing clips.
+// What is drawn now is the smallest thing that cannot be misread: a real arrow
+// — shaft and head, so it is a *direction* and not a fold-away — landing on a
+// filled dot. The dot is the row that is playing, not the end of the list, and
+// it is what keeps the mark from reading as "scroll to bottom". It is also the
+// only filled shape in this stroke set that is not a notehead.
+//
+// Geometry for a 24 box: the shaft runs y 3.8 → 13 with the head's apex on it,
+// and the dot sits at cy 18 r 2.2 — 2.8 units of air between the two, so they
+// stay separate at 15px instead of fusing into a lollipop. The ink spans y 3.8 →
+// 20.2, centred on the box.
 export const IconLocate = ({ size = 15 }) => (
     <SvgStroke size={size}>
-        <path d="M7.5 9.5 12 14l4.5-4.5" />
-        <path d="M5.5 18.5h13" strokeWidth="1.7" />
+        <path d="M12 3.8v9.2" />
+        <path d="M8.2 9.4 12 13l3.8-3.6" />
+        <circle cx="12" cy="18" r="2.2" fill="currentColor" stroke="none" />
     </SvgStroke>
 );
 
@@ -193,17 +201,10 @@ export const IconRipple = ({ size = 20 }) => (
     </SvgStroke>
 );
 
-export const IconPerson = () => (
-    <SvgStroke size={22}>
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4.5 20.5c1.4-3.3 4.1-5 7.5-5s6.1 1.7 7.5 5" />
-    </SvgStroke>
-);
-
-// Three bars of different heights — 听歌排行's mark. Bars rather than a trophy
-// or a medal: the page is a list ordered by play count, and bars say "counts"
-// without promising a prize. Three strokes survive 16px where a bar chart with
-// a baseline or a grid would turn into a smudge.
+// Three bars of different heights — 听歌排行's mark, worn by its row on 账号. Bars
+// rather than a trophy or a medal: the panel is a list ordered by play count, and
+// bars say "counts" without promising a prize. Three strokes survive 16px where a
+// bar chart with a baseline or a grid would turn into a smudge.
 export const IconChart = ({ size = 20 }) => (
     <SvgStroke size={size}>
         <path d="M4.5 20V14" />

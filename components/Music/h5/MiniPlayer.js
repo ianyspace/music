@@ -37,14 +37,13 @@ const SETTLE_MS = 700;
  * button wears the seek progress as a ring around itself. Only the two
  * transport buttons act in place.
  *
- * It also carries the "jump to the playing track" button on its top-right
- * shoulder. That button belongs to the bar, not to the list: it has to hold
- * still while the list scrolls, and the bar is the one fixed thing in this
- * layout, so it is also the only place where the button's glass can sit
- * against the bar without the two boxes drifting apart. The list is reached
- * through the DOM (`LIST_ID` + `data-track-id`), which keeps the two
- * components independent — the button does nothing at all when there is no
- * row to jump to, e.g. on the profile tab.
+ * It also carries the "jump to the playing track" button, floating above its
+ * top-right corner. That button belongs to the bar, not to the list: it has to
+ * hold still while the list scrolls, and the bar is the one fixed thing in this
+ * layout, so it is also the only place where the button's glass can sit against
+ * the bar without the two boxes drifting apart. The list is reached through the
+ * DOM (`LIST_ID` + `data-track-id`), which keeps the two components independent —
+ * the button does nothing at all when there is no row to jump to.
  */
 const MiniPlayer = function ({
     current,
@@ -208,8 +207,8 @@ const MiniPlayer = function ({
                 </button>
             </div>
 
-            {/* Top-right shoulder of the bar. Outside `.mini` on purpose: that
-                box is the tappable "open the player" surface with
+            {/* Floating above the bar's top-right corner. Outside `.mini` on
+                purpose: that box is the tappable "open the player" surface with
                 `overflow: hidden`, so a button nested inside it would both be
                 clipped at the rounded corner and inherit the tap. Glass on
                 glass, sized to the transport buttons rather than to a tap

@@ -215,16 +215,21 @@
     }
 }
 
-/* --- "jump to the playing track" button (top-right shoulder of the bar) --- */
+/* --- "jump to the playing track" button (above the bar's top-right corner) --- */
 
-/* Anchored to the bar's real box rather than to the viewport: `.wrap` already
-   centres itself on the column and is exactly `min(464px, 100vw - 24px)` wide,
-   so `100% + 16px` of its containing block is 4px inside the bar's right edge
-   — the placement survives any future change to the bar's width, and on a wide
-   window the button stays with the column instead of drifting to the window's
-   edge. 24px of horizontal inset keeps clear of the bar's rounded corner
-   (r=29), so neither outline cuts into the other; the vertical offset lifts it
-   6px above the bar's top edge, so the two read as one stack.
+/* Anchored to the bar's real box rather than to the viewport: `.wrap` centres
+   itself on the column and is exactly as wide as the bar inside it, so a
+   percentage of `.wrap` is a percentage of the bar — the placement survives any
+   future change to the bar's width, and on a wide window the button stays with
+   the column instead of drifting to the window's edge. `right: 24px` keeps
+   clear of the bar's rounded corner (r=29), so neither outline cuts into the
+   other.
+
+   The vertical offset is 14px, up from 6: at 6 the button sat so close to the
+   bar's top edge that the two read as one stacked object and the gap between
+   them looked like a rendering artefact rather than a decision. 14px is enough
+   air to say "this floats above the bar" while still keeping the button in the
+   bar's orbit — it is the same control, not a second one.
 
    Deliberately quiet: the bar's own glass recipe, a mid-weight icon colour,
    and a 32px circle — the same size as the transport buttons it sits above, so
@@ -232,7 +237,7 @@
 .locate-btn {
     position: absolute;
     right: 24px;
-    bottom: calc(100% + 6px);
+    bottom: calc(100% + 14px);
     z-index: 1;
     display: inline-flex;
     align-items: center;

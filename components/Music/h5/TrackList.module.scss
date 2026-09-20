@@ -5,9 +5,10 @@
 // The bar is the original one — sticky, full-bleed, glass — with the brand mark
 // taken out and, for a while, the visitor's avatar put in its place. The avatar
 // left for 账号's identity card, the mark came back (as a rounded square, so it
-// reads as an app icon rather than a face), and the ⋮ is back with it: the
-// drawer it opens holds three things again (音乐库 / 谷歌云盘链接 / 缓存管理),
-// which is what a three-dots button is for.
+// reads as an app icon rather than a face, and shifted 6px right so it lines up
+// with the covers below it), and the ⋮ is back with it: the drawer it opens
+// holds 音乐库 (the library, and the way to connect your own drive), 缓存管理 and
+// 切换外观 — which is what a three-dots button is for.
 //
 // (A short-lived version of this scrolled the bar away and floated a compact
 // glass copy in behind it. That is gone: two bars taking turns was more
@@ -53,7 +54,14 @@
    the image inherits it, so the two cannot drift apart.
 
    `position: relative` is for the state dot, the one child that has to sit
-   outside the artwork's corner. */
+   outside the artwork's corner.
+
+   `margin-left: 6px` is not a nudge to taste: it lines the mark up with the
+   covers *below* it. A row is a 44px thumb inset 4px into a column that is
+   itself inset 18px, so a cover's centre sits 44px from the page edge; a 40px
+   mark flush with the column would centre at 38. Six is exactly the difference.
+   The mark is not a row — it just has to agree with them about where this
+   column starts. */
 .mark {
     position: relative;
     display: inline-flex;
@@ -62,6 +70,7 @@
     flex-shrink: 0;
     width: 40px;
     height: 40px;
+    margin-left: 6px;
     padding: 0;
     border: 0;
     border-radius: 11px;

@@ -4,6 +4,7 @@ import {
     IconChevronRight,
     IconCloud,
     IconFolder,
+    IconGoogleDrive,
     IconNoteList,
     IconRefresh,
 } from '../icons';
@@ -12,27 +13,27 @@ import SheetChrome from './SheetChrome';
 import styles from './Profile.module.scss';
 
 /**
- * 我的 — the library sheet: which library you are browsing, which folder of it,
- * and the way back to the rows.
+ * 音乐库 — the library sheet: which library you are browsing, which folder of it,
+ * and the way to connect or switch to your own Google Drive.
  *
  * **It is a panel, not a page** (`SheetChrome`, the same chrome as 缓存管理 and
- * 谷歌云盘链接), raised from the list's ⋮ drawer. That drawer is the menu about
- * this device and this library — 音乐库 / 谷歌云盘链接 / 缓存管理 — and this is the
- * first of the three. The visitor's own things (the QQ number, 听歌排行, the sync
- * button, appearance) are the *other* sheet, behind the app's mark: this one is
- * about which songs are here, that one is about who is listening.
+ * 谷歌云盘链接), raised from the list's ⋮ drawer. The visitor's own things (the
+ * QQ number, 听歌排行, the sync button) are the *other* sheet, behind the app's
+ * mark: this one is about which songs are here, that one is about who is
+ * listening.
  *
- * 谷歌云盘链接 left this screen again and is back in the drawer. It is the same
- * argument that brought it here in the first place, resolved the other way: the
- * connection is a *menu* action about where the library comes from, and the
- * drawer is the menu. What stays here is what the visitor wants to *look at* —
- * the library's name, how many songs it holds, and the folder picker.
+ * **谷歌云盘链接 is one of this panel's rows now.** It used to be a drawer entry
+ * beside 音乐库, which made the drawer answer the same question twice: "which
+ * library am I on?" was the card in here, and "connect my own drive" was the
+ * entry out there — two taps for one thought. The drawer has one library entry
+ * now, and the connection is where the answer is drawn: a row under the card,
+ * opening the Drive sheet *on top of this one* (it is rendered after this panel,
+ * so closing it comes back here rather than dropping the visitor on the list).
  *
  * The card at the top is deliberately the same shape as the Drive sheet's: the
  * same blue icon, the same 已连接 / 未连接 badge. Two screens answering the same
- * question ("which library am I on?") should answer it the same way — and the
- * badge is what makes the answer a *word* rather than something the visitor has
- * to infer from the title.
+ * question should answer it the same way — and the badge is what makes the
+ * answer a *word* rather than something the visitor has to infer from the title.
  */
 const Profile = function ({
     sourceName,
@@ -42,6 +43,7 @@ const Profile = function ({
     folderName,
     onFolderChange,
     onRefresh,
+    onOpenDrive,
     loading,
     trackCount,
     onGoList,
@@ -122,13 +124,37 @@ const Profile = function ({
                             <span className={styles['row-label']}>浏览歌曲</span>
                             <span className={styles['row-chev']}><IconChevronRight /></span>
                         </button>
+                        {/* Switching or disconnecting lives in the Drive sheet,
+                            not here: this panel says *which* library is loaded,
+                            and that one owns the connection itself. */}
+                        <button
+                            type="button"
+                            className={`${styles.row} ${styles['row-btn']}`}
+                            onClick={onOpenDrive}
+                        >
+                            <span className={styles['row-icon']}><IconGoogleDrive /></span>
+                            <span className={styles['row-label']}>谷歌云盘链接</span>
+                            <span className={styles['row-chev']}><IconChevronRight /></span>
+                        </button>
                     </section>
                 ) : (
                     <section className={styles.group}>
                         <div className={styles['group-label']}>曲库</div>
+                        {/* The one useful next step, as a row rather than as a
+                            sentence pointing at a menu that no longer holds
+                            it. */}
+                        <button
+                            type="button"
+                            className={`${styles.row} ${styles['row-btn']}`}
+                            onClick={onOpenDrive}
+                        >
+                            <span className={styles['row-icon']}><IconGoogleDrive /></span>
+                            <span className={styles['row-label']}>连接 Google 云盘</span>
+                            <span className={styles['row-chev']}><IconChevronRight /></span>
+                        </button>
                         <p className={styles.hint}>
-                            默认播放公共曲库，不需要任何授权。想换成自己云盘里的歌，
-                            在歌曲列表右上角的菜单里选「谷歌云盘链接」。
+                            默认播放公共曲库，不需要任何授权。连接自己的云盘后会改用云盘里的歌曲，
+                            这里也会多出文件夹选择。
                         </p>
                     </section>
                 )}
