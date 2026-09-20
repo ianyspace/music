@@ -74,7 +74,12 @@ const ThreeHud = function ({
         ? Math.min(100, (progress.time / progress.duration) * 100)
         : 0;
     const mode = MODE[playbackMode] || MODE.off;
-    const playing = current ? parseTrackName(current.name) : null;
+    // `current` is `{ track, url, startTime, shouldPlay }` — the song is one
+    // level down. `current.name` is `undefined`, and `parseTrackName` calls
+    // `.match` on its argument, so this one line took the whole page down:
+    // every click on a track threw during render and the error boundary
+    // replaced the room with a card.
+    const playing = current ? parseTrackName(current.track.name) : null;
 
     // The shared `emptyListMessage` is written for the two places that can
     // *change* the source — it ends with "go and pick another folder". Neither
@@ -175,7 +180,10 @@ const ThreeHud = function ({
 
                     <ul className={styles.list}>
                         {visibleTracks.map((track) => {
-                            const active = current && current.id === track.id;
+                            // Also one level down — this read `current.id`,
+                            // which is always `undefined`, so the row of the
+                            // song that was actually playing never lit up.
+                            const active = current && current.track.id === track.id;
                             const name = parseTrackName(track.name);
                             return (
                                 <li key={track.id}>

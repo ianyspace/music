@@ -81,10 +81,16 @@ const ThreeApp = function () {
     const [listOpen, setListOpen] = useState(true);
     const [lyricsWanted, setLyricsWanted] = useState(true);
 
+    // The switch has to be set from what is *on screen*, not flipped blindly.
+    // The words start hidden (`lyricsAutoOpen: false`) while `lyricsWanted`
+    // starts true, so a blind flip makes the first click record the opposite
+    // of what the visitor asked for: they click to show the words, the words
+    // appear, and `lyricsWanted` is left false — so the next song does not
+    // open on them, which is exactly the behaviour this flag exists to give.
     const handleToggleLyrics = useCallback(() => {
-        setLyricsWanted((wanted) => !wanted);
+        setLyricsWanted(!lyricsVisible);
         toggleLyrics();
-    }, [toggleLyrics]);
+    }, [toggleLyrics, lyricsVisible]);
 
     useEffect(() => {
         if (!lyricsWanted || !lyrics || lyricsVisible) return;
@@ -148,8 +154,14 @@ const ThreeApp = function () {
     // A plain object rebuilt on every render is fine here: `ThreeStage` puts it
     // in a ref and the render loop reads that ref, so nothing re-renders and
     // nothing is torn down when the clock ticks.
-    const coverUrl = current ? coverUrlOf(current) : '';
-    const coverName = current ? current.name : '';
+    // `current` is `{ track, url, startTime, shouldPlay }`, not a track. Both
+    // of these read it as one: `coverUrlOf(current)` always answered `''`
+    // because the wrapper has no `coverUrl` field, so the record's label never
+    // got the artwork, and `current.name` was `undefined`, so the fallback
+    // gradient was always the generic one.
+    const coverTrack = current ? current.track : null;
+    const coverUrl = coverUrlOf(coverTrack);
+    const coverName = coverTrack ? coverTrack.name : '';
     // `makeArtwork` paints a canvas and encodes a data URL, so it is memoised
     // on the song rather than run once per `timeupdate`.
     const coverFallback = useMemo(() => makeArtwork(coverName || '音乐'), [coverName]);
