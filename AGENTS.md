@@ -499,6 +499,13 @@ components/Music/three/
   `phi: 0.5` 时相机几乎与盘面齐平，整个星系退化成唱片后面的一条线；
   0.6 才既看得到盘面、又保得住唱片的构图。`FRAMING.lyrics` 则是 `5.4 / 0.34 / 1.82`——
   贴纸有 5.6 单位宽，比这更近就会把长句两头切掉。
+- **只有歌词机位的距离跟着画面比例走**（`fitToAspect`）。`PerspectiveCamera`
+  固定的是**垂直**视场角，窗口越窄横向能看到的世界单位越少：唱片和尘埃紧凑，
+  窄窗口只是把房间裁掉一点；**歌词是 5.6 单位宽的平面，约束在横向上**。
+  16:9 时横向可视 7.76 单位很宽裕，5:4 只剩 5.45（两头各切 0.07），
+  **窗口吸到屏幕半边是 0.89，只有 3.88 单位 —— 长句每边丢一个字**，
+  而这算很正常的用法。所以距离乘 `max(1, 16/9 / aspect)`，宽窗口一律不动
+  （宽出来的地方本来就是「房间」）。改这块之前先用 `--size=WxH` 扫一遍窗口尺寸。
 - **光标推开粒子用的是射线与地面平面的交点**（`stage.aim(x, y)`，落在 `RING_Y` 高度），
   不是屏幕坐标。这样同一套推开逻辑在扁盘和立环上都是对的，
   而且悬停（没按播放、没拖拽）也要调用 —— 不然鼠标划过是一片没有反应的空场。
@@ -534,7 +541,7 @@ components/Music/three/
 - `node scripts/preview-desktop-list.js` — 生成列表面板的可量尺寸预览页（先 `npm run build`）
 - `node scripts/preview-covers.js` — 生成封面的可量尺寸预览页：列表/抽屉/缓存/唱片四种形状，每种都放了「有封面」和「没封面」两个对照
 - `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
-- `node scripts/drive-page.js <url> [--insecure] [--track=X] [--out=前缀]` — 用真 Chrome 打开页面并点一遍，报告 DOM 状态、失败请求和全部异常；有异常就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）
+- `node scripts/drive-page.js <url> [--insecure] [--track=X] [--size=WxH] [--out=前缀]` — 用真 Chrome 打开页面并点一遍，报告 DOM 状态、失败请求和全部异常；有异常就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 ### 要看「画出来是什么样」的时候
