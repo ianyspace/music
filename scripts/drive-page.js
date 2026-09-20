@@ -15,6 +15,10 @@
  *
  * Run: node scripts/drive-page.js <url> [--insecure] [--track=夜曲] [--out=dir/name]
  *
+ *   --size=WxH  window size, default 1440x810. Worth sweeping: the layouts have
+ *               been tuned at particular sizes (the wide-screen page had work
+ *               done specifically for 1280x600), and a room that is fine at
+ *               810 tall can put the panel on top of the record at 600.
  *   --insecure  adds `--disable-web-security` to a throwaway profile, so a
  *               locally served build can read the library worker — whose CORS
  *               allows only `https://ianyspace.github.io`. Without it a local
@@ -54,6 +58,7 @@ const insecure = flag('insecure');
 const track = option('track', '');
 const out = option('out', '');
 const port = Number(option('port', '9333'));
+const size = option('size', '1440x810').replace('x', ',');
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
@@ -62,7 +67,7 @@ const chrome = spawn(CHROME, [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${mkdtempSync(join(tmpdir(), 'drive-page-'))}`,
     '--autoplay-policy=no-user-gesture-required',
-    '--window-size=1440,810',
+    `--window-size=${size}`,
     '--hide-scrollbars',
     '--no-first-run',
     '--no-default-browser-check',

@@ -26,6 +26,19 @@ const FOV = 44;
 /** A full turn, for folding an azimuth onto the nearest one. */
 const TURN = Math.PI * 2;
 
+/**
+ * The aspect the distances below were tuned on. Only the lyrics care.
+ *
+ * The record and the dust are compact — a narrower window just crops the room
+ * around them, which is fine. The lyric plane is 5.6 units *wide*, so its
+ * constraint is horizontal, and a `PerspectiveCamera` holds the vertical field
+ * fixed: at 16:9 that distance shows 7.8 units across and the plane sits
+ * comfortably inside; at 5:4 it shows 5.45 and a long line loses a sliver at
+ * each end; a window snapped to half a widescreen is 0.89, where only 3.9
+ * units fit and a line loses a character at *both* ends.
+ */
+const REFERENCE_ASPECT = 16 / 9;
+
 const FRAMING = {
     // Slightly higher than a record-on-a-table angle. The dust disc lies in the
     // floor plane and the record stands on top of it; from 0.5 the camera was
@@ -36,8 +49,22 @@ const FRAMING = {
     paused: { radius: 3.6, phi: 0.66, targetY: 0.18 },
     // Low and far, aimed at the middle of the sheet rather than the record.
     // The lyrics plane is 5.6 units wide, so anything closer than this clips
-    // the ends of a long line.
+    // the ends of a long line — at `REFERENCE_ASPECT`. Narrower windows get
+    // pushed back, see `fitToAspect` below.
     lyrics: { radius: 5.4, phi: 0.34, targetY: 1.82 },
+};
+
+/**
+ * How much further back a narrow window has to sit for the words to fit.
+ *
+ * Scales with the shortfall rather than with the plane's exact width, so the
+ * plane keeps the same share of the frame it has at 16:9 — the composition is
+ * what was tuned, not the number. A *wider* window is left alone: there the
+ * extra width is the room showing, which is the point of a wide window.
+ */
+const fitToAspect = function (distance, aspect) {
+    if (!aspect || aspect <= 0) return distance;
+    return distance * Math.max(1, REFERENCE_ASPECT / aspect);
 };
 
 /** Radians per second of unattended drift, and the pause after a drag. */
@@ -103,7 +130,9 @@ export const createCameraRig = function (aspect, { reduced = false } = {}) {
             }
 
             phi = damp(phi, framing.phi, 2.4, delta);
-            radius = damp(radius, framing.radius, 2.2, delta);
+            radius = damp(radius, framing === FRAMING.lyrics
+                ? fitToAspect(framing.radius, camera.aspect)
+                : framing.radius, 2.2, delta);
             targetY = damp(targetY, framing.targetY, 2.4, delta);
             shift = damp(shift, state.listOpen ? 1 : 0, 3, delta);
 
