@@ -40,9 +40,14 @@
 }
 
 /* The visitor's avatar, standing where the brand mark and the library's name
-   used to. A music note behind a frosted pane, and not a button: there is
-   nothing behind it yet, and a control that does nothing is worse than a
-   picture that does nothing. */
+   used to — the app's one Apple thing, so it is built the way Apple builds a
+   default avatar: a **solid grey disc with the glyph knocked out in white**.
+
+   It used to be a pale `--field` disc with a dark glyph under a `--glass` pane,
+   which in light mode came out as an empty white circle — a hole in the header
+   rather than an avatar. The fill is what makes it read, so the fill is the
+   token (`--avatar-bg` / `--avatar-fg`, both themes) and the glass on top is
+   only a sheen. Not a button: there is nothing behind it yet. */
 .avatar {
     position: relative;
     display: inline-flex;
@@ -52,12 +57,8 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: var(--field);
-    /* `--text`, not `--text-2`: the glyph has to survive the cover. The pane
-       takes ~60% of the contrast out of whatever is under it, so a note drawn
-       in the muted colour arrives at roughly a quarter strength — legible in a
-       4x render and invisible at 40px, which is the only size that ships. */
-    color: var(--text);
+    background: var(--avatar-bg);
+    color: var(--avatar-fg);
     /* The glyph is clipped to the disc by the radius rather than by
        `overflow: hidden`, which would also clip the cover's own edge. */
     isolation: isolate;
@@ -68,21 +69,27 @@
     }
 }
 
-/* The frosted cover: a low-blur pane laid over the glyph, so the note reads as
-   something *under* glass instead of a flat icon in a circle.
+/* The frosted cover: a low-blur pane over the glyph, so the note reads as
+   something *under* glass instead of a flat icon on a disc.
 
    "Low" is the point and it is a narrow window. `backdrop-filter` blurs what is
    painted behind it, so the blur radius *is* how much of the note survives —
-   past ~4px it stops being a music note and becomes a smudge. The `--glass`
-   fill on top is what makes it read as glass rather than as a blurred icon;
-   without it the note just looks out of focus. */
+   by 5px the heads have merged and it is a smudge with two dots in it. 2px is
+   where the pane is unmistakable and the note is still a note; the comparison
+   is `scripts/preview-avatar.js`, which renders 0/2/3/5px at the real 40px.
+
+   The sheen is 14% white, **not `--glass`**. `--glass` is 60% white, and over a
+   solid disc that is not a pane at all: it repaints the disc pale, which is the
+   "纯白背景" this avatar just stopped being. On a flat fill the blur is the
+   glass; the sheen is only enough to say there is a surface at all, and one
+   value covers both themes because it sits on a grey either way. */
 .avatar-glass {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: var(--glass);
-    -webkit-backdrop-filter: blur(3px) saturate(1.6);
-    backdrop-filter: blur(3px) saturate(1.6);
+    background: rgba(255, 255, 255, 0.14);
+    -webkit-backdrop-filter: blur(2px) saturate(1.4);
+    backdrop-filter: blur(2px) saturate(1.4);
 }
 
 /* The library's name, off screen but in the document — the page's heading, and

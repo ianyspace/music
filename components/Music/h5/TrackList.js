@@ -111,15 +111,17 @@ const TrackList = function ({
             <header className={styles.head}>
                 <div className={styles['head-row']}>
                     {/* The visitor's avatar, standing where the library's brand
-                        mark and name used to. A music note behind a frosted
-                        cover, and deliberately not a button: a control that
-                        does nothing is worse than a picture that does nothing.
+                        mark and name used to. Apple's default-avatar shape — a
+                        solid grey disc with the glyph knocked out — carrying a
+                        music note instead of a person, and deliberately not a
+                        button: a control that does nothing is worse than a
+                        picture that does nothing.
 
                         The cover is the point — a low-blur glass pane over the
                         glyph, so the note reads as something *under* glass
-                        rather than as a flat icon in a circle. */}
+                        rather than as a flat icon on a disc. */}
                     <span className={styles.avatar} role="img" aria-label="用户头像">
-                        <IconNote />
+                        <IconNote filled />
                         <span className={styles['avatar-glass']} aria-hidden="true" />
                     </span>
                     {/* The library's name is still here, just not on screen.

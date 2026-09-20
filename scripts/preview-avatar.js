@@ -32,9 +32,14 @@ const row = idOf('TrackList_head-row');
 const avatar = idOf('TrackList_avatar');
 const glass = idOf('TrackList_avatar-glass');
 
-// The same glyph the component renders (`IconNote`), inline so this page needs
-// no bundle.
-const note = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>`;
+// The same glyph the component renders (`IconNote filled`), inline so this page
+// needs no bundle — stems and beam as filled shapes, heads as slanted ovals.
+const note = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7.8" y="4" width="2.4" height="14" rx="1.2"/><rect x="18.8" y="2" width="2.4" height="14" rx="1.2"/><path d="M7.8 3.8 21.2 1.4v2.4L7.8 6.2z"/><ellipse cx="6" cy="18" rx="3.2" ry="2.8" transform="rotate(-18 6 18)"/><ellipse cx="17" cy="16" rx="3.2" ry="2.8" transform="rotate(-18 17 16)"/></svg>`;
+
+// Stand-ins for the three icon buttons the header also holds, so the avatar is
+// judged at its real weight next to them. Deliberately *not* the note: two of
+// the same glyph on one row would make it look like the buttons changed too.
+const dot = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="2.2"/></svg>';
 
 // One header per blur radius, so the window can be judged side by side rather
 // than by rebuilding four times.
@@ -45,11 +50,11 @@ const band = function (themeClass, label) {
     <span class="cap">blur ${r}px</span>
     <div class="${head}" style="margin:0;padding:10px 18px;--r:${r}px">
       <div class="${row}">
-        <span class="${avatar}" role="img" aria-label="用户头像">${note}<span class="${glass}" style="backdrop-filter:blur(var(--r)) saturate(1.6);-webkit-backdrop-filter:blur(var(--r)) saturate(1.6)"></span></span>
+        <span class="${avatar}" role="img" aria-label="用户头像">${note}<span class="${glass}" style="backdrop-filter:blur(var(--r));-webkit-backdrop-filter:blur(var(--r))"></span></span>
         <div style="display:flex;align-items:center;gap:8px">
-          <button type="button" style="width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--text);cursor:pointer">${note}</button>
-          <button type="button" style="width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--text);cursor:pointer">${note}</button>
-          <button type="button" style="width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--text);cursor:pointer">${note}</button>
+          <button type="button" style="width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--text);cursor:pointer">${dot}</button>
+          <button type="button" style="width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--text);cursor:pointer">${dot}</button>
+          <button type="button" style="width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--text);cursor:pointer">${dot}</button>
         </div>
       </div>
     </div>
@@ -76,11 +81,12 @@ h2 { font-size: 13px; font-weight: 600; letter-spacing: .3px; margin: 22px 18px 
 /* The real page fills the viewport; here the two themes have to fit in one
    picture, so the token root is not allowed to claim the whole screen. */
 .${page} { min-height: auto; }
-/* 3x, because the question is whether the *glyph* survives — at 40px the
-   difference between blur 2 and blur 3 is a pixel and a half. */
-.${avatar} { width: 120px !important; height: 120px !important; }
-.${avatar} svg { width: 62px !important; height: 62px !important; }
-.cell button svg { width: 19px; height: 19px; }
+/* The avatar is deliberately **not** scaled up. The blur radius is in CSS
+   pixels and the glyph is 21px, so a magnified avatar changes the ratio that is
+   the whole question — shoot this page with force-device-scale-factor=4
+   instead, which magnifies the result without touching the relationship.
+   (No backticks in here: this whole block is inside a template literal, and a
+   stray one closes it early with a syntax error pointing somewhere else.) */
 </style>
 </head>
 <body>
