@@ -40,10 +40,8 @@
 }
 
 /* The visitor's avatar, standing where the brand mark and the library's name
-   used to — the app's one Apple thing, so it is built the way Apple builds a
-   default avatar: a **filled disc with the glyph knocked out in white**, the
-   fill now a soft diagonal gradient (Apple's greys, light → dark) so the disc
-   reads as a lit surface instead of a flat swatch.
+   used to — a **filled disc with the glyph knocked out in white**, the fill a
+   diagonal **colour** gradient (blue → violet, both themes).
 
    It used to be a pale `--field` disc with a dark glyph under a `--glass` pane,
    which in light mode came out as an empty white circle — a hole in the header
@@ -86,10 +84,13 @@
    is `scripts/preview-avatar.js`, which renders 0/2/3/5px at the real 40px.
 
    The sheen is 14% white, **not `--glass`**. `--glass` is 60% white, and over a
-   solid disc that is not a pane at all: it repaints the disc pale, which is the
+   solid fill that is not a pane at all: it repaints the disc pale, which is the
    "纯白背景" this avatar just stopped being. On a flat fill the blur is the
    glass; the sheen is only enough to say there is a surface at all, and one
-   value covers both themes because it sits on a grey either way. */
+   value covers both themes because it sits on a saturated fill either way.
+   **This layer is not part of the fill's story** — the fill has changed twice
+   (grey, then a grey ramp, now a colour ramp) and the cover has stayed put
+   through all three. Change the gradient in `--avatar-bg`, not here. */
 .avatar-glass {
     position: absolute;
     inset: 0;

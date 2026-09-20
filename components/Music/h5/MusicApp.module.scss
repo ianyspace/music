@@ -18,13 +18,13 @@
     --field: rgba(120, 120, 128, 0.12);
     --card: rgba(255, 255, 255, 0.82);
     --thumb: #fff;
-    /* The default avatar. Apple's system greys as a **gradient**, because the
-       placeholder is the one Apple thing on the screen and a pale disc reads as
-       an empty white circle rather than as an avatar. The glyph is knocked out
-       in white. The range stops short of white at the light end: the glyph is
-       centred, so it sits over the middle of the ramp, and a ramp that starts
-       pale would eat the top of the note. */
-    --avatar-bg: linear-gradient(150deg, #9a9ba0 0%, #8e8e93 45%, #6a6a6f 100%);
+    /* The default avatar. A **colour** ramp — blue → violet → magenta — with the
+       glyph knocked out in white. The gradient is what makes the disc read as a
+       picture rather than as a flat swatch, and the white glyph is what keeps it
+       reading as an avatar rather than as a coloured button, so neither end goes
+       near white: the note has to survive the whole ramp. The frosted cover on
+       top is a separate thing and does not move with this. */
+    --avatar-bg: linear-gradient(150deg, #6a8dff 0%, #8f6bf6 50%, #c06bef 100%);
     --avatar-fg: #fff;
     --slider-track: rgba(120, 120, 128, 0.22);
     --slider-fill: #1d1d1f;
@@ -76,7 +76,7 @@
         --slider-fill: #f5f5f7;
         --option-color: #f5f5f7;
         --option-bg: #2c2c30;
-        --avatar-bg: linear-gradient(150deg, #7c7d82 0%, #636366 45%, #45454a 100%);
+        --avatar-bg: linear-gradient(150deg, #5578f0 0%, #7a56e6 50%, #a655dd 100%);
         --avatar-fg: #fff;
         --shadow-card: 0 24px 60px -20px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.3);
         --blob-opacity: 0.28;
