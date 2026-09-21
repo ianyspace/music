@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * Renders the app's mark in both of its states — the 40px square at rest and
- * the wide playing bar (canvas rainbow + floating notes, QQ dot removed) — so
- * the canvas drawing, the breathing scales and the wide layout can be eyeballed
- * without the audio plumbing.
+ * the full-header playing rainbow (per-band spectrum heave + floating notes,
+ * QQ dot removed) — so the canvas drawing, the breathing scales and the wide
+ * layout can be eyeballed without the audio plumbing.
  *
  * The drawing and layout constants are copied from `MarkNote.js` on purpose:
  * this file has no bundler, so the rainbow has to be drawn here too. Change one
- * and change the other. The numbers printed at the top left are the scale
- * factors being shown, so a screenshot that is later measured does not need to
- * guess which one is which.
+ * and change the other. The preview has no analyser, so it feeds the drawing a
+ * plausible made-up band vector (bass heavy, rolling off to the highs) scaled
+ * by the level — the real app hands the same shape of data from `useBeat`.
  *
  * Run: node scripts/preview-mark-breath.js [outFile]   (run `npm run build` first)
  */
@@ -55,39 +55,43 @@ const WAVE_AMP = 0.06;
 const WAVE_FREQ = 2.4;
 const SCORE_BOUNCE = 0.12;
 const BREATH_BG = 0.10;
-const BREATH_NOTE = 0.24;
+const BREATH_NOTE = 0.32;
 const FLOATING_NOTES = [
-    { size: 20, left: 0.56, bottom: 7, breath: 0.26 },
-    { size: 13, left: 0.72, bottom: 15, breath: 0.34 },
-    { size: 16, left: 0.86, bottom: 5, breath: 0.30 },
+    { size: 20, left: 0.56, bottom: 7, breath: 0.38 },
+    { size: 13, left: 0.72, bottom: 15, breath: 0.48 },
+    { size: 16, left: 0.86, bottom: 5, breath: 0.42 },
 ];
-const DRAW_SIZE = 160;
 // -----------------------------------------------------------------------------
 
-const drawBackdrop = function (canvas, size, time, level) {
+/** Plausible made-up spectrum: bass-heavy, rolling off toward the highs. */
+const fakeBands = function (level) {
+    const shape = [1, 0.85, 0.7, 0.55, 0.42, 0.3, 0.2];
+    return shape.map((s) => s * level);
+};
+
+const drawBackdrop = function (canvas, w, h, time, bands) {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    ctx.scale(dpr, dpr);
-    const w = size;
-    const h = size;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const numBands = BAND_COLORS.length;
-    const bandH = 1 / numBands;
+    const bandH = h / numBands;
     const twoPiFreq = Math.PI * 2 * WAVE_FREQ;
-    const amp = WAVE_AMP * (0.55 + 0.45 * level);
     const boundaries = [];
     for (let b = 0; b <= numBands; b += 1) {
         const baseY = b * bandH;
         const isEdge = b === 0 || b === numBands;
         const phase = b * 0.85;
         const drift = time * (0.9 + b * 0.17);
-        const bounce = isEdge ? 0 : level * SCORE_BOUNCE * Math.sin(b * 1.7);
+        const bandLevel = isEdge || !bands ? 0 : (bands[b - 1] + bands[b]) / 2;
+        const amp = WAVE_AMP * (0.55 + 0.45 * bandLevel);
+        const bounce = isEdge ? 0 : bandLevel * SCORE_BOUNCE * Math.sin(b * 1.7);
         const points = new Array(STEPS + 1);
         for (let s = 0; s <= STEPS; s += 1) {
             const t = s / STEPS;
             const wave = isEdge ? 0 : Math.sin(phase + drift + t * twoPiFreq) * amp;
-            points[s] = { x: t * w, y: (baseY + wave + bounce) * h };
+            points[s] = { x: t * w, y: baseY + wave * h + bounce * h };
         }
         boundaries.push(points);
     }
@@ -113,12 +117,12 @@ L153 371 L147 355 L147 338 L149 330 L155 317 L161 309 L171 299 L179 293 L190 288
 L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
 
-const floatNotesMarkup = function (level, withTransforms) {
+const floatNotesMarkup = function (level) {
     return `
         <span class="${cls.notes} ${cls.notesOn}" aria-hidden="true">
             ${FLOATING_NOTES.map((spec, i) => `
                 <span class="${cls.noteFloat}"
-                    style="width:${spec.size}px;height:${spec.size}px;left:${Math.round(spec.left * 100)}%;bottom:${spec.bottom}px;${withTransforms ? `transform:scale(${(1 + spec.breath * level).toFixed(3)});` : ''}">
+                    style="width:${spec.size}px;height:${spec.size}px;left:${Math.round(spec.left * 100)}%;bottom:${spec.bottom}px;transform:scale(${(1 + spec.breath * level).toFixed(3)});">
                     <svg viewBox="0 0 512 512" focusable="false">
                         <path class="${cls.noteFloatInk}" d="${NOTE_PATH}"></path>
                     </svg>
@@ -144,8 +148,9 @@ const renderMark = function (level, label) {
     `;
 };
 
-// The wide playing bar, in a mock header row: mark grows (flex-grow 1), the
-// actions sit at the trailing end — the layout the real app builds.
+// The full-header playing rainbow, in a mock header row: the mark is absolute
+// and fills the bar; the actions float above it (z-index) — the layout the
+// real app builds.
 const wideBar = function (level) {
     const bgScale = 1 + BREATH_BG * level;
     const noteScale = 1 + BREATH_NOTE * level;
@@ -156,7 +161,7 @@ const wideBar = function (level) {
                 <svg class="${cls.art}" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
                     <path class="${cls.ink}" d="${NOTE_PATH}" style="transform: scale(${noteScale.toFixed(3)})"></path>
                 </svg>
-                ${floatNotesMarkup(level, true)}
+                ${floatNotesMarkup(level)}
             </button>
             <span class="action">🔍</span>
             <span class="action">♥</span>
@@ -170,7 +175,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>mark — rest square & wide playing bar</title>
+<title>mark — rest square & full-header playing rainbow</title>
 <style>${css}</style>
 <style>
     html, body { margin: 0; padding: 0; background: #f2f2f7; }
@@ -181,10 +186,13 @@ const html = `<!doctype html>
     .strip { display: flex; gap: 28px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 28px; }
     .cell { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
     .cell figcaption { font: 11px/1.4 ui-monospace, monospace; color: #333; }
-    .header-bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px;
-        background: rgba(255,255,255,.72); backdrop-filter: blur(24px) saturate(1.8);
-        border-radius: 12px; margin-bottom: 18px; max-width: 420px; }
-    .action { font-size: 15px; color: #3c3c43; }
+    /* The real .header-bar mock: position relative so the absolute wide mark
+       resolves against it, exactly like the app's sticky header. */
+    .header-bar { position: relative; display: flex; align-items: center; gap: 10px;
+        padding: 10px 18px; height: 60px; background: rgba(255,255,255,.72);
+        backdrop-filter: blur(24px) saturate(1.8); border-radius: 0;
+        margin-bottom: 18px; max-width: 420px; }
+    .header-bar .action { position: relative; z-index: 1; font-size: 15px; color: #3c3c43; }
     .label { font: 12px/1.5 ui-monospace, monospace; color: #666; margin: 8px 0 4px; }
 </style>
 </head>
@@ -195,9 +203,9 @@ const html = `<!doctype html>
     ${renderMark(0, 'level=0.00')}
 </div>
 
-<div class="label">播放中的宽条：彩虹乐谱跳动 + 大大小小的音符呼吸</div>
+<div class="label">播放中：彩虹铺满整个 header，各条带跟各自频段跳动，音符呼吸</div>
 ${wideBar(1.0)}
-${wideBar(0.5)}
+${wideBar(0.55)}
 
 <script>
     // Drawing logic copied from MarkNote.js — keep both in sync.
@@ -206,53 +214,17 @@ ${wideBar(0.5)}
     const WAVE_AMP = ${WAVE_AMP};
     const WAVE_FREQ = ${WAVE_FREQ};
     const SCORE_BOUNCE = ${SCORE_BOUNCE};
-    const DRAW_SIZE = ${DRAW_SIZE};
-    const drawBackdrop = function (canvas, size, time, level) {
-        const ctx = canvas.getContext('2d');
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = size * dpr;
-        canvas.height = size * dpr;
-        ctx.scale(dpr, dpr);
-        const w = size;
-        const h = size;
-        const numBands = BAND_COLORS.length;
-        const bandH = 1 / numBands;
-        const twoPiFreq = Math.PI * 2 * WAVE_FREQ;
-        const amp = WAVE_AMP * (0.55 + 0.45 * level);
-        const boundaries = [];
-        for (let b = 0; b <= numBands; b += 1) {
-            const baseY = b * bandH;
-            const isEdge = b === 0 || b === numBands;
-            const phase = b * 0.85;
-            const drift = time * (0.9 + b * 0.17);
-            const bounce = isEdge ? 0 : level * SCORE_BOUNCE * Math.sin(b * 1.7);
-            const points = new Array(STEPS + 1);
-            for (let s = 0; s <= STEPS; s += 1) {
-                const t = s / STEPS;
-                const wave = isEdge ? 0 : Math.sin(phase + drift + t * twoPiFreq) * amp;
-                points[s] = { x: t * w, y: (baseY + wave + bounce) * h };
-            }
-            boundaries.push(points);
-        }
-        for (let i = 0; i < numBands; i += 1) {
-            const top = boundaries[i];
-            const bot = boundaries[i + 1];
-            ctx.beginPath();
-            ctx.moveTo(top[0].x, top[0].y);
-            for (let s = 1; s <= STEPS; s += 1) ctx.lineTo(top[s].x, top[s].y);
-            for (let s = STEPS; s >= 0; s -= 1) ctx.lineTo(bot[s].x, bot[s].y);
-            ctx.closePath();
-            ctx.fillStyle = BAND_COLORS[i];
-            ctx.fill();
-        }
-    };
+    const fakeBands = ${fakeBands.toString()};
+    const drawBackdrop = ${drawBackdrop.toString()};
     document.querySelectorAll('canvas[data-draw="1"]').forEach(function (c) {
-        drawBackdrop(c, DRAW_SIZE, 0, Number(c.getAttribute('data-level')) || 0);
+        const level = Number(c.getAttribute('data-level')) || 0;
+        drawBackdrop(c, c.clientWidth || 40, c.clientHeight || 40, 0, fakeBands(level));
     });
     document.getElementById('out').textContent = [
-        'mark: rest square + wide playing bar',
-        'wide: flex-grow 1, rainbow heave SCORE_BOUNCE=' + SCORE_BOUNCE,
-        'notes: ' + document.querySelectorAll('.note-float, [class*="note-float"]').length + ' floaters, dot removed',
+        'mark: rest square + full-header playing rainbow',
+        'wide: absolute inset of header, actions float at z1',
+        'bands: per-stripe spectrum (fake shape, real app = useBeat analyser)',
+        'breaths: bg ' + ${BREATH_BG} + ', note ' + ${BREATH_NOTE} + ', floats 0.38/0.48/0.42',
     ].join('\\n');
 </script>
 </body>

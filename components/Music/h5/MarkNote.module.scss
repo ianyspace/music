@@ -53,7 +53,15 @@
     background-color: transparent;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.15s, flex-grow 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+    /* The ease shared by every property the wide state animates. One curve,
+       one duration — the bar grows as one motion, not as five. */
+    --mark-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --mark-dur: 0.45s;
+    transition:
+        transform 0.15s,
+        width var(--mark-dur) var(--mark-ease),
+        height var(--mark-dur) var(--mark-ease),
+        border-radius var(--mark-dur) var(--mark-ease);
 
     @media (hover: hover) {
         &:hover {
@@ -66,17 +74,77 @@
     }
 }
 
-/* The playing state: grow to meet the actions. The hover/active scales above
-   are toned down from the square's 1.06/0.94 — a 6% wobble reads fine on a
-   40px tile but makes a wide bar shiver. */
+/* The playing state: the mark leaves the row's flow and fills the *whole*
+   header — not just the space between the elements, the header itself, padding
+   included. Everything else in the bar (search, the icon actions) floats above
+   it at a higher z-index (see `TrackList.module.scss`), which is why this can
+   be a `<button>` covering them without eating their taps: it sits under, they
+   sit on, and a tap lands on whoever is on top.
+
+   The animated route from square to full-bleed is a **keyframes animation**,
+   not a transition, for a structural reason: `position` itself cannot
+   transition, so the flip from in-flow to absolute cannot be eased — but every
+   property that *describes* the box can be keyframed. In flow the square sits
+   at (24px, 10px) — the header's 18px padding + the mark's 6px margin, and the
+   header's 10px top padding; the `from` frame plants the absolute box at
+   exactly that point (so the flip is invisible), and the `to` frame lands at
+   the header's corner with `width/height: 100%`. px → % interpolates fine in
+   keyframes. `fill-mode: both` holds the end state after the animation, which
+   is what keeps the mark full-bleed for as long as it plays. Radius goes to 0
+   with a plain transition (it is a normal property change either way): a
+   full-bleed surface with rounded corners is a card, and this is not a card,
+   it *is* the header while it plays.
+
+   `z-index: 0` is the floor of the header's stacking: the floating elements
+   sit at z 1. On the way back (class removed) the element re-enters flow
+   immediately and the `width/height` transition in `.mark` eases the shrink —
+   the position snaps, the size does not. */
 .mark-wide {
-    flex-grow: 1;
+    position: absolute;
+    margin-left: 0;
+    border-radius: 0;
+    z-index: 0;
+    /* The big note tracks the left edge instead of the centre: a note
+       centred in a full-width bar floats in nowhere, and the leading end is
+       where the mark has always lived. */
+    justify-content: flex-start;
+    animation: mark-spread var(--mark-dur) var(--mark-ease) both;
+}
+
+/* The big note keeps its aspect while its box goes full-bleed. It fills the
+   button's height (so it grows gently from 40px to the header's 60px as the
+   spread animates) and `aspect-ratio` stops the wide box from stretching it
+   into a smear — width follows height instead of the box. */
+.mark-wide .art {
+    width: auto;
+    height: 100%;
+    aspect-ratio: 1 / 1;
+}
+
+@keyframes mark-spread {
+    from {
+        left: 24px;
+        top: 10px;
+        width: 40px;
+        height: 40px;
+    }
+    to {
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+    }
 }
 
 /* The floating-note layer and its inhabitants. The layer is `pointer-events:
    none` (the button is the tap target) and the notes fade with `opacity`
    rather than unmounting: appearing and leaving are both transitions, and the
-   refs stay valid for `paint` to breathe through. */
+   refs stay valid for `paint` to breathe through.
+
+   The asymmetry is the point: `.notes-on` carries a `transition-delay` so the
+   fade-in waits for the bar's 0.45s expansion to *finish* — 音符是展开完全后才
+   丝滑出现 — while the fade-out runs with no delay, because a bar that is
+   folding back up should not keep its notes hovering over a shrinking frame. */
 .notes {
     position: absolute;
     inset: 0;
@@ -87,6 +155,7 @@
 
 .notes-on {
     opacity: 1;
+    transition-delay: 0.5s;
 }
 
 /* One floating note: an absolutely positioned square of `size` px, seat and

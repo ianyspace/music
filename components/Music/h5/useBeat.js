@@ -57,6 +57,29 @@ const FALL = 5.5;
 const REST = 0.004;
 
 /**
+ * The frequency bands, one per rainbow stripe. The analyser's bins are
+ * `sampleRate / fftSize` wide (~86 Hz each at 44.1 kHz with `fftSize: 512`),
+ * and the split below is roughly logarithmic — wide at the top where music
+ * has most of its energy spread, narrow at the bottom where a kick lives.
+ * Each band's level is the mean of its bins, through the same 1.25 exponent
+ * as the main level. Band 0 is the bass the main `level` already tracks, so
+ * the note breathing and the bottom rainbow stripe pulse together.
+ */
+const BAND_EDGES = [
+    [1, 4],      // ~86–344 Hz   kick / bass
+    [4, 8],      // ~344–690 Hz
+    [8, 16],     // ~0.7–1.4 kHz
+    [16, 32],    // ~1.4–2.8 kHz
+    [32, 64],    // ~2.8–5.5 kHz
+    [64, 128],   // ~5.5–11 kHz
+    [128, 220],  // ~11–19 kHz   (headroom below the 256-bin ceiling)
+];
+const BAND_COUNT = BAND_EDGES.length;
+/** The all-rest band vector, handed to `apply` wherever a plain `0` used to
+ *  close the loop, so the rainbow and the note always settle together. */
+const ZERO_BANDS = new Array(BAND_COUNT).fill(0);
+
+/**
  * One media element can only ever be given a source node once — a second
  * `createMediaElementSource` on the same element throws `InvalidStateError`.
  * The list is unmounted and remounted as the visitor moves between routes, so
@@ -209,15 +232,26 @@ const nudge = function (audio) {
     } catch (err) { /* nothing else left to try */ }
 };
 
-/** The 86–430 Hz band's raw sum. Zero is the whole subject of this file's
- *  second half: it is what a source node that has come back without its audio
- *  reads, and it is the only symptom that failure has — no state to check, no
- *  promise to catch, nothing in the console. */
-const readSum = function (graph) {
+/** The 86–430 Hz band's raw sum — and, in the same pass over the byte data,
+ *  each rainbow band's mean. Zero is the whole subject of this file's second
+ *  half: it is what a source node that has come back without its audio reads,
+ *  and it is the only symptom that failure has — no state to check, no promise
+ *  to catch, nothing in the console. One `getByteFrequencyData` per frame is
+ *  all the analyser gets asked for; the main level and the bands are two
+ *  readings of the same buffer, never two calls. */
+const readSpectrum = function (graph) {
     graph.analyser.getByteFrequencyData(graph.data);
+    const data = graph.data;
     let sum = 0;
-    for (let i = BIN_FROM; i < BIN_TO; i += 1) sum += graph.data[i];
-    return sum;
+    for (let i = BIN_FROM; i < BIN_TO; i += 1) sum += data[i];
+    const bands = new Array(BAND_COUNT);
+    for (let b = 0; b < BAND_COUNT; b += 1) {
+        const [from, to] = BAND_EDGES[b];
+        let bandSum = 0;
+        for (let i = from; i < to; i += 1) bandSum += data[i];
+        bands[b] = Math.pow(Math.min(1, Math.max(0, bandSum / ((to - from) * 255))), 1.25);
+    }
+    return { sum, bands };
 };
 
 /**
@@ -302,7 +336,10 @@ const damp = function (from, to, lambda, dt) {
 /**
  * @param audioRef ref to the app's one `<audio>` element
  * @param playing  whether it is playing right now
- * @param apply    called with the level, 0..1, once a frame while it matters
+ * @param apply    called with the main level (0..1) and the per-rainbow-band
+ *                 levels (array of BAND_COUNT, 0..1), once a frame while it
+ *                 matters. Both come from the same damped pass, so the note
+ *                 and the stripes always agree about the moment.
  */
 const useBeat = function (audioRef, playing, apply) {
     // Held in refs so a new closure every render cannot restart the loop.
@@ -398,7 +435,7 @@ const useBeat = function (audioRef, playing, apply) {
             || !window.requestAnimationFrame
             || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             levelRef.current = 0;
-            paint(0);
+            paint(0, ZERO_BANDS);
             return undefined;
         }
 
@@ -485,6 +522,9 @@ const useBeat = function (audioRef, playing, apply) {
         let last = 0;
         let clock = 0;
         let level = levelRef.current;
+        /** Per-band smoothed levels, damped exactly like `level`. Lives in the
+         *  closure so the loop owns it; handed to `paint` once a frame. */
+        let bands = ZERO_BANDS.slice();
         /** Milliseconds of *playback* in which the graph read nothing, as
          *  `watch` last reported it. It is the readout's copy and nothing else
          *  reads it — the repair keeps its own clock on the graph, because the
@@ -509,6 +549,7 @@ const useBeat = function (audioRef, playing, apply) {
 
             const isPlaying = playingRef.current;
             let target = 0;
+            let targets = ZERO_BANDS;
             let quiet = true;
 
             // The graph is built here, not on mount, so it appears the moment
@@ -527,15 +568,21 @@ const useBeat = function (audioRef, playing, apply) {
                 if (!live) {
                     clock += dt;
                     target = SYNTH(clock);
+                    // The synth stands in for the whole analyser, so every
+                    // band rides the same fake wave — offset per band so the
+                    // stripes still move against each other while it runs.
+                    targets = BAND_EDGES.map((edge, b) => SYNTH(clock + b * 0.37));
                 } else {
-                    const sum = readSum(graph);
-                    quiet = sum === 0;
+                    const spectrum = readSpectrum(graph);
+                    quiet = spectrum.sum === 0;
                     // The bins are linear in amplitude and the eye is not, so
                     // the quiet half of the range is lifted into view. Gently:
                     // the window above has already done the compressing, and a
                     // steep exponent on top of it would leave ordinary music
-                    // with nothing to say.
-                    target = Math.pow(Math.min(1, Math.max(0, sum / ((BIN_TO - BIN_FROM) * 255))), 1.25);
+                    // with nothing to say. (The 1.25 exponent is applied per
+                    // band inside `readSpectrum` — same curve, same reason.)
+                    target = Math.pow(Math.min(1, Math.max(0, spectrum.sum / ((BIN_TO - BIN_FROM) * 255))), 1.25);
+                    targets = spectrum.bands;
                 }
 
                 // Asking for the context back is not always enough: the report
@@ -559,14 +606,17 @@ const useBeat = function (audioRef, playing, apply) {
             });
 
             level = damp(level, target, target > level ? RISE : FALL, dt);
+            for (let b = 0; b < BAND_COUNT; b += 1) {
+                bands[b] = damp(bands[b], targets[b], targets[b] > bands[b] ? RISE : FALL, dt);
+            }
             levelRef.current = level;
-            paint(level);
+            paint(level, bands);
 
             // Paused: settle to rest, then stop. The element stays mounted and
             // the loop costs nothing while there is nothing to react to.
             if (!isPlaying && level < REST) {
                 levelRef.current = 0;
-                paint(0);
+                paint(0, ZERO_BANDS);
                 raf = 0;
                 rafRef.current = 0;
                 return;

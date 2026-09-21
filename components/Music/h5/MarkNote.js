@@ -58,11 +58,12 @@ L275 118 L281 112 L287 110 Z`;
  *  The first cut (7% / 14%) was measured on the maths and invisible on the
  *  screen: 7% of a 40px box is 1.4px per side, half of it clipped away by
  *  `overflow: hidden`, and 14% of the ~19px note is under 3px — *less* travel
- *  than the jump it replaced (52/512 of the mark ≈ 4px). 10% / 24% is what
- *  actually reads; 24% is still geometrically safe (the note's corners stay
- *  inside the 512-unit viewBox with room to spare). */
+ *  than the jump it replaced (52/512 of the mark ≈ 4px). 24% was the second
+ *  cut and still read as shy on the real device; 32% is the current one, and
+ *  still geometrically safe (the note's corners stay inside the 512-unit
+ *  viewBox: half-height 143 × 1.32 ≈ 189 < 252). */
 const BREATH_BG = 0.10;
-const BREATH_NOTE = 0.24;
+const BREATH_NOTE = 0.32;
 
 /** The seven rainbow bands, top to bottom — approximations of the colours in
  *  the original `mark-bg.jpg`. They are not picked from it: that file is gone,
@@ -96,11 +97,13 @@ const WAVE_FREQ = 2.4;
  *  ripples instead of one wobbling picture. At ~1 rad/s a crest travels the
  *  canvas in a few seconds: slow enough to stay calm, fast enough to see. */
 const waveDrift = function (b) { return 0.9 + b * 0.17; };
-/** How far the band boundaries heave at full level, as a fraction of the
- *  canvas height — the "score bouncing" displacement. ±6% (≈2.4px at 40px,
- *  more across the wide bar) on top of the drifting wave; per-band phase
- *  `sin(b × 1.7)` makes adjacent bands move against each other instead of
- *  pumping in unison. */
+/** How far the band boundaries heave, as a fraction of the canvas height at
+ *  full band level — the "score bouncing" displacement. Each boundary rides
+ *  the mean of the two bands it separates (see `drawBackdrop`), so every
+ *  stripe responds to its *own* frequency band rather than to one global
+ *  level; the `sin(b × 1.7)` phase keeps adjacent boundaries moving against
+ *  each other instead of pumping in unison. Worst case stacks a ±6% bounce on
+ *  a ±6% static wave across a 14.3% band height — bands never cross. */
 const SCORE_BOUNCE = 0.12;
 
 /** The small notes that appear on the wide mark while music plays — 大大小小:
@@ -108,67 +111,77 @@ const SCORE_BOUNCE = 0.12;
  *  width), vertical seat (px from the bottom) and breathing depth. Three of
  *  them, plus the big traced note already at the leading end, is a family
  *  without turning the bar into a sticker sheet. Positions are percentages
- *  because the bar's width is whatever the flex row hands it. */
+ *  because the bar spans whatever the header hands it. The breaths are big
+ *  on purpose (0.35–0.45): these are small shapes, and a small shape needs a
+ *  large fraction to read at all — the same screen-pixel lesson as
+ *  `BREATH_NOTE`'s history above. */
 const FLOATING_NOTES = [
-    { size: 20, left: 0.56, bottom: 7, breath: 0.26 },
-    { size: 13, left: 0.72, bottom: 15, breath: 0.34 },
-    { size: 16, left: 0.86, bottom: 5, breath: 0.30 },
+    { size: 20, left: 0.56, bottom: 7, breath: 0.38 },
+    { size: 13, left: 0.72, bottom: 15, breath: 0.48 },
+    { size: 16, left: 0.86, bottom: 5, breath: 0.42 },
 ];
 
-/** The drawing buffer is 4× the 40px display size — high enough that the
- *  browser's downsampling kills the polyline joints before they reach the
- *  screen, low enough to stay trivial to rasterise. */
-const DRAW_SIZE = 160;
+/** The drawing used to happen into a fixed 160-unit square buffer that CSS
+ *  stretched to fit; since the mark can span the whole header, the buffer now
+ *  follows the layout size instead (see the resize observer in the component)
+ *  and this constant is gone. */
 
 /**
- * Draws the rainbow onto a 2D context, in `DRAW_SIZE`-unit space. Each band is
+ * Draws the rainbow onto a 2D context, in CSS-pixel space (`w` × `h` are the
+ * canvas's current layout size — see the resize observer below). Each band is
  * a closed polygon: its top edge is a sine wave, its bottom edge is the next
  * band's top edge, so adjacent bands share their boundary by construction and
  * there is no gap between them. The top and bottom of the canvas are flat
  * (boundary 0 and boundary `BAND_COLORS.length`) — a wave at the very edge
  * would clip against the rounded button and look cut off.
  *
- * `time` (seconds) and `level` (0..1) make the waves *move*, in two ways:
- * each boundary drifts on its own clock (`waveDrift`), and — the score part —
- * every boundary is displaced vertically by an amount *proportional to the
- * level*, with a fixed phase per band (`SCORE_BOUNCE` × `sin(b × 1.7)`), so a
- * kick makes the bands heave up and down against each other like the lines of
- * a staff jumping. Drift alone read as ripples; the beat-locked heave is what
- * reads as bouncing. This runs once per frame from `useBeat`'s loop while
- * anything is playing. The cost is seven 49-point polygons on a 160-unit
- * canvas, which is nothing; the bands cover the canvas completely and
- * opaquely, so no `clearRect` is needed.
+ * `time` (seconds) and `bands` (one level 0..1 per rainbow stripe, from
+ * `useBeat`) make the waves *move*, and each stripe answers its own slice of
+ * the spectrum: every interior boundary sits between two stripes and rides
+ * the mean of their two levels — its wave height (`amp`) and its score-bounce
+ * displacement both come from that pair. A kick in the bass band lifts the
+ * bottom stripes; a crash in the highs lifts the top ones. The per-boundary
+ * phase (`sin(b × 1.7)`) keeps adjacent boundaries moving against each other,
+ * which is what makes it read as a bouncing staff rather than one wobbling
+ * picture. `level` (the damped bass the note breathes on) no longer drives
+ * the waves directly — it is passed only for the resize redraw's fallback.
+ *
+ * This runs once per frame from `useBeat`'s loop while anything is playing.
+ * The cost is seven 49-point polygons, which is nothing; the bands cover the
+ * canvas completely and opaquely, so no `clearRect` is needed.
  *
  * Band order survives the heave: worst case stacks a ±6% bounce on a ±6%
  * static wave across a 14.3% band height, which stays under half a band.
  *
  * `ctx` is expected to already be scaled to device pixels (see the `useEffect`
- * below), so all coordinates here are in the logical 160-unit space.
+ * below), so all coordinates here are in CSS pixels.
  */
-const drawBackdrop = function (ctx, size, time, level) {
-    const w = size;
-    const h = size;
+const drawBackdrop = function (ctx, w, h, time, bands) {
     const numBands = BAND_COLORS.length;
-    const bandH = 1 / numBands;
+    const bandH = h / numBands;
     const twoPiFreq = Math.PI * 2 * WAVE_FREQ;
-    const amp = WAVE_AMP * (0.55 + 0.45 * level);
 
     // Boundary y-values for every polyline step. Boundary 0 is the top of the
     // canvas, boundary `numBands` is the bottom — both flat. The interior ones
-    // wave, drift, and heave with the beat.
+    // wave, drift, and heave with the two bands they separate.
     const boundaries = [];
     for (let b = 0; b <= numBands; b += 1) {
         const baseY = b * bandH;
         const isEdge = b === 0 || b === numBands;
         const phase = b * 0.85;
         const drift = time * waveDrift(b);
-        // The beat-locked heave. Edges stay put (they would clip).
-        const bounce = isEdge ? 0 : level * SCORE_BOUNCE * Math.sin(b * 1.7);
+        // This boundary's own slice of the spectrum: the mean of the stripes
+        // above and below it. Edges stay put (they would clip).
+        const bandLevel = isEdge || !bands
+            ? 0
+            : (bands[b - 1] + bands[b]) / 2;
+        const amp = WAVE_AMP * (0.55 + 0.45 * bandLevel);
+        const bounce = isEdge ? 0 : bandLevel * SCORE_BOUNCE * Math.sin(b * 1.7);
         const points = new Array(STEPS + 1);
         for (let s = 0; s <= STEPS; s += 1) {
             const t = s / STEPS;
             const wave = isEdge ? 0 : Math.sin(phase + drift + t * twoPiFreq) * amp;
-            points[s] = { x: t * w, y: (baseY + wave + bounce) * h };
+            points[s] = { x: t * w, y: baseY + wave * h + bounce * h };
         }
         boundaries.push(points);
     }
@@ -194,35 +207,58 @@ const MarkNote = function ({ audioRef, playing, wide, qqBound, onOpen }) {
     const ctxRef = useRef(null);
     /** One ref per floating note, in `FLOATING_NOTES` order. */
     const floatRefs = useRef([]);
+    /** The canvas's layout size in CSS px, kept in a ref because the drawing
+     *  loop reads it every frame and a re-render must not be involved. */
+    const sizeRef = useRef({ w: 0, h: 0 });
+    /** The last frame's arguments, so a resize can redraw one frame even when
+     *  the beat loop is idle (paused mid-transition, say). */
+    const lastFrameRef = useRef({ time: 0, bands: null });
 
-    // Sized once, on mount. The *drawing* happens per frame while the music
-    // plays (see `paint`), but the buffer and the DPR transform never change.
-    // The buffer is `DRAW_SIZE × devicePixelRatio` so the downsample is sharp
-    // on retina screens without being wasteful on a 1× one. The CSS stretches
-    // this square buffer across whatever width the wide bar has — bands stay
-    // horizontal, the waves just read longer, which suits a bar.
+    // The buffer tracks the canvas's *layout* size, not a fixed constant: at
+    // rest the mark is a 40px square, while playing it spans the whole header,
+    // and a square 160px buffer stretched across ~375 CSS px (×2 device px)
+    // would go visibly soft. A `ResizeObserver` re-sizes the backing store on
+    // every layout change — including every frame of the widening transition —
+    // and redraws one frame with the last arguments so the picture never goes
+    // stale while the beat loop is idle. Coordinates are CSS px throughout;
+    // the DPR transform is re-applied after each resize.
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return undefined;
         const ctx = canvas.getContext('2d');
         if (!ctx) return undefined;
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = DRAW_SIZE * dpr;
-        canvas.height = DRAW_SIZE * dpr;
-        ctx.scale(dpr, dpr);
         ctxRef.current = ctx;
-        drawBackdrop(ctx, DRAW_SIZE, 0, 0);
-        return undefined;
+
+        const resize = function () {
+            const w = canvas.clientWidth;
+            const h = canvas.clientHeight;
+            if (!w || !h) return;
+            const prev = sizeRef.current;
+            if (Math.abs(prev.w - w) < 0.5 && Math.abs(prev.h - h) < 0.5) return;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.round(w * dpr);
+            canvas.height = Math.round(h * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            sizeRef.current = { w, h };
+            const last = lastFrameRef.current;
+            drawBackdrop(ctx, w, h, last.time, last.bands);
+        };
+
+        resize();
+        const observer = new ResizeObserver(resize);
+        observer.observe(canvas);
+        return () => observer.disconnect();
     }, []);
 
     // Written straight to the elements rather than through state: this runs
     // every frame, and a transform is the one thing React does not need to
     // know about. `level < 0.004` is the same threshold `useBeat` uses to stop
     // its loop, so a settled note clears its transform and stays cleared.
-    const paint = function (level) {
+    const paint = function (level, bands) {
         const ink = inkRef.current;
         const bg = bgRef.current;
         if (!ink || !bg) return;
+        lastFrameRef.current = { time: performance.now() / 1000, bands: bands || null };
         if (level < 0.004) {
             ink.style.transform = '';
             bg.style.transform = '';
@@ -242,13 +278,16 @@ const MarkNote = function ({ audioRef, playing, wide, qqBound, onOpen }) {
             const el = floatRefs.current[i];
             if (el) el.style.transform = `scale(${(1 + spec.breath * level).toFixed(3)})`;
         });
-        // And the waves themselves drift and heave. `paint` runs once per
-        // frame from `useBeat`'s loop while anything is playing — exactly the
-        // lifecycle the motion wants (frozen at rest, running with the music)
-        // — so no second rAF loop of its own. The clock is wall time, so the
-        // phase keeps its speed no matter how the level wobbles.
+        // And the waves drift and heave — each boundary riding the mean of the
+        // two bands it separates, so every stripe answers its own slice of the
+        // spectrum. `paint` runs once per frame from `useBeat`'s loop while
+        // anything is playing — exactly the lifecycle the motion wants (frozen
+        // at rest, running with the music) — so no second rAF loop of its own.
+        // The clock is wall time, so the phase keeps its speed no matter how
+        // the level wobbles.
         const ctx = ctxRef.current;
-        if (ctx) drawBackdrop(ctx, DRAW_SIZE, performance.now() / 1000, level);
+        const { w, h } = sizeRef.current;
+        if (ctx && w && h) drawBackdrop(ctx, w, h, lastFrameRef.current.time, bands);
     };
 
     useBeat(audioRef, playing, paint);

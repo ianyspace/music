@@ -161,13 +161,12 @@ const TrackList = function ({
                     <MarkNote
                         audioRef={audioRef}
                         playing={isPlaying}
-                        // The wide bar (playing → grow to meet the actions)
-                        // stands down while the search field is unfolded:
-                        // both want the row's free space, and a bar growing
-                        // behind an open field splits the row in two cramped
-                        // halves. Search wins — it is the thing being looked
-                        // at; the bar swells back when the field folds away.
-                        wide={isPlaying && !searchOpen}
+                        // While playing the mark leaves the row's flow and
+                        // fills the whole header; the search field and the
+                        // icon actions float above it (z-index in this file's
+                        // stylesheet), so nothing has to stand down for
+                        // anything else — search open or not.
+                        wide={isPlaying}
                         qqBound={qqBound}
                         onOpen={onGoAccount}
                     />
