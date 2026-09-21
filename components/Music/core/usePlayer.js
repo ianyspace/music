@@ -223,6 +223,15 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // Lets `loadTracks` tell "we already show a usable list" from "the list is
     // empty", so a failed refresh degrades into a quiet notice.
     const tracksRef = useRef([]);
+    // The same guard as `playSeqRef`, for the same reason: two library loads can
+    // be in flight at once, and the slower one must not win. A restored Drive
+    // session fires one on the *first* commit — `librarySource` starts as
+    // `cloud` and is only switched to `drive` by the effect that reads the saved
+    // token — so the public library is asked for, and then the visitor's Drive
+    // folder is asked for, and whichever answers last is what the list shows.
+    // That is the whole of "the public library landed on top of my Drive list",
+    // and it is why this is a sequence and not a flag.
+    const loadSeqRef = useRef(0);
 
     // Cached blobs are read first and are keyed per source, so a track already
     // downloaded from either library plays back with no network and no token.
@@ -985,6 +994,9 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // so a visitor with no Google authorization still gets a full song list.
     const loadTracks = useCallback(async function (targetSource = librarySource, options = {}) {
         if (targetSource === DRIVE_SOURCE && !token) return;
+        // Claimed before anything is awaited, so the newest load owns the list
+        // from the moment it starts — see `loadSeqRef`.
+        const seq = ++loadSeqRef.current;
         setListLoading(true);
         setError('');
         try {
@@ -992,6 +1004,12 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
                 ? await fetchDriveTracks({ driveGet, token, folderId })
                 : await fetchCloudTracks({ forceRefresh: Boolean(options.forceRefresh) });
 
+            // A load that has been superseded says nothing at all: not the list,
+            // not the cache, not the spinner. Writing the list is the visible
+            // half, but writing the *cache* is the half that outlives the tab —
+            // a late public-library answer would otherwise be remembered as the
+            // Drive library's contents.
+            if (seq !== loadSeqRef.current) return;
             setTracks(result.tracks);
             setListCacheAvailable(result.tracks.length > 0);
             writeListCache(targetSource, clientId, {
@@ -1000,6 +1018,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
                 folderId: targetSource === DRIVE_SOURCE ? folderId : '',
             });
         } catch (err) {
+            if (seq !== loadSeqRef.current) return;
             if (err.code === 'TOKEN_REQUIRED') {
                 // Google authorization died mid-session. Step aside to the
                 // public library rather than reaching for a new token — the
@@ -1008,6 +1027,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
                 fallbackToPublicLibrary('Google 授权已失效，已切回公共曲库');
                 try {
                     const fallback = await fetchCloudTracks();
+                    if (seq !== loadSeqRef.current) return;
                     setTracks(fallback.tracks);
                     setListCacheAvailable(fallback.tracks.length > 0);
                     writeListCache(CLOUD_SOURCE, clientId, { tracks: fallback.tracks });
@@ -1024,7 +1044,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
                 setError(`获取音乐列表失败：${err.message}`);
             }
         } finally {
-            setListLoading(false);
+            if (seq === loadSeqRef.current) setListLoading(false);
         }
     }, [librarySource, driveGet, token, folderId, clientId, fallbackToPublicLibrary]);
 

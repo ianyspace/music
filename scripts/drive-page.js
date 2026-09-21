@@ -302,6 +302,10 @@ const drive = async (target, index) => {
     // for the opposite one: 0 is the expected number, and it is what makes "a
     // Drive play is not counted" an assertion rather than a hope.
     let playsStubHits = 0;
+    // Milliseconds to hold the public library's answer for, once. The load race
+    // in `loadTracks` is otherwise a matter of which answer happens to arrive
+    // last, and a check that only fails when the network is slow is not a check.
+    let cloudDelayMs = 0;
 
     socket.addEventListener('message', (event) => {
         const msg = JSON.parse(event.data);
@@ -329,6 +333,25 @@ const drive = async (target, index) => {
         }
         if (msg.method === 'Fetch.requestPaused') {
             const { requestId, request } = msg.params;
+
+            // The public library's list. Continued straight away in the ordinary
+            // case — which is invisible to the page — and held when a test has
+            // asked for it to be slow (`cloudDelayMs`), so that "the slower
+            // answer must not win" can be asserted instead of waited for.
+            if (request.url.includes('/tracks')) {
+                const wait = cloudDelayMs;
+                cloudDelayMs = 0;
+                if (wait > 0) {
+                    (async () => {
+                        await sleep(wait);
+                        send('Fetch.continueRequest', { requestId }).catch(() => {});
+                    })();
+                } else {
+                    send('Fetch.continueRequest', { requestId }).catch(() => {});
+                }
+                return;
+            }
+
             // A preflight has to be answered as a preflight, not as the body —
             // fulfilling an OPTIONS with a JSON body and a 200 is a response
             // the browser will reject, and the real request never follows.
@@ -514,6 +537,9 @@ const drive = async (target, index) => {
         // The two endpoints that write to the real database.
         { urlPattern: '*://*/likes*', requestStage: 'Request' },
         { urlPattern: '*://*/plays*', requestStage: 'Request' },
+        // The public library's list, so that a test can hold it. Continued
+        // immediately unless one asks — see `cloudDelayMs`.
+        { urlPattern: '*://*/tracks*', requestStage: 'Request' },
     ];
     const enableStubs = () => send('Fetch.enable', { patterns: STUB_PATTERNS });
 
@@ -1956,6 +1982,44 @@ const drive = async (target, index) => {
             '...and ?beatdebug=1 draws one, reporting the context it found',
             typeof readout.value === 'string' && readout.value.indexOf('state=') !== -1,
             `${asked}, ${JSON.stringify(String(readout.value).split('\\n')[0].slice(0, 110))}`,
+        );
+
+        /* --- and a slow public library cannot land on top of the Drive list --
+         *
+         * The race the Drive stage's "the public library did not land on top of
+         * it" check catches only sometimes, made certain instead of hoped for.
+         *
+         * A *restored* Drive session asks for the public library first:
+         * `librarySource` starts as `cloud`, and it is the effect that reads the
+         * saved token which switches it to `drive`. So two loads are in flight
+         * at once, and without a sequence in `loadTracks` whichever answers last
+         * is the list on screen — and the one written to the list cache, which
+         * is the half that outlives the tab.
+         *
+         * Here the public library's answer is held for four seconds, so it is
+         * still in flight when the Drive list lands. Four seconds is longer than
+         * the Drive stub takes and well under the list's own timeout, so the
+         * late answer really does arrive; the check is that it is dropped.
+         *
+         * Last, and on purpose: it reloads the page, which stops the music the
+         * mark stage above reads its motion from.
+         */
+        cloudDelayMs = 4000;
+        await send('Page.navigate', { url: target.url });
+        await sleep(2500);
+        const driveAgain = await waitFor(rowTitles, (v) => Array.isArray(v) && v.length === 2, 30000);
+        check(
+            'a restored Drive session lists the Drive files again',
+            Array.isArray(driveAgain.value) && driveAgain.value.length === 2,
+            `${driveAgain.value.length} rows in ${(driveAgain.ms / 1000).toFixed(1)}s`,
+        );
+        // Past the hold: the public library has answered and had its chance.
+        await sleep(3500);
+        const late = await evaluate(rowTitles);
+        check(
+            '...and a late public library cannot land on top of it',
+            Array.isArray(late) && late.length === 2,
+            `${late.length} rows after the public library answered`,
         );
     }
 
