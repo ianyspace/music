@@ -171,14 +171,33 @@
     （`border-radius: 11px`），底图跟着 `background-size: cover`，两者不会走散。
   - **QQ 状态点已移除**（原来右下角灰/绿一个点）：状态本身仍在按钮的 `title` /
     `aria-label`（「账号，已确认/未确认 QQ」）里，但视觉上不再画点。
-  - **播放不改变 logo 尺寸**：没有宽条、没有 `wide`、没有 `flex-grow`，始终是 40px
-    圆角方块，header 里的搜索和操作按钮保持原本的布局与点击区域。
+  - **尺寸只在进场时变一次，播放不改**：`.mark` 落定就是 40px 圆角方块
+    （`width`/`height` 都是 40、`flex: 0 0 auto`），header 里的搜索和操作按钮保持原本的
+    布局与点击区域。进页面时它先是一条**一直伸到搜索按钮前**的宽条（`.mark-intro`：
+    `flex-grow: 1` + `flex-basis: 40px`）、**上面没有音符**，然后过渡收成方块、音符再淡入
+    （`.art` 的 `opacity` 过渡带 `0.22s` 延迟，落在 `0.62s` 的收窄里）。
+    - **收窄动的是 `width`，不是 `flex-grow`**：宽条的真实像素宽在首次 layout 里
+      （`useLayoutEffect`，绘制前）量出来，作为内联 `width` 钉住，`INTRO_HOLD_MS`（460ms）
+      后连同 `.mark-intro` 一起撤掉 —— 于是它退化成一次普通的 `width` 过渡，终点就是
+      `.mark` 自己那条 `width: 40px`，不会和布局走散。**不要改成过渡 `flex-grow`**：
+      宽条那一刻的自由空间是负的，插值的起点会跑偏。
+    - **量必须在 layout effect 里做**，所以「先闪一个 40px 方块再变宽」在结构上不可能发生。
+      `prefers-reduced-motion` 直接跳过整个进场 —— 宽条只为被看而存在，落定态才是这枚
+      logo 的本体。
   - **它是应用自己的图标，但拆成了两层**：底图是 `<canvas>` 现场画的固定彩虹印谱，
     音符是画在上面的一条静态 `<path>`。底图原本是 `public/mark-bg.jpg`，那张位图
     连同 `assetUrl('/mark-bg.jpg')` 规则一起拿掉了 —— **底图不再是一张图，也不再需要
-    `assetUrl`**。`MarkNote.js` 挂载时只画一次 160px 缓冲，播放时只是 CSS 平移已画好的
-    画布；音符没有 `transform`，不会呼吸、跳动或放大。
-  - **固定节奏只有一条**：`.mark-playing .bg` 使用 `rainbow-score-drift 2.6s`，
+    `assetUrl`**。`MarkNote.js` 挂载时只画一次 320×160 缓冲；音符没有 `transform`，
+    不会呼吸、跳动或放大。
+  - **印谱是七色彩虹，不是七条粉彩**：`BAND_COLORS` 从红排到紫，每条带用
+    `createLinearGradient` 铺一条竖直渐变，两端取**和邻居各一半的混色**——所以跨过波浪
+    边界时颜色是连着的，边界本身又仍然读得出是一条边。带子只占缓冲区中间 5/6
+    （`VISIBLE_FRACTION`，对应 `.bg` 的 `height: 120%` / `top: -10%`），剩下那 1/6 是
+    波幅的余量，作用是把平的红色顶边和紫色底边留在可视区外。
+  - **播放时彩虹一直向右流**：`.mark-playing .bg` 用 `rainbow-score-flow 2s linear
+    infinite`，一个周期正好平移一个波长（自身宽度的 `20%`，即 `WAVE_LAMBDA`），首尾帧
+    相同，所以循环无缝。`linear` 是必需的：一缓动就会在每个波长处看得出停顿。
+    canvas 做成 240% 宽、-80% 靠左，多出来的 80% 就是这一整周期行程的余量。
     不读音频、不拆频段、不重画 canvas；暂停时 class 消失，动画停止。因为没有 Web Audio
     监听，切后台不会牵连 logo 的动画链路。
   - **它曾经是访客头像**（绑了 QQ 就是 QQ 头像）。那个盘子连同它的全部讲究搬去了
@@ -601,9 +620,16 @@ Worker 里没有任何速率限制，免费版 D1 的日写入量是**十万行�
 **但它们自己也会烂，而且烂了不报错 —— 只有你运行它才知道。** 每个 `idOf()` 都是硬查表，
 类名没了就抛异常；两个脚本（`preview-covers.js`、`preview-desktop-list.js`）查的还是早就
 不存在的旧桌面类名（`panel-open` / `panel-tools` / `brand-*` / `rail-btn`…），
-现在跑不起来，修它们等于照当前 markup 重写。跑得起来的三个是
-`preview-empty-list.js`、`preview-locate-btn.js`、`preview-player-drawer.js` ——
-改到相关 UI 时顺手跑一下，尤其是 `emptyListMessage` 那种「只改了文案」的改动。
+现在跑不起来，修它们等于照当前 markup 重写。跑得起来的四个是
+`preview-empty-list.js`、`preview-locate-btn.js`、`preview-player-drawer.js`、
+`preview-mark.js` —— 改到相关 UI 时顺手跑一下，尤其是 `emptyListMessage` 那种「只改了文案」的改动。
+
+`preview-mark.js` 值得单独说一句，因为它验证的是**截图看不见的东西**：logo 那枚 canvas
+底图，播放时的 CSS 循环要无缝，前提是**底图本身在一个波长上严格周期**。这个脚本除了画出来，
+还会读 `getImageData` 自己量两件事 —— 每个像素列与「向右一个波长」的像素列是否完全相同
+（差一个数就是接缝），以及波浪边界那条混色带实际有多宽（占一条带高度的比例，
+和 `BLEND` 对不上就说明画糊了）。这两个数在 40px 上是看不出来的。
+`#zoom` 哈希会把一枚播放中的 logo 放大 5 倍单独显示，方便肉眼看波形。
 
 （原来还有第四个 `preview-avatar.js`，给顶部栏那个头像比较毛玻璃半径用的。头像上那层遮罩
 已按用户要求去掉，**量具跟着一起删了 —— 它存在的唯一理由就是那层遮罩**；留着它的话，
@@ -980,16 +1006,17 @@ components/Music/three/
   不是屏幕坐标。这样同一套推开逻辑在扁盘和立环上都是对的，
   而且悬停（没按播放、没拖拽）也要调用 —— 不然鼠标划过是一片没有反应的空场。
 - **手机端 logo 不再接音频分析器**：`h5/MarkNote.js` 只在挂载时把固定的彩虹印谱画进
-  canvas；`playing` 只负责切换 `.mark-playing`，让 CSS 以固定 `2.6s` 节奏平移彩虹。
+  canvas；`playing` 只负责切换 `.mark-playing`，让 CSS 以固定 `2s` 节奏把彩虹向右平移。
   没有 `AudioContext`、`AnalyserNode`、频段拆分、合成节拍、后台 `resume` 或 `nudge`，
   所以切后台不会因为 logo 动画去碰播放链路。
-- **音符是静态的**：没有 `translate`、`scale`、呼吸，也没有浮动音符家族；logo 不放大，
-  始终是 header 左侧的 40px 圆角方块。右下角 QQ 状态点继续隐藏，状态只保留在
-  `title` / `aria-label`。
-- **固定印谱的设计边界**：`BAND_COLORS`、`WAVE_AMP`、`WAVE_FREQ` 和 `WAVE_PHASES`
-  都是 `MarkNote.js` 的常量，画布只画一次；真正的运动只有 `.bg` 上的
-  `rainbow-score-drift` CSS keyframes。不要把 `playing` 改回音频电平，也不要为这枚 logo
-  增加 Web Audio 监听。
+- **音符是静态的**：没有 `translate`、`scale`、呼吸，也没有浮动音符家族；logo 在播放时
+  不放大，落定后始终是 header 左侧的 40px 圆角方块（唯一的例外是刚进页面那次进场收窄，
+  见上面「手机端顶部栏」）。右下角 QQ 状态点继续隐藏，状态只保留在 `title` / `aria-label`。
+- **固定印谱的设计边界**：`BAND_COLORS`、`WAVE_LAMBDA`、`WAVE_AMP`、`WAVE_PHASES`
+  和 `VISIBLE_FRACTION` 都是 `MarkNote.js` 的常量，画布只画一次；真正的运动只有 `.bg` 上的
+  `rainbow-score-flow` CSS keyframes，而它的 `20%` 平移量**必须**等于 `WAVE_LAMBDA / DRAW_W`
+  —— 这两个数分居两个文件，改一个就要改另一个，否则循环会出现一条接缝。
+  不要把 `playing` 改回音频电平，也不要为这枚 logo 增加 Web Audio 监听。
 - **烟雾测试也跟着简化**：`scripts/drive-page.js` 只检查固定 CSS 动画类是否在播放时开启、
   音符没有 transform，以及第二首歌仍能在同一个 audio 元素上播放；不再造
   `__musicContexts` / `__musicAnalysers`，不再覆盖 `AnalyserNode`，不再测试 logo 的后台恢复。

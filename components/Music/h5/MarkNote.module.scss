@@ -1,12 +1,12 @@
-// The app's mark — a fixed 40px rounded square at the leading end of the
-// list's bar, and the way into 账号. The logo never grows and the note never
-// breathes. While music plays, only the fixed rainbow score drifts; playback
-// supplies a CSS class, not an analyser signal.
+// The app's mark — the way into 账号, at the leading end of the list's bar.
+// It enters as a wide bar that runs up to the search button and settles into a
+// 40px rounded square; while music plays, the fixed rainbow score inside it
+// flows steadily to the right. No analyser, no breathing, no growth on play.
 
-/* The button stays the same box in every state. That is deliberate: the earlier
-   full-header experiment made the logo take over the header and introduced
-   layout/stacking work that this mark does not need. The header's other
-   elements therefore keep their ordinary flow and hit areas. */
+/* The settled box — and the box the entry animation shrinks into. The size
+   lives here and only here: the entry overrides `width` and then drops the
+   override, so the transition's end state *is* this rule and cannot drift
+   away from it. */
 .mark {
     position: relative;
     display: inline-flex;
@@ -23,7 +23,11 @@
     background-color: transparent;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.15s ease;
+    /* `width` is what the entry animates, not `flex-grow`: the bar is pinned
+       to its measured pixel width as an inline style and then released, so the
+       shrink is one plain `width` change. `transform` stays for the press
+       states. */
+    transition: transform 0.15s ease, width 0.62s cubic-bezier(0.22, 0.72, 0.2, 1);
 
     @media (hover: hover) {
         &:hover {
@@ -36,49 +40,68 @@
     }
 }
 
-/* The playing flag is the only thing playback changes. It starts one fixed
-   CSS cadence (`2.6s`) and does not read audio amplitude, so it keeps working
-   when the page is backgrounded and comes back without resuming an AudioContext.
-   `animation-play-state` is not used because the class itself entering/leaving
-   lets the browser interpolate from the current frame cleanly. */
-.mark-playing .bg {
-    animation: rainbow-score-drift 2.6s ease-in-out infinite alternate;
+/* The entry state: instead of a 40px square the mark takes every pixel the row
+   has left before the actions group, so the bar runs right up to the search
+   button. `flex-basis` is pinned to the settled 40px on purpose — that is
+   where the shrink stops, so the flex layout and the transition agree about
+   the end state. The note is hidden here; it fades in as the bar lands. */
+.mark-intro {
+    flex-grow: 1;
+    flex-basis: 40px;
 }
 
-@keyframes rainbow-score-drift {
+.mark-intro .art {
+    opacity: 0;
+}
+
+/* Playback only adds this class. The score flows to the right forever: one
+   cycle moves the canvas by exactly one wavelength — `20%` of its own width,
+   which is `WAVE_LAMBDA` in MarkNote.js — so the last frame is the first frame
+   and `infinite` loops without a seam. `linear`, because a score that eased
+   would visibly stop and start at every wavelength. */
+.mark-playing .bg {
+    animation: rainbow-score-flow 2s linear infinite;
+}
+
+@keyframes rainbow-score-flow {
     from {
-        transform: translate3d(-3px, 0, 0);
+        transform: translate3d(0, 0, 0);
     }
     to {
-        transform: translate3d(3px, 1px, 0);
+        transform: translate3d(20%, 0, 0);
     }
 }
 
-/* The canvas is oversized *inside* the clipped mark, not the mark itself: the
-   extra 30% provides edge cover for the ±3px fixed drift, while the visible
-   button remains exactly 40px and never scales. A 160px backing store is 4×
-   the visible box on a 1× screen; device-pixel-ratio is applied when it is
-   drawn, so the same canvas stays sharp on retina screens. */
+/* The canvas is oversized *inside* the clipped mark, not the mark itself. The
+   240% width is what makes the rightward flow possible: one wavelength is 20%
+   of the canvas, and the 80% of slack to the left of the visible box is the
+   room one full cycle of travel needs, so the visible 40px is covered at every
+   point of the animation. The 120% height, lifted 10%, does the same job
+   vertically — it is what hides the score's flat red top and violet bottom,
+   and it is mirrored by `VISIBLE_FRACTION` in MarkNote.js. */
 .bg {
     position: absolute;
-    left: -15%;
-    top: -15%;
-    width: 130%;
-    height: 130%;
+    left: -80%;
+    top: -10%;
+    width: 240%;
+    height: 120%;
     display: block;
     transform-origin: center;
     will-change: transform;
 }
 
-/* The note is a static foreground. No transform is ever written to it, and
-   its centre/origin are intentionally absent: with no animation there is no
-   pivot to tune. `z-index` keeps it above the canvas. */
+/* The note is a static foreground; no transform is ever written to it. The
+   delay is why it reads as arriving *with* the square rather than being
+   uncovered by it: the shrink runs 0.62s and the note starts 0.22s in, so it
+   is still fading as the box lands. `z-index` keeps it above the canvas. */
 .art {
     position: relative;
     display: block;
     width: 100%;
     height: 100%;
     z-index: 1;
+    opacity: 1;
+    transition: opacity 0.42s ease 0.22s;
 }
 
 .ink {
@@ -90,6 +113,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .mark,
+    .art {
+        transition: none;
+    }
+
     .mark-playing .bg {
         animation: none;
     }

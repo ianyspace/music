@@ -1,24 +1,24 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import styles from './MarkNote.module.scss';
 
 /**
- * The app's mark: the way into 账号 — a 40px rounded square of rainbow at the
- * leading end of the list's bar, with the traced note on top. The QQ state dot
- * is intentionally gone; the state remains in the button's title / aria-label.
+ * The app's mark: the way into 账号 — a rounded square of rainbow at the leading
+ * end of the list's bar, with the traced note on top. On entry it is briefly the
+ * whole run of the bar instead of a square (see the intro below). The QQ state
+ * dot is intentionally gone; the state remains in the button's title /
+ * aria-label.
  *
  * There is deliberately no audio analyser here. The rainbow is a fixed score:
  * its wave shape and its animation cadence are constants, not a frequency read
- * from the song. When `playing` is true, CSS moves the already-drawn canvas at
- * that fixed cadence; when playback stops, the class disappears and the canvas
- * stops. This keeps backgrounding out of the animation's logic entirely — no
- * AudioContext, no analyser, no retry/resume path, no fallback synth.
+ * from the song. When `playing` is true, CSS flows the already-drawn canvas to
+ * the right at that fixed cadence; when playback stops, the class disappears and
+ * the canvas stops. This keeps backgrounding out of the animation's logic
+ * entirely — no AudioContext, no analyser, no retry/resume path, no fallback
+ * synth.
  *
- * The note is static. It does not scale, translate or breathe, and the mark
- * does not widen: the only playing motion is the rainbow canvas drifting inside
- * the same 40px logo box. A CSS animation is enough for that one fixed motion,
- * so the browser can keep it on the compositor without a per-frame React or
- * canvas loop.
+ * The note is static. It never scales, translates or breathes, and playback does
+ * not touch the mark's size — the only size change it has is the entry.
  */
 
 /**
@@ -37,91 +37,206 @@ L153 371 L147 355 L147 338 L149 330 L155 317 L161 309 L171 299 L179 293 L190 288
 L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
 
+/**
+ * The artwork's rainbow, top to bottom. Seven hues rather than the previous
+ * pastel set: the reference is a rainbow, and a washed-out palette is what
+ * made the canvas read as "not that picture" no matter how the waves were
+ * shaped.
+ */
 const BAND_COLORS = [
-    '#f5a3b8', // pink (top)
-    '#ff8c5a', // orange
-    '#ffdc7a', // yellow
-    '#8fd688', // green
-    '#5ea8d8', // blue
-    '#8a7fcf', // purple
-    '#d8a3c8', // mauve (bottom)
+    '#f4707a', // 红
+    '#f79a5b', // 橙
+    '#f7d45c', // 黄
+    '#7ccb86', // 绿
+    '#5aa6e0', // 蓝
+    '#7379d4', // 靛
+    '#b478cf', // 紫
 ];
 
-/** Fixed drawing parameters. These are intentionally not derived from audio:
- *  one stable score-like frequency is easier to understand and survives a
- *  background/foreground transition without having to resurrect an analyser. */
-const DRAW_SIZE = 160;
-const STEPS = 48;
-const WAVE_AMP = 0.06;
-const WAVE_FREQ = 2.4;
-const WAVE_PHASES = [0.0, 0.85, 1.7, 2.55, 3.4, 4.25, 5.1, 5.95];
+/* --- the fixed score's geometry ------------------------------------------
+ *
+ * All of these are constants. Nothing here is derived from audio, and nothing
+ * changes after the single draw on mount; the only motion is the CSS flow.
+ */
+
+/** The backing store. Wider than it is tall because the mark it fills is
+ *  wider than it is tall too (see `.bg`) — matching the two means the wave is
+ *  never stretched. */
+const DRAW_W = 320;
+const DRAW_H = 160;
+
+/** Enough columns that the sweep below is smooth at this wavelength — one
+ *  buffer pixel each. The score is drawn once on mount, so a fine step costs
+ *  nothing per frame. */
+const COLUMNS = DRAW_W;
+
+/** How far either side of a boundary, as a fraction of one band's height, the
+ *  colour blends into its neighbour. Short on purpose: a long blend keeps the
+ *  rainbow continuous but swallows the ripple, because the transition ends up
+ *  wider than the wave. */
+const BLEND = 0.12;
+
+/** One whole wavelength, in buffer px. The CSS flow moves the canvas by 20% of
+ *  its own width, which is exactly this, so the loop closes with no seam. */
+const WAVE_LAMBDA = DRAW_W / 5;
+
+/** Of one band's height. The bands are laid out inside the middle 5/6 of the
+ *  buffer and this is small enough that no boundary can reach past it — which
+ *  is what keeps the flat red top and violet bottom off screen. Sized by eye
+ *  at 40px: much below this the bands read as straight, because the colour
+ *  blend across a boundary is wide enough to swallow the ripple. */
+const WAVE_AMP = 0.55;
+
+/** Mirrors `.bg` in MarkNote.module.scss: the canvas is 120% of the mark's
+ *  height and sits 10% above it, so the mark shows the middle 1/1.2 of the
+ *  buffer. The leftover sixth is the room the wave's amplitude spends. */
+const VISIBLE_FRACTION = 1 / 1.2;
+
+/** The boundaries ripple together, each a little behind the one above, rather
+ *  than braiding with unrelated phases: that is what makes the bands read as
+ *  one flag waving instead of a comb. */
+const WAVE_PHASES = [0, 0.55, 1.1, 1.65, 2.2, 2.75, 3.3, 3.85];
+
+/** How long the bar is held, in ms, before it starts shrinking. Enough to be
+ *  read as a state rather than as a glitch, short enough not to be a wait. */
+const INTRO_HOLD_MS = 460;
+
+/** Blend two hex colours. The two bands either side of a boundary are painted
+ *  from the same gradient, so the colour each of them reaches *at* the boundary
+ *  is this half-way mix — that is what keeps the rainbow continuous across it
+ *  while the boundary itself still reads as an edge. */
+const mix = function (a, b, t) {
+    const pa = parseInt(a.slice(1), 16);
+    const pb = parseInt(b.slice(1), 16);
+    const channels = [16, 8, 0].map((shift) => {
+        const va = (pa >> shift) & 255;
+        const vb = (pb >> shift) & 255;
+        return Math.round(va + (vb - va) * t);
+    });
+    return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
+};
 
 /**
- * Draw a fixed rainbow score into the canvas. The adjacent band boundaries
- * share the same points, so there are no hairline gaps. The per-band phase
- * makes the score read as a woven wave, but it never changes after drawing —
- * CSS is responsible for the one fixed-frequency motion.
+ * Draw the fixed rainbow score into the canvas.
+ *
+ * It is painted as a sweep of one-pixel columns rather than as seven wavy
+ * shapes. Each column gets its own vertical gradient whose stops sit on *that
+ * column's* wave, which is the only way to get the blend between two bands to
+ * follow the ripple: a single canvas-wide gradient cannot bend, so its stops
+ * would cut a horizontal stripe of blended colour straight across the wave —
+ * visible at 40px as a faint seam through the middle of a band.
+ *
+ * The columns tile the canvas exactly, so there is no gap between them, and
+ * neighbouring columns differ by well under a pixel of colour — the wave moves
+ * ~1 buffer px per column. Drawn once; CSS owns the only motion.
  */
-const drawBackdrop = function (ctx, size) {
-    const bandH = size / BAND_COLORS.length;
-    const twoPiFreq = Math.PI * 2 * WAVE_FREQ;
-    const boundaries = [];
-    for (let b = 0; b <= BAND_COLORS.length; b += 1) {
-        const isEdge = b === 0 || b === BAND_COLORS.length;
-        const points = new Array(STEPS + 1);
-        for (let s = 0; s <= STEPS; s += 1) {
-            const t = s / STEPS;
-            const wave = isEdge
-                ? 0
-                : Math.sin(WAVE_PHASES[b] + t * twoPiFreq) * WAVE_AMP * size;
-            points[s] = { x: t * size, y: b * bandH + wave };
-        }
-        boundaries.push(points);
-    }
+const drawBackdrop = function (ctx) {
+    const count = BAND_COLORS.length;
+    const span = DRAW_H * VISIBLE_FRACTION;
+    const top = (DRAW_H - span) / 2;
+    const bandH = span / count;
+    const amp = bandH * WAVE_AMP;
+    const k = (Math.PI * 2) / WAVE_LAMBDA;
+    const soft = bandH * BLEND;
+    const columnW = DRAW_W / COLUMNS;
+    const at = (y) => Math.min(1, Math.max(0, y / DRAW_H));
+    const waveAt = (b, x) => (
+        b === 0 || b === count ? 0 : Math.sin(WAVE_PHASES[b] + x * k) * amp
+    );
 
-    for (let i = 0; i < BAND_COLORS.length; i += 1) {
-        const top = boundaries[i];
-        const bottom = boundaries[i + 1];
-        ctx.beginPath();
-        ctx.moveTo(top[0].x, top[0].y);
-        for (let s = 1; s <= STEPS; s += 1) ctx.lineTo(top[s].x, top[s].y);
-        for (let s = STEPS; s >= 0; s -= 1) ctx.lineTo(bottom[s].x, bottom[s].y);
-        ctx.closePath();
-        ctx.fillStyle = BAND_COLORS[i];
-        ctx.fill();
+    for (let c = 0; c < COLUMNS; c += 1) {
+        const x = c * columnW;
+        const ramp = ctx.createLinearGradient(0, 0, 0, DRAW_H);
+        ramp.addColorStop(0, BAND_COLORS[0]);
+        for (let b = 0; b < count; b += 1) {
+            const colour = BAND_COLORS[b];
+            const upper = top + b * bandH + waveAt(b, x);
+            const lower = top + (b + 1) * bandH + waveAt(b + 1, x);
+            // The band above and the band below meet on the shared boundary at
+            // the same half-way colour, which is what keeps the rainbow
+            // continuous across it while the boundary still reads as an edge.
+            if (b > 0) ramp.addColorStop(at(upper), mix(BAND_COLORS[b - 1], colour, 0.5));
+            ramp.addColorStop(at(upper + soft), colour);
+            ramp.addColorStop(at(lower - soft), colour);
+            if (b < count - 1) ramp.addColorStop(at(lower), mix(colour, BAND_COLORS[b + 1], 0.5));
+        }
+        ramp.addColorStop(1, BAND_COLORS[count - 1]);
+        ctx.fillStyle = ramp;
+        ctx.fillRect(x, 0, columnW, DRAW_H);
     }
 };
 
+/** `useLayoutEffect` is the right hook for the entry measurement — it runs
+ *  after the DOM is in place and before the browser paints, so the bar is
+ *  never seen as a 40px square that then jumps wider. It is aliased only so
+ *  the static prerender of this page does not warn about it. */
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
 const MarkNote = function ({ playing, qqBound, onOpen }) {
     const canvasRef = useRef(null);
+    const markRef = useRef(null);
+
+    /* The entry. On the first frames the mark is not a 40px square but the
+       whole run of the bar up to the search button, with no note on it; then
+       it shrinks into the square and the note fades in. `intro` is only ever
+       true before that shrink has been scheduled, and `barWidth` is the width
+       the bar measured at — pinning it as a pixel value is what makes the
+       shrink a plain `width` transition (which every engine interpolates)
+       instead of a flex computation, and dropping the inline style at the end
+       hands the mark back to `.mark`'s own 40px. */
+    const [intro, setIntro] = useState(true);
+    const [barWidth, setBarWidth] = useState(0);
 
     // One draw on mount, one fixed-size buffer. The CSS animation moves this
     // finished image; it does not redraw or resize it per frame. Keeping the
-    // canvas at 4× the display size preserves the smooth wave edges at 40px.
+    // canvas at ~3× the display size preserves the smooth wave edges at 40px.
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return undefined;
         const ctx = canvas.getContext('2d');
         if (!ctx) return undefined;
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = DRAW_SIZE * dpr;
-        canvas.height = DRAW_SIZE * dpr;
+        canvas.width = DRAW_W * dpr;
+        canvas.height = DRAW_H * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawBackdrop(ctx, DRAW_SIZE);
+        drawBackdrop(ctx);
         return undefined;
     }, []);
 
+    useIsoLayoutEffect(() => {
+        const mark = markRef.current;
+        if (!mark) return undefined;
+        // Reduced motion skips the entry outright rather than shortening it:
+        // the wide bar exists only to be watched, and the settled square is
+        // the state the mark is actually for.
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setIntro(false);
+            return undefined;
+        }
+        setBarWidth(mark.getBoundingClientRect().width);
+        const timer = window.setTimeout(() => setIntro(false), INTRO_HOLD_MS);
+        return () => window.clearTimeout(timer);
+    }, []);
+
+    const className = [
+        styles.mark,
+        intro ? styles['mark-intro'] : '',
+        playing ? styles['mark-playing'] : '',
+    ].filter(Boolean).join(' ');
+
     return (
         <button
+            ref={markRef}
             type="button"
-            className={playing ? `${styles.mark} ${styles['mark-playing']}` : styles.mark}
+            className={className}
+            style={intro && barWidth > 0 ? { width: `${barWidth}px` } : undefined}
             title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
             aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
             onClick={onOpen}
         >
-            {/* The canvas is oversized inside the clipped 40px square so a
-                small fixed translate can move the score without exposing a
-                transparent edge. No scale is applied to the mark or note. */}
+            {/* The canvas is oversized inside the clipped mark, never the mark
+                itself: the extra width is the room the rightward flow travels
+                through. No scale is applied to the mark or the note. */}
             <canvas ref={canvasRef} className={styles.bg} aria-hidden="true" />
             <svg className={styles.art} viewBox="0 0 512 512" aria-hidden="true" focusable="false">
                 <path className={styles.ink} d={NOTE} />
