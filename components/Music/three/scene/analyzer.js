@@ -103,12 +103,13 @@ const ensureRunning = function (graph, now) {
 };
 
 /**
- * The stand-in, for when the graph could not be built — an unsupported
- * browser, a context that refuses to start, or a second mount that raced the
- * first. It is not an analysis of anything: it is two slow sines at plausible
- * tempos, which is enough to keep the rim and the dust alive. A scene that
- * freezes on every frame because the audio graph failed looks broken; a scene
- * that pulses to a fake 1.3 Hz looks like a visualiser.
+ * The stand-in, for when there is no analyser to read — an unsupported browser,
+ * a graph that could not be built (a second mount that raced the first), or a
+ * context that is not running *right now*. It is not an analysis of anything:
+ * it is two slow sines at plausible tempos, which is enough to keep the rim and
+ * the dust alive. A scene that freezes on every frame because the audio graph
+ * failed looks broken; a scene that pulses to a fake 1.3 Hz looks like a
+ * visualiser.
  */
 const SYNTH = function (t) {
     return 0.24
