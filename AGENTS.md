@@ -48,7 +48,7 @@
   这条没有脚本兜底（见「检查脚本已删除」），改完请自己 `grep` 一遍。
 - **basePath**：`config/index.js` 的 `site.pathPrefix = '/music'` 是唯一来源（`next.config.js` 读它）。
   `next/link`、`next/image`、`_next/*` 会自动带上；**`public/` 里的文件不会**，所以手写
-  `<img src="/mark-bg.jpg">` 会 404 —— 走 `shared.js` 的 `assetUrl(path)`（它 import `config`
+  `<img src="/favicon.ico">` 会 404 —— 走 `shared.js` 的 `assetUrl(path)`（它 import `config`
   拼前缀）。原来的 `utils/basePath.js` 随 SW 一起删了，`assetUrl` 是它唯一长回来的那部分。
 - **全屏浮层别放进被 `transform` 的子树**（重要，踩过坑）：手机端 `.view-in` 的 tab 切换动画
   会让 `transform` 保留终态，而带 `transform` 的祖先会成为 `position: fixed` 后代的包含块，
@@ -175,18 +175,21 @@
   - **那个环用 `--badge-ring`，是一个不透明 token**，这个应用里除了 `--sheet-bg` 之外
     唯一的不透明表面色：别的地方（`--glass` / `--card`）都是半透明的，而**半透明的环
     压在图上读起来是一块污渍**，不是挖空。它近似玻璃顶栏压在页面上的合成色。
-  - **它是应用自己的图标，但拆成了两层**：底图是 `public/mark-bg.jpg`（那张 1440×1440
-    原图去掉音符之后的版本），音符是画在上面的一条 `<path>`。**为什么要拆**：位图里的
-    音符动不了，而播放时它要跟着低频抬起来；只有路径能抬。`MarkNote.js` 顶部写着路径是
-    怎么从已发布的 `icon-512.png` 上描出来的（阈值化 → 边界追踪 → 简化，栅格化回去差
-    1.72%，全在 1px 抗锯齿带里），**别改成曲线拟合**，实测更差。
+  - **它是应用自己的图标，但拆成了两层**：底图是 `<canvas>` 现场画的（`MarkNote.js`
+    的 `drawBackdrop`，七条正弦波带的彩虹），音符是画在上面的一条 `<path>`。
+    **为什么要拆**：位图里的音符动不了，而播放时它要跟着节奏呼吸；只有路径能呼吸。
+    底图原本是 `public/mark-bg.jpg`（那张 1440×1440 原图去掉音符之后的版本），那张
+    位图连同 `assetUrl('/mark-bg.jpg')` 那条规矩一起拿掉了 —— **底图不再是一张图，
+    也不再需要 `assetUrl`**：画布在组件里画一次（`DRAW_SIZE = 160`，4× 显示尺寸，
+    浏览器降采样到 40px），动的是 `transform: scale(...)`，不是像素。`MarkNote.js`
+    顶部写着音符路径是怎么从已发布的 `icon-512.png` 上描出来的（阈值化 → 边界追踪 →
+    简化，栅格化回去差 1.72%，全在 1px 抗锯齿带里），**别改成曲线拟合**，实测更差。
   - **favicon 那一套没动**（`_document.js` 用 `${BASE_PATH}/icon-512.png`，
     PNG 三档还是 `favicon.ico` / `icon-192` / `icon-512` / `apple-touch-icon`）：
     标签页上那张仍然带音符，因为那里没有东西需要动。
-  - **底图的 URL 必须走 `assetUrl('/mark-bg.jpg')`**：`public/**` 是原样拷进 `out/` 的，
-    Next 不会给它们加 `basePath`，手写 `/mark-bg.jpg` 在 GitHub Pages 上是 404。
-    它是 inline 的 `background-image`，所以**样式里只能写 `background-color: transparent`，
-    不能写 `background: transparent`** —— 简写会把 inline 那张图清掉。
+  - **画布只画一次**（`useEffect` 的空依赖），呼吸靠 `transform: scale(...)`，
+    不是每帧 `clearRect` + 重画。画一次就够了 —— 彩虹本身不变，变的是缩放，
+    缩放是 transform，是便宜的那条路。
   - **它曾经是访客头像**（绑了 QQ 就是 QQ 头像）。那个盘子连同它的全部讲究搬去了
     「账号」页的身份卡（`Account.module.scss` 的 `.identity-avatar`）——**一个头像说的是
     「听歌的是谁」，而这个按钮说的是「设置在哪」**，两件事不该长在同一个位置上。
@@ -1023,8 +1026,8 @@ components/Music/three/
   - **dB 窗口是 `-70..-10`，不是这里的 `-84..-14`。** 后者是给「一直在亮」的辉光挑的；
     一个音符拿它会长期钉在顶部（实测恒在 0.89–1.2），看着像坏了。
   - 它**不走 React state**：每秒 60 次的电平不该进 state，直接写元素的 `style.transform`。
-    跳动幅度在 `MarkNote.js` 的 `JUMP`，**满电平 52 已经是上限**（旗子尖会顶出方块），
-    改完要重新对一遍。
+    呼吸幅度在 `MarkNote.js` 的 `BREATH_BG` / `BREATH_NOTE`（满电平 7% / 14%），
+    改完要重新对一遍 —— 14% 的音符满电平下边缘离方块只剩约 2px，再大就裁了。
   - **它挂了两个 document 级监听**（`pointerdown` / `visibilitychange`），而且挂在组件
     生命周期上、不挂在 `playing` 上。两个原因：iOS 只认**手势里**的 `resume()`，而**开始
     播放的那一次点击发生在这个 effect 跑之前**（那个 effect 是被 `play` 事件推动的）；
@@ -1336,8 +1339,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/.noje
 （比如 `retryAt`）—— **`_next/static/chunks/pages/h5-*.js` 的文件名不是内容哈希**，
 两次构建可能同名不同内容，所以「文件名对得上」什么也证明不了。
 
-`npm run build` 产出 `out/`，并把 `public/**`（图标那几张 + `mark-bg.jpg`）
-原样拷进去；工作流再补一个 `out/.nojekyll`
+`npm run build` 产出 `out/`，并把 `public/**`（图标那几张）原样拷进去；工作流再补一个 `out/.nojekyll`
 （否则 Pages 的 Jekyll 会丢掉 `_next/` 这类下划线开头的目录）。
 
 **产物形状（容易记错）**：`trailingSlash: true` 时 Next 给每个路由生成一个**目录 + index.html**，

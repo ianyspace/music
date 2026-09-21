@@ -1,6 +1,4 @@
-import React, { useRef } from 'react';
-
-import { assetUrl } from '../shared';
+import React, { useEffect, useRef } from 'react';
 
 import useBeat from './useBeat';
 import styles from './MarkNote.module.scss';
@@ -10,27 +8,25 @@ import styles from './MarkNote.module.scss';
  * rounded square of rainbow at the leading end of the list's bar, with a note on
  * it and a state dot on its corner.
  *
- * It used to be the published app icon, drawn as one `<img>`. It is now two
- * things, because the note has to move and a bitmap cannot: the backdrop is
- * still a picture (the artwork without the note on it), and the note on top of
- * it is a path — the same note, redrawn, so it can be lifted and stretched to
- * the music without smearing.
+ * The backdrop used to be the published app icon's bitmap (`public/mark-bg.jpg`)
+ * with the note masked off — and it became two things, because the note had to
+ * move and a bitmap cannot: the picture as a background, the note as a path on
+ * top. The picture is gone now: the rainbow is drawn on a `<canvas>` in this
+ * file instead, the same way the note is. One component, two canvases — the
+ * SVG path on top and the rainbow underneath — and both of them are things the
+ * file can move. The canvas is drawn once on mount at 4× the display size and
+ * downscaled by the browser, so the waves stay smooth at 40px; a redraw on
+ * every frame would be wasted work, since the rainbow itself never changes —
+ * only its scale does, and a transform is the cheap way to change a scale.
  *
- * The path was traced off the published icon rather than drawn by eye, and the
- * trace was checked against the bitmap it came from: rasterised at the icon's
- * own 512px, it differs from the original silhouette in 1.7% of its pixels, all
- * of them inside the one-pixel edge where the original's own antialiasing is.
- * At the 40px this is actually drawn at, that is a quarter of a pixel. The
- * coordinates below are in that 512-unit space, which is also the `viewBox`, so
- * every number here is the icon's own.
- *
- * Nothing about the mark's shape, size, radius, position or dot changed with the
- * redraw: the button is still the 40px rounded square at `margin-left: 6px` that
- * lines up with the covers below it, and the dot is still grey / green.
- *
- * Motion is `useBeat`'s job — see that file for what the level is and where it
- * comes from. The note is the only thing that moves: the backdrop stays put, so
- * the mark reads as the same icon rather than as a spinning widget.
+ * The note's path is the same trace it always was — see the comment on `NOTE`
+ * below for where the numbers came from. What changed is what `paint` does to
+ * it. It used to *jump*: a translateY plus a stretch/squash, so the note rose
+ * off its head and landed back. It now *breathes*: a uniform scale about its
+ * own centre, and the backdrop does the same — both grow and shrink with the
+ * beat, together, so the mark reads as one thing pulsing rather than as a note
+ * bouncing on a still picture. The level is `useBeat`'s, damped the same way
+ * it always was; the only thing that moved is which axis the level drives.
  */
 
 /**
@@ -49,37 +45,136 @@ L153 371 L147 355 L147 338 L149 330 L155 317 L161 309 L171 299 L179 293 L190 288
 L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
 
+/** How far each layer breathes at full level, as a fraction of its own size.
+ *  The backdrop is the bigger surface and would read as a wobble if it moved
+ *  as much as the note, so it breathes less. The note is the small thing on
+ *  top, and a 14% pulse is a clear beat without leaving the mark. */
+const BREATH_BG = 0.07;
+const BREATH_NOTE = 0.14;
+
+/** The seven rainbow bands, top to bottom — approximations of the colours in
+ *  the original `mark-bg.jpg`. They are not picked from it: that file is gone,
+ *  and the canvas reads as "the same rainbow" without any single pixel having
+ *  to match. Pink at the top, mauve at the bottom, with the spectrum between. */
+const BAND_COLORS = [
+    '#f5a3b8', // pink (top)
+    '#ff8c5a', // orange
+    '#ffdc7a', // yellow
+    '#8fd688', // green
+    '#5ea8d8', // blue
+    '#8a7fcf', // purple
+    '#d8a3c8', // mauve (bottom)
+];
+
+/** Number of polyline steps across the width for each wavy band edge. 48 is
+ *  plenty at the 160px drawing buffer — the curves come out smooth when the
+ *  browser downsamples to 40px, and the cost is one frame's worth of trigonometry
+ *  that happens exactly once. */
+const STEPS = 48;
+/** How tall the wave is, as a fraction of the canvas height. ~2.8% keeps the
+ *  rainbow reading as horizontal bands rather than as a separate set of stripes,
+ *  while still being clearly wavy. */
+const WAVE_AMP = 0.028;
+/** How many full sine cycles fit across the width. 2.4 gives the gentle two-and-
+ *  -a-bit humps the original artwork has. */
+const WAVE_FREQ = 2.4;
+
+/** The drawing buffer is 4× the 40px display size — high enough that the
+ *  browser's downsampling kills the polyline joints before they reach the
+ *  screen, low enough to stay trivial to rasterise. */
+const DRAW_SIZE = 160;
+
 /**
- * How far the note moves at full level, in the path's own units. 52 of 512 is a
- * tenth of the mark — 4px at the 40px it is drawn at, which is as much as reads
- * as a jump rather than as a glitch. It is also as far as it can go: the note
- * stretches upward from its head, and the flag's tip is 286 units above that, so
- * anything much past this puts the tip through the top of the mark.
+ * Draws the rainbow onto a 2D context, in `DRAW_SIZE`-unit space. Each band is
+ * a closed polygon: its top edge is a sine wave, its bottom edge is the next
+ * band's top edge, so adjacent bands share their boundary by construction and
+ * there is no gap between them. The top and bottom of the canvas are flat
+ * (boundary 0 and boundary `BAND_COLORS.length`) — a wave at the very edge
+ * would clip against the rounded button and look cut off.
+ *
+ * `ctx` is expected to already be scaled to device pixels (see the `useEffect`
+ * below), so all coordinates here are in the logical 160-unit space.
  */
-const JUMP = 52;
-/** Stretch up / pinch in, as fractions, at full level. A note that only
- *  translates looks like it is floating; the squash is what makes it land. */
-const STRETCH = 0.14;
-const SQUASH = 0.08;
+const drawBackdrop = function (ctx, size) {
+    const w = size;
+    const h = size;
+    const numBands = BAND_COLORS.length;
+    const bandH = 1 / numBands;
+    const twoPiFreq = Math.PI * 2 * WAVE_FREQ;
+
+    // Boundary y-values for every polyline step, pre-computed once. Boundary
+    // 0 is the top of the canvas, boundary `numBands` is the bottom — both
+    // flat. The interior ones wave, with a phase shift per band so the waves
+    // do not line up into one big undulation.
+    const boundaries = [];
+    for (let b = 0; b <= numBands; b += 1) {
+        const baseY = b * bandH;
+        const isEdge = b === 0 || b === numBands;
+        const phase = b * 0.85;
+        const points = new Array(STEPS + 1);
+        for (let s = 0; s <= STEPS; s += 1) {
+            const t = s / STEPS;
+            const wave = isEdge ? 0 : Math.sin(phase + t * twoPiFreq) * WAVE_AMP;
+            points[s] = { x: t * w, y: (baseY + wave) * h };
+        }
+        boundaries.push(points);
+    }
+
+    for (let i = 0; i < numBands; i += 1) {
+        const top = boundaries[i];
+        const bot = boundaries[i + 1];
+        ctx.beginPath();
+        ctx.moveTo(top[0].x, top[0].y);
+        for (let s = 1; s <= STEPS; s += 1) ctx.lineTo(top[s].x, top[s].y);
+        for (let s = STEPS; s >= 0; s -= 1) ctx.lineTo(bot[s].x, bot[s].y);
+        ctx.closePath();
+        ctx.fillStyle = BAND_COLORS[i];
+        ctx.fill();
+    }
+};
 
 const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
     const inkRef = useRef(null);
+    const bgRef = useRef(null);
+    const canvasRef = useRef(null);
 
-    // Written straight to the element rather than through state: this runs
-    // every frame, and a transform is the one thing React does not need to know
-    // about. `px` inside an SVG is the local user unit, so these are the same
-    // numbers as the path's.
+    // The canvas is drawn once, on mount, not every frame: the rainbow never
+    // changes, only its scale does, and a scale is a transform, which is the
+    // cheap way. The buffer is `DRAW_SIZE × devicePixelRatio` so the downsample
+    // to 40px is sharp on retina screens without being wasteful on a 1× one.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return undefined;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return undefined;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = DRAW_SIZE * dpr;
+        canvas.height = DRAW_SIZE * dpr;
+        ctx.scale(dpr, dpr);
+        drawBackdrop(ctx, DRAW_SIZE);
+        return undefined;
+    }, []);
+
+    // Written straight to the elements rather than through state: this runs
+    // every frame, and a transform is the one thing React does not need to
+    // know about. `level < 0.004` is the same threshold `useBeat` uses to stop
+    // its loop, so a settled note clears its transform and stays cleared.
     const paint = function (level) {
         const ink = inkRef.current;
-        if (!ink) return;
+        const bg = bgRef.current;
+        if (!ink || !bg) return;
         if (level < 0.004) {
             ink.style.transform = '';
+            bg.style.transform = '';
             return;
         }
-        const lift = -JUMP * level;
-        const scaleX = 1 - SQUASH * level;
-        const scaleY = 1 + STRETCH * level;
-        ink.style.transform = `translateY(${lift}px) scale(${scaleX}, ${scaleY})`;
+        // Uniform scale on both layers, from each layer's own centre. No
+        // translate, no stretch — the whole point of the change was to stop
+        // the note jumping, and a breathing scale is the motion that replaces it.
+        const bgScale = 1 + BREATH_BG * level;
+        const noteScale = 1 + BREATH_NOTE * level;
+        bg.style.transform = `scale(${bgScale.toFixed(3)})`;
+        ink.style.transform = `scale(${noteScale.toFixed(3)})`;
     };
 
     useBeat(audioRef, playing, paint);
@@ -88,15 +183,21 @@ const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
         <button
             type="button"
             className={styles.mark}
-            // The backdrop is the published artwork with the note taken off it,
-            // so the mark is still one picture — just one the note can move
-            // over. Inline rather than in the stylesheet because `assetUrl` is
-            // what adds the basePath.
-            style={{ backgroundImage: `url("${assetUrl('/mark-bg.jpg')}")` }}
             title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
             aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
             onClick={onOpen}
         >
+            {/* The rainbow backdrop, drawn on a canvas. `ref={bgRef}` is the
+                element that `paint` scales — the canvas itself, not a wrapper,
+                so there is no extra box between the transform and the pixels. */}
+            <canvas
+                ref={(node) => {
+                    canvasRef.current = node;
+                    bgRef.current = node;
+                }}
+                className={styles.bg}
+                aria-hidden="true"
+            />
             <svg className={styles.art} viewBox="0 0 512 512" aria-hidden="true" focusable="false">
                 <path ref={inkRef} className={styles.ink} d={NOTE} />
             </svg>

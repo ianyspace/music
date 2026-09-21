@@ -4,7 +4,10 @@
 // in. They moved here when the mark stopped being an `<img>` and became a small
 // drawing that reacts to the music: the bar's stylesheet is about the list, and
 // the mark is now a component of its own with a behaviour attached. Nothing
-// about how it looks changed with the move.
+// about how it looks changed with the move, and the latest change — the
+// backdrop becoming a `<canvas>` and the note breathing instead of jumping —
+// kept the same shape, size, radius and position. The button is still the 40px
+// rounded square at `margin-left: 6px` that lines up with the covers below it.
 
 /* A **rounded square**, not a circle. The artwork is an app icon, and the circle
    made it read as an avatar — which is exactly what this button used to be, and
@@ -13,6 +16,13 @@
 
    `position: relative` is for the state dot, the one child that has to sit
    outside the artwork's corner.
+
+   `overflow: hidden` is for the breathing: the canvas inside grows past the
+   button's edges on each beat (a 7% scale on a 40px box is ~1.4px per side),
+   and without clipping the rainbow would spill onto the bar. The clip is the
+   rounded corner too — the canvas is a square and the button is not, and the
+   two shapes are reconciled by `border-radius` on the button rather than by a
+   mask on the canvas.
 
    `margin-left: 6px` is not a nudge to taste: it lines the mark up with the
    covers *below* it. A row is a 44px thumb inset 4px into a column that is
@@ -32,12 +42,8 @@
     padding: 0;
     border: 0;
     border-radius: 11px;
-    /* `background-color`, not the `background` shorthand: the shorthand would
-       reset `background-image`, which the component sets inline, and `size`,
-       which is the crop that turns the square artwork into this button's shape. */
+    overflow: hidden;
     background-color: transparent;
-    background-size: cover;
-    background-position: center;
     font-family: inherit;
     cursor: pointer;
     transition: transform 0.15s;
@@ -53,23 +59,53 @@
     }
 }
 
+/* The rainbow backdrop. The canvas itself takes the scale transform from
+   `paint` (via the `bgRef`); no wrapper, no extra box between the transform
+   and the pixels. `inset: 0` puts it flush with the button's content box, and
+   `display: block` kills the inline-canvas baseline gap that would nudge the
+   note a pixel or two down.
+
+   `will-change: transform` is a hint, not a requirement: the transform runs on
+   the compositor regardless, but the hint keeps the canvas on its own layer
+   so the note's transform does not invalidate it (and vice versa). It costs
+   one extra GPU layer for one button, which is not the budget this app worries
+   about. */
+.bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    transform-origin: center;
+    will-change: transform;
+}
+
 /* The note, drawn over the backdrop. The `viewBox` is the published icon's own
    512-unit space, so the path's coordinates are the icon's — this element only
-   scales them down to the button. */
+   scales them down to the button.
+
+   `z-index: 1` lifts the note above the canvas. They are both positioned and
+   the canvas came first in the markup, so without this the order would still
+   work — but the number makes the intent obvious: the note sits on the
+   rainbow, not next to it. */
 .art {
+    position: relative;
     display: block;
     width: 100%;
     height: 100%;
+    z-index: 1;
 }
 
 /* The note itself. It is the one thing `useBeat` touches, and it is touched
    through `style.transform` — so this rule carries the pivot rather than the
    motion.
 
-   `fill-box` puts the origin on the note's own bounding box, and `27% 100%` is
-   the bottom of its head — the point it would be standing on if it were a
-   physical thing. Stretching about that point reads as a jump; stretching about
-   the middle of the box reads as a zoom. */
+   `transform-origin: center` (with `transform-box: fill-box`) puts the pivot
+   at the centre of the note's own bounding box. That is the right origin for a
+   breathing scale: the note grows and shrinks about its own middle, so the
+   flag and the head move together. The previous jump used `27% 100%` — the
+   bottom of the head, so the note rose off its stand. A breathing note has no
+   stand to rise off; the centre is what makes it pulse rather than lean. */
 .ink {
     fill: #fff;
     /* The published icon draws the note with a soft shadow under it, which is
@@ -86,7 +122,8 @@
     stroke-linejoin: round;
     filter: drop-shadow(0 13px 12px rgba(38, 44, 74, 0.3));
     transform-box: fill-box;
-    transform-origin: 27% 100%;
+    transform-origin: center;
+    will-change: transform;
 }
 
 /* The QQ state as a dot on the bottom-right corner: grey = 未确认, green =
@@ -97,7 +134,13 @@
    The ring is `--badge-ring`, an opaque token for exactly this job: a
    translucent ring over the artwork reads as a smudge, and this app's surfaces
    (`--glass`, `--card`) are all translucent. The same answer is in the button's
-   `aria-label`, so the dot itself is decorative. */
+   `aria-label`, so the dot itself is decorative.
+
+   `z-index: 2` lifts the dot above the note — the note sits at z 1, and a dot
+   that disappeared under the note's growing edge would be a regression from
+   the still backdrop, where the corner was always clear. The dot itself does
+   not animate, but the note's breath reaches close to the corner at full
+   level, and the z-index keeps the indicator visible. */
 .dot {
     position: absolute;
     right: -1px;
@@ -107,6 +150,7 @@
     border-radius: 50%;
     background: #8e8e93;
     box-shadow: 0 0 0 2px var(--badge-ring);
+    z-index: 2;
 }
 
 .dot-on {

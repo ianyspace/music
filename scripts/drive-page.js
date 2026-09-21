@@ -1768,14 +1768,16 @@ const drive = async (target, index) => {
 
         /* --- and the note on the mark moves with the music -----------------
          *
-         * The mark is a drawing now: the published artwork's rainbow as a
-         * backdrop, and the note that was on it redrawn as a path on top, so
-         * that it can be lifted and stretched. Three things can go wrong and
-         * all three pass a screenshot — the note can be drawn wrong, the
-         * backdrop can be the wrong picture, and the note can simply never
-         * move. So the geometry is measured against the icon the trace came
-         * from, and the motion is read off the transform the note is given
-         * while the tone above is playing.
+         * The mark is a drawing now: the rainbow as a canvas-drawn backdrop
+         * (the bitmap `mark-bg.jpg` is gone — see `MarkNote.js`), and the note
+         * that was on the published icon redrawn as a path on top, so that
+         * both layers can breathe together with the beat. Three things can go
+         * wrong and all three pass a screenshot — the note can be drawn wrong,
+         * the backdrop can be missing or replaced by an image, and the note
+         * can simply never move. So the geometry is measured against the icon
+         * the trace came from, the backdrop is checked for a `<canvas>`
+         * (and *not* a `background-image` url), and the motion is read off the
+         * transform the note is given while the tone above is playing.
          *
          * The box is `getBBox`, which is the path's own geometry and so does
          * not move with the animation. The numbers are the published icon's:
@@ -1804,6 +1806,7 @@ const drive = async (target, index) => {
             }
             const svg = b.querySelector('svg');
             const path = svg && svg.querySelector('path');
+            const canvas = b.querySelector('canvas');
             let box = null;
             if (path) {
                 const r = path.getBBox();
@@ -1812,6 +1815,7 @@ const drive = async (target, index) => {
             return {
                 viewBox: svg ? svg.getAttribute('viewBox') : '',
                 box,
+                hasCanvas: Boolean(canvas),
                 backdrop: b.style.backgroundImage || '',
             };
         })()`);
@@ -1841,11 +1845,11 @@ const drive = async (target, index) => {
                 : (missing || '(no path)'),
         );
         check(
-            '...and its backdrop is the artwork without the note on it',
-            Boolean(markShape) && /mark-bg\.jpg/.test(markShape.backdrop),
-            markShape && markShape.backdrop
-                ? markShape.backdrop.slice(0, 90)
-                : (missing || '(none)'),
+            '...and its backdrop is drawn on a canvas (not a background image)',
+            Boolean(markShape) && markShape.hasCanvas && !markShape.backdrop,
+            !markShape
+                ? '(no mark)'
+                : (missing || `canvas=${markShape.hasCanvas ? 'yes' : 'no'} bg=${markShape.backdrop ? markShape.backdrop.slice(0, 40) : '(none)'}`),
         );
 
         // The sentinel carries the reason, so a run that finds no note says
