@@ -1005,12 +1005,14 @@ components/Music/three/
 - **别在页面隐藏时 `suspend()` 上下文**：那是把歌静音，不是把动画停下来 ——
   `usePlayer` 预取下一首就是为了后台能连播。`ThreeStage` 的 `onVisibility` 只停 rAF；
   恢复靠回来时的 `resume()` 和每帧的重试，而不是靠 `suspend`/`resume` 成对。
-- **静音还有第二种来源，而这一条目前只在手机那份里修了。** 上下文 `state === 'running'`
-  但 source node 送出来的是静音 —— 没有 promise 可 catch、没有 state 可判、控制台一个字没有。
-  真机复测的结论是「手动暂停再播放一次，这一页就再也没哑过」，所以 `h5/useBeat.js` 会在
-  「元素自称在播而图连着 3 秒读不到东西」时自己把元素 `pause()` 再 `play()`（`nudge()`，
-  细节见下面 h5 那一节）。**`analyzer.js` 还没跟上这一条** —— 同一根线，所以歌一样会哑，
-  表现只是那圈辉光冻住。要补的时候照 `useBeat.js` 那份抄，别忘了按图限流和每首上限。
+- **静音还有第二种来源，两份实现现在都修了。** 上下文 `state === 'running'` 但 source node
+  送出来的是静音 —— 没有 promise 可 catch、没有 state 可判、控制台一个字没有。真机复测的结论是
+  「手动暂停再播放一次，这一页就再也没哑过」，所以 `h5/useBeat.js` 与 `three/scene/analyzer.js`
+  都会在「元素自称在播而图连着 3 秒读不到东西」时自己把元素 `pause()` 再 `play()`（`nudge()`）。
+  两份的判据都是同一个形状的 `watch()`：按图限流 `NUDGE_COOLDOWN_MS` = 15s、每首最多 3 次，
+  预算存在图上而不是循环里。**两份也都必须挂两个调用者** —— 帧循环（在屏）和元素自己的
+  `timeupdate` / `playing`（离屏）。**只写在帧循环里等于没写**：rAF 在页面隐藏时不跑，
+  而报告恰恰来自那里（手机在口袋里自动接了下一首）。细节见下面 h5 那一节。
 - **手机端有一份自己的、`h5/useBeat.js`**（三棵树不许互相 import，所以是复制而不是共用；
   它照着 `THREE.MathUtils.damp` 的写法平滑，读同一个频段）。它和 `analyzer.js` 的差别，
   以及两边都得守住的东西：
@@ -1056,6 +1058,14 @@ components/Music/three/
       而给一个正在播的元素换 `src` 本身就会 `pause` 一次。所以那条断言现在还比
       **`currentSrc` 有没有变**：修复会让元素留在原来那首上，换歌才会变。没有这个比对，
       它就在为错的原因通过 —— 而「为错的原因通过」是冒烟唯一赔不起的失效方式。
+  - **3D 页那份是同一套，冒烟里也有同样两条**（`target.nudge`，只在 3d 那份 spec 上开；
+    3d 从 16 项变成 19 项）。它的形态和 `useBeat` 不一样：那是个工厂（`createAnalyzer`），
+    `update()` 由 `ThreeStage` 的帧循环驱动，所以 `watch()` 的第二个调用者挂在它自己的
+    `attach(audio)` 上、在 `dispose()` 里摘掉。**改一份就要改另一份** —— 它们是复制不是共用
+    （三棵树不互相 import）。突变测试（把 3d 产物的 `timeupdate` 改名）实测变红：
+    `0 pause(s) in 25.1s`。
+  - **3D 页没有 `?beatdebug=1`**：读数那份在 `h5/beatDebug.js` 里，而三棵树不互相 import。
+    所以 3D 页再出事时只有冒烟那两条加用户的描述，这一点先知道比事后发现好。
   - **`?beatdebug=1` 是这个 bug 的读数**（`h5/beatDebug.js`）：上下文 state、是否读到声音、
     静音了多久、nudge 用了几次、当前电平、元素在放哪一首，外加最近几条事件
     （`visibility` / `resume ->` / `resume refused` / `nudge`）。手机上没有控制台，

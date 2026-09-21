@@ -144,6 +144,12 @@ const PAGES = [
             { key: ' ', paused: false },
             { key: 'ArrowRight', paused: false },
         ],
+        // The beat's own repair. The phone has the same two checks in its own
+        // stage, written against `useBeat`; this one is here because the 3D
+        // stage taps the element through `scene/analyzer.js` and would go quiet
+        // on its own — and because a page whose frame loop is the only clock is
+        // exactly the case that was wrong the first time.
+        nudge: true,
     },
     {
         name: 'desktop',
@@ -838,6 +844,135 @@ const drive = async (target, index) => {
     // somewhere along the way, everything above was measured on a dead page.
     const rowsAtEnd = await evaluate(rowCount);
     check('the list survived the interactions', rowsAtEnd > 0, `${rowsAtEnd} rows`);
+
+    /* --- and the repair the visitor had to do by hand ----------------------
+     *
+     * The same wire, the same silence, a different symptom. `createAnalyzer`
+     * taps the app's one `<audio>` element exactly as the phone's `useBeat`
+     * does, so a source node that comes back from an interruption without its
+     * audio goes just as quiet here — and on this page it reads as a frozen
+     * glow rather than as a missing beat, which is why it is worth its own
+     * stage rather than a sentence in the h5 one.
+     *
+     * The silence is forced rather than waited for: the analyser is overridden
+     * to report zeros, which is exactly what a dead source node reports, and
+     * within a few seconds the element must have been paused and started again.
+     * Nothing else in the app pauses it, so a pause event here is the nudge and
+     * cannot be anything else.
+     */
+    if (target.nudge) {
+        await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            if (!a) return 'no audio';
+            window.__nudgePauses = 0;
+            a.addEventListener('pause', () => { window.__nudgePauses += 1; });
+            if (a.paused) a.play();
+            return 'playing';
+        })()`);
+        // Long enough for playback to be under way and the loop to be reading
+        // the real analyser, so that what follows is the override's doing.
+        await sleep(1500);
+        const zeroed = await evaluate(`(() => {
+            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
+            if (!proto || !proto.getByteFrequencyData) return 'no analyser to override';
+            if (!window.__realGetByteFrequencyData) {
+                window.__realGetByteFrequencyData = proto.getByteFrequencyData;
+            }
+            proto.getByteFrequencyData = function (array) { array.fill(0); };
+            return 'zeroed';
+        })()`);
+        const nudged = await waitFor(
+            '(() => (window.__nudgePauses || 0))()',
+            (v) => Number(v) > 0,
+            12000,
+        );
+        check(
+            'a graph that reads nothing while the element plays gets a nudge',
+            Number(nudged.value) > 0,
+            `${zeroed}, ${nudged.value} pause(s) in ${(nudged.ms / 1000).toFixed(1)}s`,
+        );
+        const afterNudge = await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            return a ? (a.paused ? 'paused' : 'playing') : 'gone';
+        })()`);
+        check('...and the nudge leaves the music playing', afterNudge === 'playing', `${afterNudge}`);
+
+        /* --- and it still works with no frame loop at all ------------------
+         *
+         * The nudge above proves the repair, and it proves it in the one place
+         * the repair was *not* missing: `requestAnimationFrame` does not run
+         * for a hidden page, so a frame loop was never going to fix a phone in
+         * a pocket — and a phone in a pocket auto-advancing to a silent next
+         * song is the report this whole thing exists for. The repair therefore
+         * also rides on the element's own `timeupdate`, which keeps firing for
+         * as long as there is audio, on screen or off.
+         *
+         * Both halves are forced rather than waited for. The page is told it is
+         * hidden, and the frame loop is taken away — the next
+         * `requestAnimationFrame` hands back nothing, so the loop does not
+         * reschedule itself and `timeupdate` is the only clock left. The
+         * analyser is zeroed again, and the element must still be paused and
+         * started again, by a page that is drawing nothing at all.
+         *
+         * What this checks is the code path, not the platform: Chrome's own
+         * idea of whether this page is visible is untouched, so nothing here is
+         * throttled the way a real background page would be.
+         */
+        const hidden = await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            if (!a) return 'no audio';
+            window.__realRaf = window.requestAnimationFrame;
+            window.requestAnimationFrame = function () { return 0; };
+            Object.defineProperty(document, 'hidden', {
+                get: function () { return true; },
+                configurable: true,
+            });
+            window.__nudgePauses = 0;
+            // Which resource the element is on, so that a pause which is really
+            // the next track arriving can be told apart from the repair. See
+            // below.
+            window.__nudgeSrc = String(a.currentSrc);
+            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
+            if (proto) proto.getByteFrequencyData = function (array) { array.fill(0); };
+            return 'hidden, no frame loop';
+        })()`);
+        // The nudge above spent one of the three a track gets, and the next one
+        // is not allowed until the cooldown has passed — which is the point of
+        // the cooldown, so the wait is the feature working.
+        const hiddenNudged = await waitFor(
+            '(() => (window.__nudgePauses || 0))()',
+            (v) => Number(v) > 0,
+            25000,
+        );
+        // A pause on its own proves nothing here, and finding that out is what
+        // the mutation test for this check is: a track that ends while it is
+        // running pauses the element too, because the next one arrives as a new
+        // `src` — so with the `timeupdate` listener renamed away, this check
+        // still went green on a pause that had nothing to do with the repair.
+        // The repair leaves the element on the track it was already on, so the
+        // pause only counts if the resource did not change. Without that, this
+        // check passes for the wrong reason, which is the one failure mode a
+        // smoke test cannot afford.
+        const sameTrack = await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            return a ? String(a.currentSrc) === window.__nudgeSrc : false;
+        })()`);
+        check(
+            '...and it still runs with no frame loop, off screen, where the report came from',
+            Number(hiddenNudged.value) > 0 && sameTrack === true,
+            `${hidden}, ${hiddenNudged.value} pause(s) in ${(hiddenNudged.ms / 1000).toFixed(1)}s`
+            + (sameTrack === true ? '' : ', but the element moved on to another track — that pause was not the repair'),
+        );
+        await evaluate(`(() => {
+            window.requestAnimationFrame = window.__realRaf;
+            delete document.hidden;
+            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
+            if (proto && window.__realGetByteFrequencyData) {
+                proto.getByteFrequencyData = window.__realGetByteFrequencyData;
+            }
+            return 'restored';
+        })()`);
+    }
 
     /* --- the row drawer, shared by 置顶 and 我喜欢 -------------------------
      *
