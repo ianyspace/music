@@ -1306,3 +1306,22 @@ curl -o /dev/null -w "%{http_code}\n" https://ianyspace.github.io/music/h5/     
 另一个信号：首页源码里有 `Jekyll SEO tag` 或 `/assets/css/style.css?v=<sha>`。
 
 排查时注意：`api.github.com/repos/<user>/<repo>/pages` 匿名访问返回 404 是**没权限**，不代表 Pages 没开。
+
+**那个设置可以从 CI 改** —— `.github/workflows/pages-source.yml`。它用 `GITHUB_TOKEN` 的
+`pages: write` 调 `PUT /repos/{owner}/{repo}/pages` 把 `build_type` 设成 `workflow`，
+并把结果写成 **commit status**（`context: pages-source`，描述里带改完的 `build_type`）。
+
+为什么是 commit status 而不是日志：**job 日志要登录才能读，commit status 不用**，
+所以那一步的结果在没 token 的机器上（比如只读探测）也能查：
+
+```bash
+curl -s "https://api.github.com/repos/ianyspace/music/commits/<sha>/statuses" \
+  | python -c "import sys,json;[print(s['context'],s['state'],s['description']) for s in json.load(sys.stdin)]"
+```
+
+它只在自己那个文件被改时触发（`paths` 收窄的是**这个**工作流，不跳过 `deploy.yml` ——
+和上面被烧过的 `paths-ignore` 是两件事）。跑成功之后，`pages build and deployment`
+这条 legacy 构建**不会再被创建**，`deploy.yml` 里那步「Wait out GitHub's legacy Jekyll
+build」自然变成空操作（它本来就把「查不到」当成正常）。
+判断它到底有没有生效，看**新推送的 SHA 还有没有那条 `event: dynamic` 的 run** ——
+这也正是可以放心把 `paths-ignore` 加回来的时刻（**在那之前绝对不加**）。
