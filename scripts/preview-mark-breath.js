@@ -46,11 +46,11 @@ const BAND_COLORS = [
     '#8fd688', '#5ea8d8', '#8a7fcf', '#d8a3c8',
 ];
 const STEPS = 48;
-const WAVE_AMP = 0.028;
+const WAVE_AMP = 0.06;
 const WAVE_FREQ = 2.4;
 const DRAW_SIZE = 160;
 
-const drawBackdrop = function (canvas, size) {
+const drawBackdrop = function (canvas, size, time, level) {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     canvas.width = size * dpr;
@@ -61,15 +61,17 @@ const drawBackdrop = function (canvas, size) {
     const numBands = BAND_COLORS.length;
     const bandH = 1 / numBands;
     const twoPiFreq = Math.PI * 2 * WAVE_FREQ;
+    const amp = WAVE_AMP * (0.55 + 0.45 * level);
     const boundaries = [];
     for (let b = 0; b <= numBands; b += 1) {
         const baseY = b * bandH;
         const isEdge = b === 0 || b === numBands;
         const phase = b * 0.85;
+        const drift = time * (0.9 + b * 0.17);
         const points = new Array(STEPS + 1);
         for (let s = 0; s <= STEPS; s += 1) {
             const t = s / STEPS;
-            const wave = isEdge ? 0 : Math.sin(phase + t * twoPiFreq) * WAVE_AMP;
+            const wave = isEdge ? 0 : Math.sin(phase + drift + t * twoPiFreq) * amp;
             points[s] = { x: t * w, y: (baseY + wave) * h };
         }
         boundaries.push(points);
@@ -97,8 +99,8 @@ L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
 
 const renderMark = function (level, label) {
-    const bgScale = 1 + 0.07 * level;
-    const noteScale = 1 + 0.14 * level;
+    const bgScale = 1 + 0.10 * level;
+    const noteScale = 1 + 0.24 * level;
     return `
         <figure class="cell">
             <button type="button" class="${cls.mark}" aria-label="账号，未确认 QQ" title="账号 · 未确认 QQ">
@@ -114,8 +116,8 @@ const renderMark = function (level, label) {
 };
 
 const header = function (level) {
-    const bgScale = 1 + 0.07 * level;
-    const noteScale = 1 + 0.14 * level;
+    const bgScale = 1 + 0.10 * level;
+    const noteScale = 1 + 0.24 * level;
     return `
         <div class="header-bar">
             <button type="button" class="${cls.mark}" aria-label="账号，未确认 QQ" title="账号 · 未确认 QQ">
@@ -159,8 +161,8 @@ const html = `<!doctype html>
 <div class="label">at rest / mid beat / full beat</div>
 <div class="strip">
     ${renderMark(0, 'level=0.00\nbg=1.000 note=1.000')}
-    ${renderMark(0.5, 'level=0.50\nbg=1.035 note=1.070')}
-    ${renderMark(1.0, 'level=1.00\nbg=1.070 note=1.140')}
+    ${renderMark(0.5, 'level=0.50\nbg=1.050 note=1.120')}
+    ${renderMark(1.0, 'level=1.00\nbg=1.100 note=1.240')}
 </div>
 
 <div class="label">in a header bar (mid beat)</div>
@@ -180,12 +182,13 @@ ${header(0.5)}
     const WAVE_AMP = ${WAVE_AMP};
     const WAVE_FREQ = ${WAVE_FREQ};
     const DRAW_SIZE = ${DRAW_SIZE};
-    const drawBackdrop = function (canvas, size) {
+    const drawBackdrop = function (canvas, size, time, level) {
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
         canvas.width = size * dpr;
         canvas.height = size * dpr;
         ctx.scale(dpr, dpr);
+        const ampBase = WAVE_AMP * (0.55 + 0.45 * (level || 0));
         const w = size;
         const h = size;
         const numBands = BAND_COLORS.length;
@@ -196,10 +199,11 @@ ${header(0.5)}
             const baseY = b * bandH;
             const isEdge = b === 0 || b === numBands;
             const phase = b * 0.85;
+            const drift = (time || 0) * (0.9 + b * 0.17);
             const points = new Array(STEPS + 1);
             for (let s = 0; s <= STEPS; s += 1) {
                 const t = s / STEPS;
-                const wave = isEdge ? 0 : Math.sin(phase + t * twoPiFreq) * WAVE_AMP;
+                const wave = isEdge ? 0 : Math.sin(phase + drift + t * twoPiFreq) * ampBase;
                 points[s] = { x: t * w, y: (baseY + wave) * h };
             }
             boundaries.push(points);
@@ -219,8 +223,8 @@ ${header(0.5)}
     document.querySelectorAll('canvas[data-draw="1"]').forEach(function (c) { drawBackdrop(c, DRAW_SIZE); });
     document.getElementById('out').textContent = [
         'mark canvas + breathing',
-        'bg scale:  1.000 / 1.035 / 1.070',
-        'note scale: 1.000 / 1.070 / 1.140',
+        'bg scale:  1.000 / 1.050 / 1.100',
+        'note scale: 1.000 / 1.120 / 1.240',
         '',
         'level=0 (rest) → no scale',
         'level=1 (full beat) → max scale',

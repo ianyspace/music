@@ -187,9 +187,9 @@
   - **favicon 那一套没动**（`_document.js` 用 `${BASE_PATH}/icon-512.png`，
     PNG 三档还是 `favicon.ico` / `icon-192` / `icon-512` / `apple-touch-icon`）：
     标签页上那张仍然带音符，因为那里没有东西需要动。
-  - **画布只画一次**（`useEffect` 的空依赖），呼吸靠 `transform: scale(...)`，
-    不是每帧 `clearRect` + 重画。画一次就够了 —— 彩虹本身不变，变的是缩放，
-    缩放是 transform，是便宜的那条路。
+  - **画布尺寸只在挂载时设一次**（`useEffect` 的空依赖管 buffer 和 DPR），
+    但**播放时每帧重画**（见下面「底图波纹会动」条）—— 这两条不矛盾：
+    尺寸/DPR 是一次性的，内容随时间变。
   - **它曾经是访客头像**（绑了 QQ 就是 QQ 头像）。那个盘子连同它的全部讲究搬去了
     「账号」页的身份卡（`Account.module.scss` 的 `.identity-avatar`）——**一个头像说的是
     「听歌的是谁」，而这个按钮说的是「设置在哪」**，两件事不该长在同一个位置上。
@@ -1026,8 +1026,14 @@ components/Music/three/
   - **dB 窗口是 `-70..-10`，不是这里的 `-84..-14`。** 后者是给「一直在亮」的辉光挑的；
     一个音符拿它会长期钉在顶部（实测恒在 0.89–1.2），看着像坏了。
   - 它**不走 React state**：每秒 60 次的电平不该进 state，直接写元素的 `style.transform`。
-    呼吸幅度在 `MarkNote.js` 的 `BREATH_BG` / `BREATH_NOTE`（满电平 7% / 14%），
-    改完要重新对一遍 —— 14% 的音符满电平下边缘离方块只剩约 2px，再大就裁了。
+    呼吸幅度在 `MarkNote.js` 的 `BREATH_BG` / `BREATH_NOTE`（满电平 10% / 24%）。
+    **7% / 14% 试过一版，40px 上是 1.4px / 3px，肉眼看不见**（原跳动的抬升折算是 4px）——
+    调这类幅度别只看数学，要在真机上对。24% 是几何上限以内（音符四角还在 viewBox 里）。
+  - **底图波纹会动**：`drawBackdrop` 每帧重画（由 `useBeat` 的循环驱动，暂停即冻结），
+    每条波界有自己的漂移速度（`waveDrift`）和随电平涨落的振幅（`WAVE_AMP` 0.06，
+    静止时 0.55 倍）。第一版只画一次 + 整体 scale，被用户打回：「背景波纹没动」——
+    40px 上 7% 的 scale 读不出运动，波纹要自己漂。七条 49 点多边形一帧的开销可忽略，
+    色带不透明铺满画布，无需 clearRect。
   - **它挂了两个 document 级监听**（`pointerdown` / `visibilitychange`），而且挂在组件
     生命周期上、不挂在 `playing` 上。两个原因：iOS 只认**手势里**的 `resume()`，而**开始
     播放的那一次点击发生在这个 effect 跑之前**（那个 effect 是被 `play` 事件推动的）；

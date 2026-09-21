@@ -12,12 +12,16 @@ import styles from './MarkNote.module.scss';
  * with the note masked off — and it became two things, because the note had to
  * move and a bitmap cannot: the picture as a background, the note as a path on
  * top. The picture is gone now: the rainbow is drawn on a `<canvas>` in this
- * file instead, the same way the note is. One component, two canvases — the
- * SVG path on top and the rainbow underneath — and both of them are things the
- * file can move. The canvas is drawn once on mount at 4× the display size and
- * downscaled by the browser, so the waves stay smooth at 40px; a redraw on
- * every frame would be wasted work, since the rainbow itself never changes —
- * only its scale does, and a transform is the cheap way to change a scale.
+ * file instead, the same way the note is. The canvas is sized once at 4× the
+ * display size and downscaled by the browser, so the waves stay smooth at 40px.
+ *
+ * While the music plays the canvas is *redrawn* every frame — the seven band
+ * boundaries drift on their own clocks and swell with the beat, so the waves
+ * visibly undulate rather than sitting still. An earlier version drew once and
+ * only scaled, and a 7% scale on a 40px box is 1.4px — motion nobody could
+ * see. Seven 49-point polygons per frame is nothing, and the loop that drives
+ * it (`useBeat`'s) already stops by itself when the music does, so the waves
+ * freeze at rest for free.
  *
  * The note's path is the same trace it always was — see the comment on `NOTE`
  * below for where the numbers came from. What changed is what `paint` does to
@@ -46,11 +50,14 @@ L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
 
 /** How far each layer breathes at full level, as a fraction of its own size.
- *  The backdrop is the bigger surface and would read as a wobble if it moved
- *  as much as the note, so it breathes less. The note is the small thing on
- *  top, and a 14% pulse is a clear beat without leaving the mark. */
-const BREATH_BG = 0.07;
-const BREATH_NOTE = 0.14;
+ *  The first cut (7% / 14%) was measured on the maths and invisible on the
+ *  screen: 7% of a 40px box is 1.4px per side, half of it clipped away by
+ *  `overflow: hidden`, and 14% of the ~19px note is under 3px — *less* travel
+ *  than the jump it replaced (52/512 of the mark ≈ 4px). 10% / 24% is what
+ *  actually reads; 24% is still geometrically safe (the note's corners stay
+ *  inside the 512-unit viewBox with room to spare). */
+const BREATH_BG = 0.10;
+const BREATH_NOTE = 0.24;
 
 /** The seven rainbow bands, top to bottom — approximations of the colours in
  *  the original `mark-bg.jpg`. They are not picked from it: that file is gone,
@@ -68,16 +75,22 @@ const BAND_COLORS = [
 
 /** Number of polyline steps across the width for each wavy band edge. 48 is
  *  plenty at the 160px drawing buffer — the curves come out smooth when the
- *  browser downsamples to 40px, and the cost is one frame's worth of trigonometry
- *  that happens exactly once. */
+ *  browser downsamples to 40px. */
 const STEPS = 48;
-/** How tall the wave is, as a fraction of the canvas height. ~2.8% keeps the
- *  rainbow reading as horizontal bands rather than as a separate set of stripes,
- *  while still being clearly wavy. */
-const WAVE_AMP = 0.028;
+/** How tall the wave is, as a fraction of the canvas height, *at rest*. The
+ *  first cut (2.8%) was one pixel at the 40px display size — the waves read as
+ *  straight lines. 6% at rest, swelling to double that at full level, is where
+ *  the bands stop looking ruled and start looking like water. */
+const WAVE_AMP = 0.06;
 /** How many full sine cycles fit across the width. 2.4 gives the gentle two-and-
  *  -a-bit humps the original artwork has. */
 const WAVE_FREQ = 2.4;
+/** How fast each boundary drifts, in radians per second. Every band gets its
+ *  own speed (offset per index) so the waves slide over each other rather than
+ *  undulating in lockstep — that phase difference is what makes it read as
+ *  ripples instead of one wobbling picture. At ~1 rad/s a crest travels the
+ *  canvas in a few seconds: slow enough to stay calm, fast enough to see. */
+const waveDrift = function (b) { return 0.9 + b * 0.17; };
 
 /** The drawing buffer is 4× the 40px display size — high enough that the
  *  browser's downsampling kills the polyline joints before they reach the
@@ -92,29 +105,39 @@ const DRAW_SIZE = 160;
  * (boundary 0 and boundary `BAND_COLORS.length`) — a wave at the very edge
  * would clip against the rounded button and look cut off.
  *
+ * `time` (seconds) and `level` (0..1) make the waves *move*: each boundary's
+ * phase advances on its own clock (`waveDrift`), and the whole field swells
+ * with the beat. This runs once per frame from `useBeat`'s loop while anything
+ * is playing — the first version drew once and only scaled, and a 7% scale on
+ * a 40px box does not read as motion at all. The cost is seven 49-point
+ * polygons on a 160-unit canvas, which is nothing; the bands cover the canvas
+ * completely and opaquely, so no `clearRect` is needed.
+ *
  * `ctx` is expected to already be scaled to device pixels (see the `useEffect`
  * below), so all coordinates here are in the logical 160-unit space.
  */
-const drawBackdrop = function (ctx, size) {
+const drawBackdrop = function (ctx, size, time, level) {
     const w = size;
     const h = size;
     const numBands = BAND_COLORS.length;
     const bandH = 1 / numBands;
     const twoPiFreq = Math.PI * 2 * WAVE_FREQ;
+    const amp = WAVE_AMP * (0.55 + 0.45 * level);
 
-    // Boundary y-values for every polyline step, pre-computed once. Boundary
-    // 0 is the top of the canvas, boundary `numBands` is the bottom — both
-    // flat. The interior ones wave, with a phase shift per band so the waves
-    // do not line up into one big undulation.
+    // Boundary y-values for every polyline step. Boundary 0 is the top of the
+    // canvas, boundary `numBands` is the bottom — both flat. The interior ones
+    // wave, with a phase shift per band so the waves do not line up into one
+    // big undulation, and a drift speed per band so they slide over each other.
     const boundaries = [];
     for (let b = 0; b <= numBands; b += 1) {
         const baseY = b * bandH;
         const isEdge = b === 0 || b === numBands;
         const phase = b * 0.85;
+        const drift = time * waveDrift(b);
         const points = new Array(STEPS + 1);
         for (let s = 0; s <= STEPS; s += 1) {
             const t = s / STEPS;
-            const wave = isEdge ? 0 : Math.sin(phase + t * twoPiFreq) * WAVE_AMP;
+            const wave = isEdge ? 0 : Math.sin(phase + drift + t * twoPiFreq) * amp;
             points[s] = { x: t * w, y: (baseY + wave) * h };
         }
         boundaries.push(points);
@@ -137,11 +160,13 @@ const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
     const inkRef = useRef(null);
     const bgRef = useRef(null);
     const canvasRef = useRef(null);
+    /** The 2D context, grabbed once — `getContext` per frame is wasted work. */
+    const ctxRef = useRef(null);
 
-    // The canvas is drawn once, on mount, not every frame: the rainbow never
-    // changes, only its scale does, and a scale is a transform, which is the
-    // cheap way. The buffer is `DRAW_SIZE × devicePixelRatio` so the downsample
-    // to 40px is sharp on retina screens without being wasteful on a 1× one.
+    // Sized once, on mount. The *drawing* happens per frame while the music
+    // plays (see `paint`), but the buffer and the DPR transform never change.
+    // The buffer is `DRAW_SIZE × devicePixelRatio` so the downsample to 40px
+    // is sharp on retina screens without being wasteful on a 1× one.
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return undefined;
@@ -151,7 +176,8 @@ const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
         canvas.width = DRAW_SIZE * dpr;
         canvas.height = DRAW_SIZE * dpr;
         ctx.scale(dpr, dpr);
-        drawBackdrop(ctx, DRAW_SIZE);
+        ctxRef.current = ctx;
+        drawBackdrop(ctx, DRAW_SIZE, 0, 0);
         return undefined;
     }, []);
 
@@ -169,12 +195,19 @@ const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
             return;
         }
         // Uniform scale on both layers, from each layer's own centre. No
-        // translate, no stretch — the whole point of the change was to stop
-        // the note jumping, and a breathing scale is the motion that replaces it.
+        // translate, no stretch — the point was to stop the note jumping, and
+        // a breathing scale is the motion that replaces it.
         const bgScale = 1 + BREATH_BG * level;
         const noteScale = 1 + BREATH_NOTE * level;
         bg.style.transform = `scale(${bgScale.toFixed(3)})`;
         ink.style.transform = `scale(${noteScale.toFixed(3)})`;
+        // And the waves themselves drift. `paint` runs once per frame from
+        // `useBeat`'s loop while anything is playing — exactly the lifecycle
+        // the drift wants (frozen at rest, running with the music) — so no
+        // second rAF loop of its own. The clock is wall time, so the phase
+        // keeps its speed no matter how the level wobbles.
+        const ctx = ctxRef.current;
+        if (ctx) drawBackdrop(ctx, DRAW_SIZE, performance.now() / 1000, level);
     };
 
     useBeat(audioRef, playing, paint);
