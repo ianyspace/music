@@ -287,9 +287,41 @@ const useBeat = function (audioRef, playing, apply) {
     const applyRef = useRef(apply);
     useEffect(() => { applyRef.current = apply; });
 
+    // `playing` through a ref too. The main effect below used to list `playing`
+    // as a dependency, which meant every play/pause tore the loop down and
+    // rebuilt it — cancelling the RAF, unbinding `timeupdate`, then re-binding
+    // both. That rebuild is silent on screen, but it is the reason the auto-
+    // nudge (pause + play to hand the context back its audio) could fail in the
+    // background: the nudge's own `pause()` fires `setIsPlaying(false)` which
+    // triggers the clean-up that removes the `timeupdate` listener, and by the
+    // time the listener is re-bound the `play()` has already come and gone.
+    // With `playing` in a ref the loop and its listeners are born once and live
+    // for the life of the screen; `playing` is read live inside `tick` and
+    // `onBeat` exactly where it was already a branch.
+    const playingRef = useRef(playing);
+    useEffect(() => { playingRef.current = playing; });
+
     const levelRef = useRef(0);
     /** The graph the loop below reads, for the listeners that outlive it. */
     const graphRef = useRef(null);
+    /** The RAF id, kept on a ref so the wake effect below can restart the loop
+     *  without tearing down the one in the main effect. */
+    const rafRef = useRef(0);
+
+    /**
+     * When `playing` goes from `false` to `true` the loop may be stopped —
+     * `tick` halts itself once the note has settled to rest, to keep the cost
+     * at zero while nothing is reacting. Something has to ask for the next
+     * frame again, and it cannot be the main effect, because that effect does
+     * not re-run on `playing` (by design — see `playingRef` above). This is the
+     * one thing this effect does: kick the loop. It does not bind listeners,
+     * it does not build a graph, it just says "there might be something to
+     * draw now."
+     */
+    const startRef = useRef(function () {});
+    useEffect(() => {
+        if (playing) startRef.current();
+    }, [playing]);
 
     /**
      * The two moments a context the system took away can be asked back, and
@@ -348,46 +380,42 @@ const useBeat = function (audioRef, playing, apply) {
             return undefined;
         }
 
-        let graph = null;
-        // Hoisted out of the branch below: the loop needs the element itself,
-        // to tell a player that is playing from one that has only been asked to.
         const audio = audioRef && audioRef.current;
 
-        if (playing) {
-            // The element plays from an object URL (`usePlayer` downloads the
-            // track and mounts the blob), and a blob URL is same-origin by
-            // construction. That matters more than it looks: a media element
-            // source node fed by a *cross-origin* resource outputs silence —
-            // and it does so by replacing the element's own output, so tapping
-            // one would not just lose the analysis, it would mute the song. The
-            // guard costs one string test and removes that whole class of
-            // accident.
-            if (audio && /^blob:/.test(audio.currentSrc || audio.src || '')) {
-                try {
-                    graph = graphs.get(audio) || null;
-                    if (!graph) {
-                        graph = buildGraph(audio);
-                        if (graph) graphs.set(audio, graph);
-                    }
-                } catch (err) {
-                    // Already sourced elsewhere, or the browser said no. The
-                    // element keeps playing through its own path; only the
-                    // analysis is lost.
-                    graph = null;
+        // The graph is built lazily — not on mount, but the first time `tick`
+        // sees that something is playing. `playing` is read from the ref so
+        // the loop does not have to be torn down and rebuilt on every
+        // play/pause (see the note on `playingRef` above).
+        //
+        // The element plays from an object URL (`usePlayer` downloads the
+        // track and mounts the blob), and a blob URL is same-origin by
+        // construction. That matters more than it looks: a media element
+        // source node fed by a *cross-origin* resource outputs silence —
+        // and it does so by replacing the element's own output, so tapping
+        // one would not just lose the analysis, it would mute the song. The
+        // guard costs one string test and removes that whole class of
+        // accident.
+        const ensureGraph = function () {
+            if (!audio || !/^blob:/.test(audio.currentSrc || audio.src || '')) return null;
+            try {
+                let g = graphs.get(audio) || null;
+                if (!g) {
+                    g = buildGraph(audio);
+                    if (g) graphs.set(audio, g);
                 }
+                // Sticky on purpose: an element that has been tapped is tapped
+                // for good, and the listeners have to keep working while the
+                // player is paused — the tap that resumes it comes before the
+                // next `tick`.
+                if (g) graphRef.current = g;
+                return g;
+            } catch (err) {
+                // Already sourced elsewhere, or the browser said no. The
+                // element keeps playing through its own path; only the
+                // analysis is lost.
+                return null;
             }
-        }
-        // Sticky on purpose: an element that has been tapped is tapped for
-        // good, and the listeners above have to keep working while the player
-        // is paused — the tap that resumes it comes before this effect runs
-        // again.
-        if (graph) graphRef.current = graph;
-
-        // Browsers start a context suspended until a gesture, and iOS hands one
-        // back from an interruption in the same state. The tap that started
-        // this track is the gesture both of them want, and this is the first
-        // moment there is a context to ask.
-        if (graph) ensureRunning(graph, performance.now());
+        };
 
         /**
          * The loop for when there is no frame loop. `requestAnimationFrame` is
@@ -403,9 +431,11 @@ const useBeat = function (audioRef, playing, apply) {
          * budget. The only thing it does not do is draw: the mark is not on
          * screen, and `levelRef` is left where the visitor will find it.
          *
-         * `graphRef.current` rather than the `graph` in this closure, because
-         * the listener outlives the render that installed it and a paused
-         * player is exactly the case where this closure holds nothing.
+         * `graphRef.current` rather than a local, because the listener outlives
+         * every render and a paused player is exactly the case where there is
+         * no graph in this closure — but there may be one on the ref, built by
+         * a previous tick or by the tap that started the track before this
+         * effect first ran.
          */
         const onBeat = function () {
             const g = graphRef.current;
@@ -431,13 +461,32 @@ const useBeat = function (audioRef, playing, apply) {
          *  exist there. */
         let quietMs = 0;
 
+        /** Let the wake effect restart this loop without owning the RAF id
+         *  itself. `start` asks for the next frame if the loop is idle, and
+         *  is a no-op if it is already running. */
+        const start = function () {
+            if (raf) return;
+            last = 0;
+            raf = window.requestAnimationFrame(tick);
+            rafRef.current = raf;
+        };
+        startRef.current = start;
+
         const tick = function (now) {
             const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
             last = now;
 
+            const isPlaying = playingRef.current;
             let target = 0;
             let quiet = true;
-            if (playing) {
+
+            // The graph is built here, not on mount, so it appears the moment
+            // something starts playing and survives across play/pause without
+            // the loop being rebuilt. `ensureGraph` is idempotent — the WeakMap
+            // keeps one graph per element.
+            const graph = isPlaying ? ensureGraph() : graphRef.current;
+
+            if (isPlaying) {
                 // A context that is not running reads nothing — and reading
                 // nothing is also the moment to ask for it back. This is the
                 // repair that happens while the page is on screen: an
@@ -484,24 +533,28 @@ const useBeat = function (audioRef, playing, apply) {
 
             // Paused: settle to rest, then stop. The element stays mounted and
             // the loop costs nothing while there is nothing to react to.
-            if (!playing && level < REST) {
+            if (!isPlaying && level < REST) {
                 levelRef.current = 0;
                 paint(0);
                 raf = 0;
+                rafRef.current = 0;
                 return;
             }
             raf = window.requestAnimationFrame(tick);
+            rafRef.current = raf;
         };
 
         raf = window.requestAnimationFrame(tick);
+        rafRef.current = raf;
         return () => {
             if (raf) window.cancelAnimationFrame(raf);
+            rafRef.current = 0;
             if (audio) {
                 audio.removeEventListener('timeupdate', onBeat);
                 audio.removeEventListener('playing', onBeat);
             }
         };
-    }, [audioRef, playing]);
+    }, [audioRef]);
 };
 
 export default useBeat;
