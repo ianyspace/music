@@ -84,6 +84,28 @@ const buildGraph = function (audio) {
     source.connect(analyser);
     analyser.connect(context.destination);
 
+    // The fastest possible signal that sound just stopped. The loops below
+    // can only *poll*: a frame (not while hidden) or a `timeupdate` (up to
+    // 250ms later), and then only through `ensureRunning`'s retry cooldown —
+    // so the first interruption after a backgrounding could sit silent for
+    // up to RETRY_MS before anyone asked for the context back. That wait was
+    // the audible gap on the first trip to the background.
+    // `statechange` fires the instant the system takes the state away, so
+    // `resume()` goes out within milliseconds — and it bypasses the cooldown
+    // on purpose: this is the system's own one-shot announcement, not a poll,
+    // so the rate limit that exists to protect the audio stack from per-frame
+    // spam has nothing to protect it from here. No runaway either way: a
+    // rejected `resume()` changes no state (so no repeat event), and a
+    // successful one fires this again with `running`, which returns early.
+    context.addEventListener('statechange', function () {
+        const state = context.state;
+        if (state === 'running' || state === 'closed') return;
+        context.resume().then(
+            () => beatDebug.event('statechange resume -> ' + context.state),
+            () => beatDebug.event('statechange resume refused'),
+        );
+    });
+
     return {
         context,
         analyser,
