@@ -10,10 +10,11 @@ import {
     IconPause,
     IconSearch,
 } from '../icons';
-import { assetUrl, emptyListMessage, parseTrackName, trackGradient } from '../shared';
+import { emptyListMessage, parseTrackName, trackGradient } from '../shared';
 import { DRIVE_SOURCE } from '../librarySource';
 import Cover from '../Cover';
 
+import MarkNote from './MarkNote';
 import styles from './TrackList.module.scss';
 
 /**
@@ -35,9 +36,12 @@ import styles from './TrackList.module.scss';
  * that is where the library's brand name was, and a bar with its mark on the
  * left and its actions on the right is what a phone app looks like.
  *
- * `qqBound` is drawn as a dot on the mark's bottom-right corner (grey / green)
- * and spoken in its label: the button doubles as the "is my number in?" light,
- * so that question does not need a sheet visit to answer.
+ * The mark is not built here. It is `MarkNote`, which owns its artwork and the
+ * one thing about it that moves — the note reacts to the music, so it needs the
+ * audio element, and `audioRef` is passed down for it alone. Everything this
+ * component still decides about the mark is the `qqBound` dot: the button
+ * doubles as the "is my number in?" light, so that question does not need a
+ * sheet visit to answer.
  *
  * The library's *name* did not leave with the title, though: it is still here as
  * the page's only `<h1>`, off screen (see `.sr-only`). It is the one thing that
@@ -81,6 +85,7 @@ const TrackList = function ({
     onToggleTrack,
     onOpenDrive,
     onGoAccount,
+    audioRef,
     menuOpen,
     onOpenMenu,
     qqBound,
@@ -142,40 +147,23 @@ const TrackList = function ({
                         way into 账号 — the sheet holding the QQ number, 听歌排行,
                         the sync button and the appearance switch.
 
-                        It is the published app icon — the same artwork as the
-                        favicon, so the tab and the page agree. It is a plain
-                        `<img>` rather than an `icon` component because it is a
-                        picture, and `assetUrl` is what adds the basePath (files
-                        under `public/` are not prefixed by Next).
+                        It is `MarkNote`, which owns the artwork: the published
+                        icon's rainbow as the backdrop and the note that came off
+                        it redrawn as a path, so it can react to the music.
+                        `audioRef` is here for that alone — see `MarkNote` and
+                        `useBeat` for what it does with it.
 
-                        Two details are the button's whole look:
-                        - it is a **rounded square**, not a circle, so the
-                          artwork reads as an app icon rather than as an
-                          avatar (the visitor's face is on 账号's identity
-                          card, where a face belongs);
-                        - the **dot at its bottom-right** is the QQ state:
-                          grey = 未确认, green = 已确认. It is the answer to
-                          "did my number actually take?" at a glance, before
-                          opening a sheet to find out — the button *is* the
-                          indicator, so the state is legible from the list. */}
-                    <button
-                        type="button"
-                        className={styles.mark}
-                        title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
-                        aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
-                        onClick={onGoAccount}
-                    >
-                        <img className={styles['mark-img']} src={assetUrl('/icon-192.png')} alt="" />
-                        {/* Decorative: the state is already in the label
-                            above, and a screen reader does not need to be
-                            told about a coloured pixel. */}
-                        <span
-                            className={qqBound
-                                ? `${styles['mark-dot']} ${styles['mark-dot-on']}`
-                                : styles['mark-dot']}
-                            aria-hidden="true"
-                        />
-                    </button>
+                        What is still decided here is the **dot at its
+                        bottom-right**: grey = 未确认, green = 已确认. It is the
+                        answer to "did my number actually take?" at a glance,
+                        before opening a sheet to find out — the button *is* the
+                        indicator, so the state is legible from the list. */}
+                    <MarkNote
+                        audioRef={audioRef}
+                        playing={isPlaying}
+                        qqBound={qqBound}
+                        onOpen={onGoAccount}
+                    />
                     {/* Unfolds between the mark and the actions; its own
                         toggle hides while it is open. */}
                     {connected && searchOpen && (

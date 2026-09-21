@@ -46,84 +46,10 @@
     gap: 10px;
 }
 
-/* The app's mark at the leading end of the bar — the way into 账号.
-
-   A **rounded square**, not a circle. The artwork is an app icon, and the circle
-   made it read as an avatar — which is exactly what this button used to be, and
-   what now lives on 账号's identity card. The radius belongs to the button and
-   the image inherits it, so the two cannot drift apart.
-
-   `position: relative` is for the state dot, the one child that has to sit
-   outside the artwork's corner.
-
-   `margin-left: 6px` is not a nudge to taste: it lines the mark up with the
-   covers *below* it. A row is a 44px thumb inset 4px into a column that is
-   itself inset 18px, so a cover's centre sits 44px from the page edge; a 40px
-   mark flush with the column would centre at 38. Six is exactly the difference.
-   The mark is not a row — it just has to agree with them about where this
-   column starts. */
-.mark {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    margin-left: 6px;
-    padding: 0;
-    border: 0;
-    border-radius: 11px;
-    background: transparent;
-    font-family: inherit;
-    cursor: pointer;
-    transition: transform 0.15s;
-
-    @media (hover: hover) {
-        &:hover {
-            transform: scale(1.06);
-        }
-    }
-
-    &:active {
-        transform: scale(0.94);
-    }
-}
-
-/* Fills the rounded square — the crop is what turns the square artwork into the
-   button's shape. */
-.mark-img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    border-radius: inherit;
-    object-fit: cover;
-}
-
-/* The QQ state as a dot on the bottom-right corner: grey = 未确认, green =
-   已确认. It answers "did my number actually take?" from the list, without
-   opening a page — the button doubles as the indicator, which is why the dot
-   hangs off the artwork's corner instead of being hidden inside it.
-
-   The ring is `--badge-ring`, an opaque token for exactly this job: a
-   translucent ring over the artwork reads as a smudge, and this app's surfaces
-   (`--glass`, `--card`) are all translucent. The same answer is in the button's
-   `aria-label`, so the dot itself is decorative. */
-.mark-dot {
-    position: absolute;
-    right: -1px;
-    bottom: -1px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #8e8e93;
-    box-shadow: 0 0 0 2px var(--badge-ring);
-}
-
-.mark-dot-on {
-    background: #34c759;
-}
-
+/* The mark that used to be styled here — the rounded square at the leading end
+   of the bar, with its QQ dot — now lives in `MarkNote.module.scss`. It moved
+   when the note on it became a drawing that reacts to the music, which made the
+   mark a component rather than a picture in this header. */
 
 /* The library's name, off screen but in the document — the page's heading, and
    the one thing that says which library the rows belong to. `innerText` still

@@ -362,6 +362,10 @@ const MusicApp = function () {
                     // not route through the drawer to offer it.
                     onOpenDrive={openDriveSheet}
                     onGoAccount={account.show}
+                    // For the note on the mark, which reacts to what is playing.
+                    // It is the only thing on this screen that needs the element
+                    // itself rather than the playback state.
+                    audioRef={audioRef}
                     onOpenMenu={menu.show}
                     menuOpen={menu.open && !menu.closing}
                     // Drawn as a dot on the mark's corner: the state of the

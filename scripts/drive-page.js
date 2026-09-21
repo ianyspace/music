@@ -179,6 +179,11 @@ const PAGES = [
         path: '/h5/',
         // The phone's rows are `div[role=button]`, not `<button>`.
         rows: '[role="button"][aria-label^="播放 "]',
+        // The app's mark, at the leading end of the bar: it raises 账号, and it
+        // is also the thing the note is drawn on. It sits here rather than on
+        // one of the stages below because two of them need it — the shell stage
+        // opens 账号 through it, and the last stage reads the note off it.
+        mark: 'header button[aria-label^="账号"]',
         // No lyrics or list toggle: the phone opens the now-playing sheet by
         // tapping the mini player, which is a different interaction.
         keys: [{ key: 'Escape', paused: false }],
@@ -197,12 +202,10 @@ const PAGES = [
             player: '[aria-label="打开播放页"]',
             heart: 'button[aria-label="喜欢"], button[aria-label="取消喜欢"]',
         },
-        // The shell's own structure: the ⋮ and the drawer it opens, the app's
-        // mark (which raises 账号), and the row drawer this stage likes a song
-        // through. See `the phone's shell` below.
+        // The shell's own structure: the ⋮ and the drawer it opens, and the row
+        // drawer this stage likes a song through. See `the phone's shell` below.
         shell: {
             more: 'header button[aria-label="更多功能"]',
-            mark: 'header button[aria-label^="账号"]',
             rowDrawer: ROW_DRAWER,
         },
     },
@@ -281,7 +284,7 @@ const drive = async (target, index) => {
     // Set by the 我喜欢 stage to answer the Drive files API with a canned list.
     // Null means "do not intercept anything". See `stubDriveFiles`.
     let driveStub = null;
-    // The bytes that answer a Drive track's *download*. See `silentWav`.
+    // The bytes that answer a Drive track's *download*. See `pulseWav`.
     let driveAudio = null;
     // How many requests the stub actually answered. Counted rather than assumed:
     // "the list is right" and "the stub never fired and the list is right
@@ -515,17 +518,28 @@ const drive = async (target, index) => {
     const enableStubs = () => send('Fetch.enable', { patterns: STUB_PATTERNS });
 
     /**
-     * A few seconds of silence, as a real WAV file.
+     * Thirty seconds of a pulsing tone, as a real WAV file.
      *
      * The Drive library's audio is served from the same host as its listing, so
      * a stub for the listing has to answer the download as well — with
-     * something an `<audio>` element will actually play. Silence is enough:
-     * `play` fires on the element, not on the sound, and the only thing under
-     * test is whether the app recorded a play. Long enough not to run out
-     * mid-check, so playback does not advance to the next track while the
+     * something an `<audio>` element will actually play. Long enough not to run
+     * out mid-check, so playback does not advance to the next track while the
      * assertions are still reading.
+     *
+     * It used to be silence, and silence is no longer enough: the note on the
+     * app's mark is driven by a real `AnalyserNode` on the audio element (see
+     * `h5/useBeat`), and an analyser reading silence reports a level of zero,
+     * which is exactly what it reports when it is broken. A tone that swells
+     * and fades is a signal the note has to move for, so "the note moves" can
+     * be asserted instead of assumed. 220 Hz sits in the band that hook reads
+     * (bins 1–4 of a 512-point FFT), and the 1.5 Hz swell keeps the level
+     * *changing*, which is what the check looks for.
+     *
+     * Amplitude is deliberately modest — about -12 dBFS at the peak of the
+     * swell. Louder and the level would sit pinned at the top, where a moving
+     * note and a stuck one look the same.
      */
-    const silentWav = function (seconds) {
+    const pulseWav = function (seconds) {
         const rate = 8000;
         const samples = rate * seconds;
         const wav = Buffer.alloc(44 + samples);
@@ -542,7 +556,13 @@ const drive = async (target, index) => {
         wav.writeUInt16LE(8, 34); // bits per sample
         wav.write('data', 36);
         wav.writeUInt32LE(samples, 40);
-        wav.fill(128, 44); // 8-bit silence is 128, not 0
+        for (let i = 0; i < samples; i += 1) {
+            const t = i / rate;
+            const swell = 0.06 + 0.2 * (0.5 + 0.5 * Math.sin(Math.PI * 2 * 1.5 * t));
+            // 8-bit PCM is unsigned: 128 is silence, not 0.
+            const v = 128 + Math.round(Math.sin(Math.PI * 2 * 220 * t) * swell * 127);
+            wav[i + 44] = Math.max(0, Math.min(255, v));
+        }
         return wav;
     };
 
@@ -564,7 +584,7 @@ const drive = async (target, index) => {
      */
     const stubDriveFiles = async (files) => {
         driveStub = { files };
-        driveAudio = silentWav(30);
+        driveAudio = pulseWav(30);
         await enableStubs();
     };
 
@@ -1115,7 +1135,7 @@ const drive = async (target, index) => {
 
         // --- the mark raises 账号, and confirming a number adopts those likes --
         const markClicked = await evaluate(`(() => {
-            const b = document.querySelector(${JSON.stringify(spec.mark)});
+            const b = document.querySelector(${JSON.stringify(target.mark)});
             if (!b) return 'missing';
             b.click();
             return 'clicked';
@@ -1226,7 +1246,7 @@ const drive = async (target, index) => {
 
         // --- the number card and the confirm block are one thing ------------
         await evaluate(`(() => {
-            const b = document.querySelector(${JSON.stringify(spec.mark)});
+            const b = document.querySelector(${JSON.stringify(target.mark)});
             if (b) b.click();
         })()`);
         await sleep(900);
@@ -1489,7 +1509,7 @@ const drive = async (target, index) => {
          * 听歌排行 is the public library's ranking, so `recordPlay` refuses a
          * Drive track — the same line 喜欢 draws. This is the only place the
          * rule can be observed end to end, and it only works because the stub
-         * now answers the *download* as well as the listing (see `silentWav`):
+         * now answers the *download* as well as the listing (see `pulseWav`):
          * with the listing alone, the element gets a JSON body, never fires
          * `play`, and "no play was reported" is true on a page where nothing
          * ever played. So the element's own state is asserted *first* — a
@@ -1524,6 +1544,123 @@ const drive = async (target, index) => {
             '...and a Drive play is not reported',
             playsStubHits === 0,
             `${playsStubHits} request(s) to /plays`,
+        );
+
+        /* --- and the note on the mark moves with the music -----------------
+         *
+         * The mark is a drawing now: the published artwork's rainbow as a
+         * backdrop, and the note that was on it redrawn as a path on top, so
+         * that it can be lifted and stretched. Three things can go wrong and
+         * all three pass a screenshot — the note can be drawn wrong, the
+         * backdrop can be the wrong picture, and the note can simply never
+         * move. So the geometry is measured against the icon the trace came
+         * from, and the motion is read off the transform the note is given
+         * while the tone above is playing.
+         *
+         * The box is `getBBox`, which is the path's own geometry and so does
+         * not move with the animation. The numbers are the published icon's:
+         * the note occupies x 147..395, y 109..395 of its 512-unit square.
+         */
+        const markShape = await evaluate(`(() => {
+            const b = document.querySelector(${JSON.stringify(target.mark)});
+            if (!b) {
+                // Say what *is* on screen instead of just "no mark". A mark
+                // that is not found is a header that is not drawn, a label
+                // that changed, and a sheet that has taken the screen over —
+                // three different faults that want three different fixes, and
+                // the bare fact that a selector matched nothing names none of
+                // them.
+                const header = document.querySelector('header');
+                return {
+                    why: 'no mark',
+                    headers: document.querySelectorAll('header').length,
+                    labels: header
+                        ? [...header.querySelectorAll('button')]
+                            .map((x) => x.getAttribute('aria-label') || (x.innerText || '').trim().slice(0, 12))
+                            .join(' | ')
+                        : '(no header)',
+                    screen: (document.body.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 120),
+                };
+            }
+            const svg = b.querySelector('svg');
+            const path = svg && svg.querySelector('path');
+            let box = null;
+            if (path) {
+                const r = path.getBBox();
+                box = { x: r.x, y: r.y, w: r.width, h: r.height };
+            }
+            return {
+                viewBox: svg ? svg.getAttribute('viewBox') : '',
+                box,
+                backdrop: b.style.backgroundImage || '',
+            };
+        })()`);
+        const box = markShape && markShape.box;
+        // One description, used by all three checks below: when the mark is not
+        // there at all, "no path" and "none" would each hide the one fact that
+        // matters.
+        const missing = markShape && markShape.why
+            ? `${markShape.why} (headers=${markShape.headers} labels=${markShape.labels} screen=${markShape.screen})`
+            : '';
+        check(
+            'the mark draws its note as a path in the 512-unit space of the icon',
+            Boolean(markShape) && markShape.viewBox === '0 0 512 512' && Boolean(box),
+            !markShape
+                ? '(no mark)'
+                : (missing || `viewBox=${markShape.viewBox} box=${box ? 'yes' : 'no'}`),
+        );
+        check(
+            '...and the note is the size and place of the one on the published icon',
+            Boolean(box)
+                && Math.abs(box.x - 147) <= 4
+                && Math.abs(box.y - 109) <= 4
+                && Math.abs(box.w - 248) <= 4
+                && Math.abs(box.h - 286) <= 4,
+            box
+                ? `x=${box.x.toFixed(0)} y=${box.y.toFixed(0)} w=${box.w.toFixed(0)} h=${box.h.toFixed(0)} (icon: 147 109 248 286)`
+                : (missing || '(no path)'),
+        );
+        check(
+            '...and its backdrop is the artwork without the note on it',
+            Boolean(markShape) && /mark-bg\.jpg/.test(markShape.backdrop),
+            markShape && markShape.backdrop
+                ? markShape.backdrop.slice(0, 90)
+                : (missing || '(none)'),
+        );
+
+        // The sentinel carries the reason, so a run that finds no note says
+        // whether the mark itself is gone or only the path on it. The filter
+        // below is a prefix test for the same reason.
+        const NO_NOTE = '(no note)';
+        const noteTransform = () => evaluate(`(() => {
+            const b = document.querySelector(${JSON.stringify(target.mark)});
+            const p = document.querySelector(${JSON.stringify(`${target.mark} svg path`)});
+            if (!p) return ${JSON.stringify(NO_NOTE)} + (b ? ' — mark drawn, no path' : ' — no mark at all');
+            return p.style.transform || '';
+        })()`);
+        const frames = [];
+        for (let i = 0; i < 12; i += 1) {
+            frames.push(await noteTransform());
+            await sleep(180);
+        }
+        const lifted = frames.filter((t) => t && !t.startsWith(NO_NOTE));
+        check(
+            'the note on the mark lifts while the music plays',
+            lifted.length >= 10,
+            `${lifted.length}/${frames.length} frames displaced`,
+        );
+        check(
+            '...and it is moving rather than stuck at one height',
+            new Set(lifted).size >= 3,
+            `${new Set(lifted).size} distinct transforms over ${lifted.length} frames`,
+        );
+        await evaluate("(() => { const a = document.querySelector('audio'); if (a) a.pause(); })()");
+        await sleep(900);
+        const settled = await noteTransform();
+        check(
+            '...and it goes back to rest when the music stops',
+            settled === '',
+            `transform=${JSON.stringify(settled)}`,
         );
     }
 

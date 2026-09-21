@@ -1,0 +1,114 @@
+// The app's mark — the leading end of the list's bar, and the way into 账号.
+//
+// These rules used to live in `TrackList.module.scss`, next to the bar they sit
+// in. They moved here when the mark stopped being an `<img>` and became a small
+// drawing that reacts to the music: the bar's stylesheet is about the list, and
+// the mark is now a component of its own with a behaviour attached. Nothing
+// about how it looks changed with the move.
+
+/* A **rounded square**, not a circle. The artwork is an app icon, and the circle
+   made it read as an avatar — which is exactly what this button used to be, and
+   what now lives on 账号's identity card. The radius belongs to the button, and
+   the picture inside it is a background so the two cannot drift apart.
+
+   `position: relative` is for the state dot, the one child that has to sit
+   outside the artwork's corner.
+
+   `margin-left: 6px` is not a nudge to taste: it lines the mark up with the
+   covers *below* it. A row is a 44px thumb inset 4px into a column that is
+   itself inset 18px, so a cover's centre sits 44px from the page edge; a 40px
+   mark flush with the column would centre at 38. Six is exactly the difference.
+   The mark is not a row — it just has to agree with them about where this
+   column starts. */
+.mark {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    margin-left: 6px;
+    padding: 0;
+    border: 0;
+    border-radius: 11px;
+    /* `background-color`, not the `background` shorthand: the shorthand would
+       reset `background-image`, which the component sets inline, and `size`,
+       which is the crop that turns the square artwork into this button's shape. */
+    background-color: transparent;
+    background-size: cover;
+    background-position: center;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s;
+
+    @media (hover: hover) {
+        &:hover {
+            transform: scale(1.06);
+        }
+    }
+
+    &:active {
+        transform: scale(0.94);
+    }
+}
+
+/* The note, drawn over the backdrop. The `viewBox` is the published icon's own
+   512-unit space, so the path's coordinates are the icon's — this element only
+   scales them down to the button. */
+.art {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* The note itself. It is the one thing `useBeat` touches, and it is touched
+   through `style.transform` — so this rule carries the pivot rather than the
+   motion.
+
+   `fill-box` puts the origin on the note's own bounding box, and `27% 100%` is
+   the bottom of its head — the point it would be standing on if it were a
+   physical thing. Stretching about that point reads as a jump; stretching about
+   the middle of the box reads as a zoom. */
+.ink {
+    fill: #fff;
+    /* The published icon draws the note with a soft shadow under it, which is
+       what keeps a white shape from looking pasted flat onto a light band — the
+       flag and the top of the head sit on the yellow one.
+
+       The filter is applied to an SVG child, so its lengths are in the path's
+       own 512-unit space, not in screen pixels: 13 and 12 are about one screen
+       pixel each at the 40px this is drawn at, which is the size the original's
+       shadow reads as. The trace walks pixel centres, so half a unit of stroke
+       puts the outline back on the true edge. */
+    stroke: #fff;
+    stroke-width: 1;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 13px 12px rgba(38, 44, 74, 0.3));
+    transform-box: fill-box;
+    transform-origin: 27% 100%;
+}
+
+/* The QQ state as a dot on the bottom-right corner: grey = 未确认, green =
+   已确认. It answers "did my number actually take?" from the list, without
+   opening a page — the button doubles as the indicator, which is why the dot
+   hangs off the artwork's corner instead of being hidden inside it.
+
+   The ring is `--badge-ring`, an opaque token for exactly this job: a
+   translucent ring over the artwork reads as a smudge, and this app's surfaces
+   (`--glass`, `--card`) are all translucent. The same answer is in the button's
+   `aria-label`, so the dot itself is decorative. */
+.dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #8e8e93;
+    box-shadow: 0 0 0 2px var(--badge-ring);
+}
+
+.dot-on {
+    background: #34c759;
+}
