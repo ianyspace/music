@@ -25,10 +25,15 @@
  * The log is keyed per event and carries the QQ number it belongs to, so a
  * visitor who changes numbers still sends the old number's plays to the old
  * number.
+ *
+ * The ranking is the **public library's**: a Drive track is never recorded (see
+ * `recordPlay`). That is the same line 我喜欢 draws, and it is why this module
+ * reads `librarySource` for one constant and nothing else.
  */
 
 import { music } from 'config';
 
+import { DRIVE_SOURCE } from './librarySource';
 import { normalizeQq, storageGet, storageSet } from './shared';
 
 // The pending log, as a JSON array of `{ eid, qq, id, name, at }`.
@@ -203,10 +208,22 @@ export const flushPending = async function () {
  * A track with no bound QQ number is not recorded at all: the ranking is *per
  * QQ*, and a play with nobody to attribute it to would be a row that can never
  * appear in anyone's ranking.
+ *
+ * Neither is a Drive track, and that is a second, unrelated reason: 听歌排行
+ * ranks the *public library*, and a Drive file is not part of it. Its id means
+ * nothing outside the account that owns it, and its name is a file name on
+ * somebody's own drive — not something to ship to a shared database in order to
+ * count it. (`toggleLike` refuses a Drive track for the same reason, which is
+ * what makes "the public library's features" one rule rather than two.)
+ *
+ * The guard is *here* rather than at the call site so that no caller can log one
+ * by accident — the log is the only way a play ever reaches the database, so
+ * refusing it at the door is what makes the rule hold for the whole module.
  */
 export const recordPlay = function (qq, track) {
     const digits = normalizeQq(qq);
     if (!digits || !track || !track.id) return;
+    if (track.source === DRIVE_SOURCE) return;
     appendPending({
         eid: newEventId(),
         qq: digits,
