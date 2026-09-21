@@ -518,8 +518,9 @@ const drive = async (target, index) => {
     const enableStubs = () => send('Fetch.enable', { patterns: STUB_PATTERNS });
 
     /**
-     * Catch the beat's `AudioContext` as it is made, so that the one thing that
-     * decides whether a tapped song is audible at all can be looked at.
+     * Catch the beat's `AudioContext` — and its `AnalyserNode` — as they are
+     * made, so that the things that decide whether a tapped song is audible at
+     * all can be looked at.
      *
      * `h5/useBeat` reads `window.AudioContext` when the first track starts, so
      * replacing the global before any tap captures every context the page
@@ -527,20 +528,34 @@ const drive = async (target, index) => {
      * already loaded, and once for every document after it — the h5 stage
      * reloads — because the hook has to be in place before the page's own
      * scripts are.
+     *
+     * The analyser is worth catching for the same reason the context is: it is
+     * the path the sound itself takes (element → source node → analyser →
+     * destination), so an energy reading off it is the closest a headless
+     * browser gets to hearing the song, and it is what reads zero when the tap
+     * has gone wrong.
      */
     const captureAudioContexts = async () => {
         const hook = `(() => {
             if (window.__musicContexts) return;
             const Orig = window.AudioContext || window.webkitAudioContext;
             if (!Orig) return;
-            const seen = [];
+            const contexts = [];
+            const analysers = [];
             const Wrapped = function (...args) {
                 const ctx = new Orig(...args);
-                seen.push(ctx);
+                contexts.push(ctx);
                 return ctx;
             };
             Wrapped.prototype = Orig.prototype;
-            window.__musicContexts = seen;
+            const origCreateAnalyser = Orig.prototype.createAnalyser;
+            Orig.prototype.createAnalyser = function (...args) {
+                const node = origCreateAnalyser.apply(this, args);
+                analysers.push(node);
+                return node;
+            };
+            window.__musicContexts = contexts;
+            window.__musicAnalysers = analysers;
             window.AudioContext = Wrapped;
         })()`;
         await send('Page.addScriptToEvaluateOnNewDocument', { source: hook });
@@ -1685,6 +1700,73 @@ const drive = async (target, index) => {
             '...and it is moving rather than stuck at one height',
             new Set(lifted).size >= 3,
             `${new Set(lifted).size} distinct transforms over ${lifted.length} frames`,
+        );
+
+        /* --- and the graph survives the *next* song -------------------------
+         *
+         * The report that produced all of this was about the **second** song,
+         * and until now nothing in this file had ever played two songs on one
+         * element: every earlier playback happens in a fresh document, and a
+         * fresh document means a fresh `<audio>` and a fresh graph. So the two
+         * things only a second song can show were untested — that a tapped
+         * element survives its `src` being replaced (the source node is bound to
+         * the *element*, not to the resource it is playing), and that the audio
+         * still flows through a live context afterwards.
+         *
+         * "Still flows" is read off the analyser rather than off the context's
+         * state, because the analyser is the path the sound takes. It is also
+         * the reading that catches a tap gone wrong: a broken source outputs
+         * zeros while the element reports itself as playing.
+         */
+        const firstSrc = await evaluate("(() => { const a = document.querySelector('audio'); return a ? a.src : ''; })()");
+        const secondSong = await evaluate(`(async () => {
+            const c = window.__musicContexts && window.__musicContexts[0];
+            const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
+            if (rows.length < 2) return 'only one row to play';
+            // The system takes the context away first — the state iOS leaves
+            // behind after a trip to the background — and *then* the next song
+            // starts, which is the order the report describes.
+            if (c) await c.suspend();
+            rows[1].click();
+            return 'clicked';
+        })()`);
+        const secondPlaying = await waitFor(
+            `(() => {
+                const a = document.querySelector('audio');
+                if (!a) return { why: 'no audio' };
+                if (a.src === ${JSON.stringify(firstSrc)}) return { why: 'still the first song' };
+                return { why: a.paused ? 'paused' : 'playing', t: a.currentTime };
+            })()`,
+            (v) => Boolean(v) && v.why === 'playing' && v.t > 0.5,
+            15000,
+        );
+        check(
+            'the next song starts on the same element',
+            Boolean(secondPlaying.value) && secondPlaying.value.why === 'playing',
+            `${secondSong}, ${secondPlaying.value && secondPlaying.value.why}`
+                + ` in ${(secondPlaying.ms / 1000).toFixed(1)}s`,
+        );
+        // Sampled over several frames rather than read once: the analyser
+        // smooths, so a single reading right after a resume can be the reading
+        // from before it.
+        let loudest = 0;
+        for (let i = 0; i < 6; i += 1) {
+            const level = Number(await evaluate(`(() => {
+                const an = window.__musicAnalysers && window.__musicAnalysers[0];
+                if (!an) return -1;
+                const data = new Uint8Array(an.frequencyBinCount);
+                an.getByteFrequencyData(data);
+                let sum = 0;
+                for (let i = 1; i < 5; i += 1) sum += data[i];
+                return Math.round(sum / 4);
+            })()`)) || 0;
+            loudest = Math.max(loudest, level);
+            await sleep(200);
+        }
+        check(
+            '...and the analyser still reads the music through the new source',
+            loudest > 8,
+            `loudest 1-4 bin average over 6 frames: ${loudest}/255`,
         );
 
         /* --- and the sound survives the system taking the context away -----
