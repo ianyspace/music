@@ -1857,6 +1857,106 @@ const drive = async (target, index) => {
             afterTap.value === 'running',
             `${tapped} -> ${trace(afterTap)} in ${(afterTap.ms / 1000).toFixed(1)}s`,
         );
+
+        /* --- and the repair the visitor had to do by hand -------------------
+         *
+         * `state` is not the only way for the graph to go quiet. A context that
+         * says `running` while its source node delivers nothing is silence too,
+         * with no promise to catch and no state to read — and the report from
+         * the device ended with the visitor repairing that themselves: go back
+         * to the page, pause, play again. The app now does it for them.
+         *
+         * The silence is forced rather than waited for: the analyser is
+         * overridden to report zeros, which is exactly what a dead source node
+         * reports, and within a few seconds the element must have been paused
+         * and started again. Nothing else in the app pauses it, so a pause event
+         * here is the nudge and cannot be anything else.
+         */
+        await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            if (!a) return 'no audio';
+            window.__nudgePauses = 0;
+            a.addEventListener('pause', () => { window.__nudgePauses += 1; });
+            a.play();
+            return 'playing';
+        })()`);
+        // Long enough for playback to be under way and the loop to be reading
+        // the real analyser, so that what follows is the override's doing.
+        await sleep(1500);
+        const zeroed = await evaluate(`(() => {
+            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
+            if (!proto || !proto.getByteFrequencyData) return 'no analyser to override';
+            if (!window.__realGetByteFrequencyData) {
+                window.__realGetByteFrequencyData = proto.getByteFrequencyData;
+            }
+            proto.getByteFrequencyData = function (array) { array.fill(0); };
+            return 'zeroed';
+        })()`);
+        const nudged = await waitFor(
+            '(() => (window.__nudgePauses || 0))()',
+            (v) => Number(v) > 0,
+            12000,
+        );
+        check(
+            '...and a graph that reads nothing while the element plays gets a nudge',
+            Number(nudged.value) > 0,
+            `${zeroed}, ${nudged.value} pause(s) in ${(nudged.ms / 1000).toFixed(1)}s`,
+        );
+        const afterNudge = await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            return a ? (a.paused ? 'paused' : 'playing') : 'gone';
+        })()`);
+        check(
+            '...and the nudge leaves the music playing',
+            afterNudge === 'playing',
+            `${afterNudge}`,
+        );
+        await evaluate(`(() => {
+            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
+            if (proto && window.__realGetByteFrequencyData) {
+                proto.getByteFrequencyData = window.__realGetByteFrequencyData;
+            }
+            return 'restored';
+        })()`);
+
+        /* --- and the readout the next report will be made of ---------------
+         *
+         * Everything above is checked from a machine that can see the page from
+         * the inside. A phone cannot be looked into at all, and the whole
+         * subject of this stage is invisible from the outside — a silent player
+         * reports itself as playing, draws a moving progress bar, and logs
+         * nothing. So the page can be asked to say what it knows:
+         * `?beatdebug=1`. That makes it worth a check of its own, in both
+         * directions: the box must not exist for a visitor who did not ask for
+         * it, and it must be there — reading a context state — for one who did.
+         */
+        const optIn = await evaluate("document.getElementById('beat-debug') ? 'present' : 'absent'");
+        check(
+            'the beat readout is opt-in — no ?beatdebug=1, no box',
+            optIn === 'absent',
+            String(optIn),
+        );
+        await send('Page.navigate', { url: `${target.url}?beatdebug=1` });
+        await sleep(2500);
+        const asked = await evaluate(`(() => {
+            const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
+            if (!rows.length) return 'no rows';
+            rows[0].click();
+            return 'clicked';
+        })()`);
+        const readout = await waitFor(
+            `(() => {
+                const box = document.getElementById('beat-debug');
+                return box ? box.textContent : '';
+            })()`,
+            (v) => typeof v === 'string' && v.indexOf('state=') !== -1,
+            25000,
+        );
+        check(
+            '...and ?beatdebug=1 draws one, reporting the context it found',
+            typeof readout.value === 'string' && readout.value.indexOf('state=') !== -1,
+            `${asked}, ${JSON.stringify(String(readout.value).split('\\n')[0].slice(0, 110))}`,
+        );
     }
 
     chrome.kill();

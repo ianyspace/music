@@ -1005,6 +1005,12 @@ components/Music/three/
 - **别在页面隐藏时 `suspend()` 上下文**：那是把歌静音，不是把动画停下来 ——
   `usePlayer` 预取下一首就是为了后台能连播。`ThreeStage` 的 `onVisibility` 只停 rAF；
   恢复靠回来时的 `resume()` 和每帧的重试，而不是靠 `suspend`/`resume` 成对。
+- **静音还有第二种来源，而这一条目前只在手机那份里修了。** 上下文 `state === 'running'`
+  但 source node 送出来的是静音 —— 没有 promise 可 catch、没有 state 可判、控制台一个字没有。
+  真机复测的结论是「手动暂停再播放一次，这一页就再也没哑过」，所以 `h5/useBeat.js` 会在
+  「元素自称在播而图连着 3 秒读不到东西」时自己把元素 `pause()` 再 `play()`（`nudge()`，
+  细节见下面 h5 那一节）。**`analyzer.js` 还没跟上这一条** —— 同一根线，所以歌一样会哑，
+  表现只是那圈辉光冻住。要补的时候照 `useBeat.js` 那份抄，别忘了按图限流和每首上限。
 - **手机端有一份自己的、`h5/useBeat.js`**（三棵树不许互相 import，所以是复制而不是共用；
   它照着 `THREE.MathUtils.damp` 的写法平滑，读同一个频段）。它和 `analyzer.js` 的差别，
   以及两边都得守住的东西：
@@ -1022,6 +1028,20 @@ components/Music/three/
     播放的那一次点击发生在这个 effect 跑之前**（那个 effect 是被 `play` 事件推动的）；
     以及 rAF 在页面隐藏时不跑，所以「回来了」只有 `visibilitychange` 知道。
     别把这两个监听挪进播放的那个 effect —— 那正好错过需要它的那一刻。
+  - **光 `resume()` 不够，所以还有一次「暂停再播放」。** 真机复测的结论：切后台自动接上
+    下一首仍然会哑，而**回页面手动暂停再播放之后，这一页就再也没哑过**。所以帧循环里多了一个
+    判据 —— 元素自称在播（`!paused && currentTime > 0`）而图**连着 `QUIET_MS` = 3s 读不到
+    任何东西**（上下文没 running，或 running 但送出来的是静音），就照用户的做法把元素
+    `pause()` 再 `play()`（`nudge()`）。它**只在这两种「本来就没声音」的状态下才会触发**，
+    所以那一下停顿是听不见的；图正常读到音乐时它一次都不会发生。
+    按图限流（`NUDGE_COOLDOWN_MS` = 15s）且每首歌最多 `NUDGE_LIMIT` = 3 次 ——
+    一个永远触发的「修复」本身就是 bug。**冒烟里那条断言是把分析器改写成恒返回 0 来触发的**
+    （那就是坏掉的 source node 的读数），不是等出来的。
+  - **`?beatdebug=1` 是这个 bug 的读数**（`h5/beatDebug.js`）：上下文 state、是否读到声音、
+    静音了多久、nudge 用了几次、当前电平、元素在放哪一首，外加最近几条事件
+    （`visibility` / `resume ->` / `resume refused` / `nudge`）。手机上没有控制台，
+    而这个 bug 的全套证据都在页面里面 —— 再出事时让用户开这个 URL 截图，比再猜一轮强得多。
+    盒子是 `pointer-events:none`：点屏幕本身就是这个 app 需要的那一个手势，读数不能吃掉它。
 - 从 `/desktop` 进 `/3d` 会**换一个 `<audio>` 元素**，歌会停一下；但 `usePlayer`
   会用 `LAST_TRACK_KEY` / `LAST_PROGRESS_KEY` 把同一首按原位置**重新载入**（不自动播放）。
   这条链路依赖列表缓存，所以第一次访问、列表还没落盘时不要期待能续上。

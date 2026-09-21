@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import beatDebug from './beatDebug';
 
 /**
  * The beat, for the one thing on this screen that moves: the note on the app's
@@ -85,6 +86,12 @@ const buildGraph = function (audio) {
         data: new Uint8Array(analyser.frequencyBinCount),
         /** When this context may be asked to resume again. See below. */
         retryAt: 0,
+        /** When this graph may be nudged again, and how often it has been. See
+         *  `nudge` below — the bookkeeping lives on the graph rather than in the
+         *  loop because a nudge restarts the loop. */
+        nudgeAt: 0,
+        nudges: 0,
+        nudgeSrc: '',
     };
 };
 
@@ -127,8 +134,48 @@ const ensureRunning = function (graph, now) {
     if (state === 'closed') return false;
     if (now < graph.retryAt) return false;
     graph.retryAt = now + RETRY_MS;
-    graph.context.resume().catch(() => { });
+    graph.context.resume().then(
+        () => beatDebug.event('resume -> ' + graph.context.state),
+        () => beatDebug.event('resume refused'),
+    );
     return false;
+};
+
+/** How long the graph may read nothing — or not run at all — while the element
+ *  says it is playing, before the element is nudged. See below. */
+const QUIET_MS = 3000;
+/** How long before the same graph may be nudged again, and how many times it
+ *  may be nudged per track. A nudge is a real pause and a real play, and a
+ *  repair that fires forever is its own bug. */
+const NUDGE_COOLDOWN_MS = 15000;
+const NUDGE_LIMIT = 3;
+
+/**
+ * What a visitor does by hand when the song goes quiet: pause, then play.
+ *
+ * The report that produced this, verbatim: 「切后台自动播放下一首就又没声音了……
+ * 但是没声音后我回页面再次暂停，再次播放，然后切后台就再也不出现这个问题了」.
+ * So the repair is not a guess — it was demonstrated on the device. All that was
+ * missing was doing it without asking the visitor to.
+ *
+ * It is safe to fire without asking because it only ever fires while the graph
+ * is reading nothing, and there are exactly two ways to get there: the context
+ * is not running (iOS took it away and has not given it back), or it is running
+ * and delivering silence (a source node that came back from an interruption
+ * without its audio). In both of those there is no sound to cut off — the gap
+ * this makes is inaudible — and while the graph is reading music, it cannot
+ * fire at all.
+ *
+ * `pause()` before `play()` is the whole point: a `play()` on an element that
+ * already believes it is playing is a no-op, and it is the re-play that
+ * re-asks the platform for the audio route.
+ */
+const nudge = function (audio) {
+    try {
+        audio.pause();
+        const request = audio.play();
+        if (request && typeof request.catch === 'function') request.catch(() => { });
+    } catch (err) { /* nothing else left to try */ }
 };
 
 /**
@@ -195,6 +242,7 @@ const useBeat = function (audioRef, playing, apply) {
         };
         const onGesture = function () { wake(true); };
         const onVisibility = function () {
+            beatDebug.event('visibility ' + document.visibilityState);
             if (document.visibilityState === 'visible') wake(true);
         };
 
@@ -222,9 +270,11 @@ const useBeat = function (audioRef, playing, apply) {
         }
 
         let graph = null;
+        // Hoisted out of the branch below: the loop needs the element itself,
+        // to tell a player that is playing from one that has only been asked to.
+        const audio = audioRef && audioRef.current;
 
         if (playing) {
-            const audio = audioRef && audioRef.current;
             // The element plays from an object URL (`usePlayer` downloads the
             // track and mounts the blob), and a blob URL is same-origin by
             // construction. That matters more than it looks: a media element
@@ -264,12 +314,16 @@ const useBeat = function (audioRef, playing, apply) {
         let last = 0;
         let clock = 0;
         let level = levelRef.current;
+        /** Milliseconds of *playback* in which the graph read nothing. Reset by
+         *  any sound, and by a pause — a stopped player is not a broken one. */
+        let quietMs = 0;
 
         const tick = function (now) {
             const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
             last = now;
 
             let target = 0;
+            let quiet = true;
             if (playing) {
                 // A context that is not running reads nothing — and reading
                 // nothing is also the moment to ask for it back. This is the
@@ -284,6 +338,7 @@ const useBeat = function (audioRef, playing, apply) {
                     graph.analyser.getByteFrequencyData(graph.data);
                     let sum = 0;
                     for (let i = BIN_FROM; i < BIN_TO; i += 1) sum += graph.data[i];
+                    quiet = sum === 0;
                     target = sum / ((BIN_TO - BIN_FROM) * 255);
                     // The bins are linear in amplitude and the eye is not, so
                     // the quiet half of the range is lifted into view. Gently:
@@ -292,7 +347,46 @@ const useBeat = function (audioRef, playing, apply) {
                     // with nothing to say.
                     target = Math.pow(Math.min(1, Math.max(0, target)), 1.25);
                 }
+
+                // Asking for the context back is not always enough: the report
+                // that produced this hook ends with the visitor doing the
+                // repair by hand. So while the element insists it is playing and
+                // the graph reads nothing, do what they did.
+                const alive = audio && !audio.paused && audio.currentTime > 0;
+                if (alive && graph) {
+                    // A new track is a new situation, and gets its own budget.
+                    if (audio.currentSrc !== graph.nudgeSrc) {
+                        graph.nudgeSrc = audio.currentSrc;
+                        graph.nudges = 0;
+                    }
+                    quietMs = quiet ? quietMs + dt * 1000 : 0;
+                    if (quietMs >= QUIET_MS
+                        && graph.nudges < NUDGE_LIMIT
+                        && now >= graph.nudgeAt) {
+                        const why = `state=${graph.context.state} quiet=${Math.round(quietMs)}`;
+                        quietMs = 0;
+                        graph.nudges += 1;
+                        graph.nudgeAt = now + NUDGE_COOLDOWN_MS;
+                        beatDebug.event(`nudge ${graph.nudges}/${NUDGE_LIMIT} ${why}`);
+                        nudge(audio);
+                    }
+                } else {
+                    quietMs = 0;
+                }
+            } else {
+                quietMs = 0;
             }
+
+            beatDebug.sample({
+                state: graph ? graph.context.state : 'none',
+                live: Boolean(graph) && !quiet,
+                quietMs: Math.round(quietMs),
+                nudges: graph ? graph.nudges : 0,
+                level: level.toFixed(2),
+                paused: audio ? audio.paused : true,
+                at: audio ? audio.currentTime.toFixed(1) : '-',
+                src: audio ? String(audio.currentSrc).slice(-14) : '-',
+            });
 
             level = damp(level, target, target > level ? RISE : FALL, dt);
             levelRef.current = level;
