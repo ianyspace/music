@@ -1246,10 +1246,30 @@ Drive 曲库的办法 —— 列表来自一次真实 API 调用，而每来源�
 推 `master` 触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` → 校验产物 →
 发布 `out/` 到 Pages。
 
-**纯文档 / 纯测试的推送不触发它**：push 上有 `paths-ignore: ['**.md', 'scripts/**']`。
-改 `AGENTS.md` 或改冒烟脚本不影响构建产物，为它们跑一次完整部署是纯浪费。
-（**但那个列表要跟着这份工作流自己的形状走**：一旦这里加了测试 job，`scripts/**`
-就得从列表里拿掉 —— 改测试的时候正是测试该跑的时候。要强制部署用 `workflow_dispatch`。）
+**不要给这个工作流加 `paths-ignore`。** 它被加过两次，两次的理由都是「文档和脚本不影响构建
+产物，为它们跑一次完整部署是纯浪费」—— 听起来无懈可击，而它是**把整站打下来**的办法。
+原因在下面那条 legacy Jekyll 构建上：那条构建**每次推送都会跑**，而唯一能盖过它的是本工作流
+里的「Wait out GitHub's legacy Jekyll build」那一步 —— 那一步在这个工作流**里面**。
+工作流被跳过，Jekyll 构建就无人对抗，于是它成了最后一次部署。
+
+- 省下的：一次部署（约一分钟 CI）。赔掉的：**整个站点**。
+- 2026-09-21 真的发生了：一条只改 `scripts/drive-page.js` 的推送之后 `/h5/` 404、
+  `README.md` 200、`.nojekyll` 404，挂了约五分钟。
+- 只有等 Pages 的 Source 真正切成 `GitHub Actions`（那时这条 legacy 构建根本不会被创建），
+  忽略列表才是安全的。在那之前，**每一次推送都值得跑一遍部署**。
+
+**推完必须验一句「线上到底在服务什么」**，三条一起看：
+
+```
+curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/h5/        # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/README.md  # 404
+curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/.nojekyll  # 200
+```
+
+`h5` 200 只说明**那一刻**是对的（这个故障是间歇性的）；`README.md` 404 + `.nojekyll` 200
+才说明当前服务的是 `out/`。要确认某个改动真的上线了，去 grep 产物里的字符串
+（比如 `retryAt`）—— **`_next/static/chunks/pages/h5-*.js` 的文件名不是内容哈希**，
+两次构建可能同名不同内容，所以「文件名对得上」什么也证明不了。
 
 `npm run build` 产出 `out/`，并把 `public/**`（图标那几张 + `mark-bg.jpg`）
 原样拷进去；工作流再补一个 `out/.nojekyll`
