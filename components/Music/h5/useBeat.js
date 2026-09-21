@@ -27,6 +27,15 @@ import { useEffect, useRef } from 'react';
  * is what gives that band the middle of the range instead of the ceiling, and
  * the curve on top of it is gentle for the same reason — the compression is in
  * the window, not in the exponent.
+ *
+ * The one thing here that is not a matter of taste is the context's *state*. A
+ * media element source replaces the element's own output, so from the moment
+ * the element is tapped the song comes out of this context — and a context that
+ * is not running is not a missing animation, it is a silent player, for this
+ * track and for every track after it, while the progress bar keeps moving. iOS
+ * is the reason `ensureRunning` exists: when the page leaves the screen it does
+ * not suspend the context, it *interrupts* it, and nothing in the platform ever
+ * hands it back.
  */
 
 const FFT_SIZE = 512;
@@ -48,7 +57,8 @@ const REST = 0.004;
  * The list is unmounted and remounted as the visitor moves between routes, so
  * the graph is kept here, keyed by element, and handed back on remount. Closing
  * the context is also deliberately not done: the element is still routed
- * through it, and a closed context is silence.
+ * through it, and a closed context is silence — which is the whole subject of
+ * `ensureRunning` below.
  */
 const graphs = new WeakMap();
 
@@ -69,16 +79,65 @@ const buildGraph = function (audio) {
     source.connect(analyser);
     analyser.connect(context.destination);
 
-    return { context, analyser, data: new Uint8Array(analyser.frequencyBinCount) };
+    return {
+        context,
+        analyser,
+        data: new Uint8Array(analyser.frequencyBinCount),
+        /** When this context may be asked to resume again. See below. */
+        retryAt: 0,
+    };
+};
+
+/** How long before the same context may be asked to resume again. */
+const RETRY_MS = 1500;
+
+/**
+ * The one thing this hook does that is not about drawing: asking the context to
+ * run, and saying whether it is.
+ *
+ * It is not a nicety and not an optimisation. A media element source *replaces*
+ * the element's own output, so from the moment the element is tapped the song
+ * comes out of this context — and a context that is not running is silence,
+ * while the element reports itself as playing and the progress bar keeps
+ * moving. Nothing else in the app knows the context exists, so nothing else can
+ * notice, and it does not heal on its own: the next track is routed through the
+ * same dead context, which is what "切后台之后第二首没有声音" is.
+ *
+ * `'suspended'` is the state a browser starts a context in, and the only one a
+ * `resume()` was originally written for here. iOS has a second one: when the
+ * page leaves the screen — backgrounded, locked, or interrupted by a call —
+ * Safari does not suspend the context, it *interrupts* it, and `state` reads
+ * `'interrupted'`. No other browser has that state, so a check for
+ * `'suspended'` misses exactly the case that matters: play a song, switch away,
+ * come back, and the next song is silent. The question asked here is therefore
+ * the negative one — anything that is not `'running'` is asked to run — and
+ * `'closed'` is the one state that cannot come back.
+ *
+ * The retry is rate-limited per graph rather than per call site, because this
+ * is called once a frame from the loop below and an interruption can last a
+ * long time (a phone call), during which a `resume()` per frame would be a
+ * rejected promise per frame. A second and a half is short enough that the
+ * sound is back before a visitor has finished noticing it was gone, and long
+ * enough to be polite to the audio stack.
+ */
+const ensureRunning = function (graph, now) {
+    if (!graph) return false;
+    const state = graph.context.state;
+    if (state === 'running') return true;
+    if (state === 'closed') return false;
+    if (now < graph.retryAt) return false;
+    graph.retryAt = now + RETRY_MS;
+    graph.context.resume().catch(() => { });
+    return false;
 };
 
 /**
  * The stand-in, for when there is no analyser to read — an unsupported browser,
- * a context that refuses to start, or an element this hook declined to tap (see
- * the `blob:` guard in `attach`). It is not an analysis of anything: it is two
- * slow sines at plausible tempos. A note that sits perfectly still while the
- * music plays looks broken; a note that breathes to a fake 1.3 Hz looks like a
- * visualiser.
+ * an element this hook declined to tap (see the `blob:` guard below), or a
+ * context that is not running *right now*. It is not an analysis of anything:
+ * it is two slow sines at plausible tempos. A note that sits perfectly still
+ * while the music plays looks broken; a note that breathes to a fake 1.3 Hz
+ * looks like a visualiser.
  */
 const SYNTH = function (t) {
     return 0.24
@@ -103,6 +162,49 @@ const useBeat = function (audioRef, playing, apply) {
     useEffect(() => { applyRef.current = apply; });
 
     const levelRef = useRef(0);
+    /** The graph the loop below reads, for the listeners that outlive it. */
+    const graphRef = useRef(null);
+
+    /**
+     * The two moments a context the system took away can be asked back, and
+     * neither of them is inside the frame loop.
+     *
+     * **A tap.** On iOS a `resume()` is only honoured from a user gesture, and
+     * the tap that starts a track happens *before* the effect below has run —
+     * so this cannot live in that effect. It is attached once, for the life of
+     * the screen, and it is the listener that actually gives the sound back:
+     * the tap on the next row is inside a gesture, and so is the tap that
+     * dismisses a sheet or presses play.
+     *
+     * **Coming back into view.** `requestAnimationFrame` does not run while the
+     * page is hidden, so the loop's own retry cannot be the thing that notices
+     * the page is back.
+     *
+     * Neither listener needs to know whether music is playing: resuming a
+     * context with nothing to play costs nothing, and the moment it matters is
+     * always the moment a track starts.
+     */
+    useEffect(() => {
+        const wake = function (fresh) {
+            const graph = graphRef.current;
+            if (!graph) return;
+            // A fresh interruption has not waited out the last cooldown, and
+            // waiting it out is silence the visitor can hear.
+            if (fresh) graph.retryAt = 0;
+            ensureRunning(graph, performance.now());
+        };
+        const onGesture = function () { wake(true); };
+        const onVisibility = function () {
+            if (document.visibilityState === 'visible') wake(true);
+        };
+
+        document.addEventListener('pointerdown', onGesture, { passive: true });
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => {
+            document.removeEventListener('pointerdown', onGesture);
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
+    }, []);
 
     useEffect(() => {
         const paint = function (level) {
@@ -120,7 +222,6 @@ const useBeat = function (audioRef, playing, apply) {
         }
 
         let graph = null;
-        let synthetic = true;
 
         if (playing) {
             const audio = audioRef && audioRef.current;
@@ -139,22 +240,25 @@ const useBeat = function (audioRef, playing, apply) {
                         graph = buildGraph(audio);
                         if (graph) graphs.set(audio, graph);
                     }
-                    synthetic = !graph;
                 } catch (err) {
                     // Already sourced elsewhere, or the browser said no. The
                     // element keeps playing through its own path; only the
                     // analysis is lost.
                     graph = null;
-                    synthetic = true;
-                }
-                // Browsers start a context suspended until a gesture; the tap
-                // on the row is one, but it may have happened before this
-                // effect ran.
-                if (graph && graph.context.state === 'suspended') {
-                    graph.context.resume().catch(() => { });
                 }
             }
         }
+        // Sticky on purpose: an element that has been tapped is tapped for
+        // good, and the listeners above have to keep working while the player
+        // is paused — the tap that resumes it comes before this effect runs
+        // again.
+        if (graph) graphRef.current = graph;
+
+        // Browsers start a context suspended until a gesture, and iOS hands one
+        // back from an interruption in the same state. The tap that started
+        // this track is the gesture both of them want, and this is the first
+        // moment there is a context to ask.
+        if (graph) ensureRunning(graph, performance.now());
 
         let raf = 0;
         let last = 0;
@@ -167,7 +271,13 @@ const useBeat = function (audioRef, playing, apply) {
 
             let target = 0;
             if (playing) {
-                if (synthetic || !graph) {
+                // A context that is not running reads nothing — and reading
+                // nothing is also the moment to ask for it back. This is the
+                // repair that happens while the page is on screen: an
+                // interruption is noticed within a frame, and a `resume()` the
+                // system refuses is retried until it stops refusing.
+                const live = graph ? ensureRunning(graph, now) : false;
+                if (!live) {
                     clock += dt;
                     target = SYNTH(clock);
                 } else {

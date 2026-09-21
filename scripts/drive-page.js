@@ -518,6 +518,36 @@ const drive = async (target, index) => {
     const enableStubs = () => send('Fetch.enable', { patterns: STUB_PATTERNS });
 
     /**
+     * Catch the beat's `AudioContext` as it is made, so that the one thing that
+     * decides whether a tapped song is audible at all can be looked at.
+     *
+     * `h5/useBeat` reads `window.AudioContext` when the first track starts, so
+     * replacing the global before any tap captures every context the page
+     * creates. Registered twice on purpose: once for the document that is
+     * already loaded, and once for every document after it — the h5 stage
+     * reloads — because the hook has to be in place before the page's own
+     * scripts are.
+     */
+    const captureAudioContexts = async () => {
+        const hook = `(() => {
+            if (window.__musicContexts) return;
+            const Orig = window.AudioContext || window.webkitAudioContext;
+            if (!Orig) return;
+            const seen = [];
+            const Wrapped = function (...args) {
+                const ctx = new Orig(...args);
+                seen.push(ctx);
+                return ctx;
+            };
+            Wrapped.prototype = Orig.prototype;
+            window.__musicContexts = seen;
+            window.AudioContext = Wrapped;
+        })()`;
+        await send('Page.addScriptToEvaluateOnNewDocument', { source: hook });
+        await evaluate(hook);
+    };
+
+    /**
      * Thirty seconds of a pulsing tone, as a real WAV file.
      *
      * The Drive library's audio is served from the same host as its listing, so
@@ -687,6 +717,8 @@ const drive = async (target, index) => {
     await send('Page.enable');
     await send('Runtime.enable');
     await send('Network.enable');
+    // Before the first tap: the beat's context is created on the first play.
+    await captureAudioContexts();
 
     process.stdout.write(`\n=== ${target.name}  ${target.url}\n`);
 
@@ -1654,6 +1686,55 @@ const drive = async (target, index) => {
             new Set(lifted).size >= 3,
             `${new Set(lifted).size} distinct transforms over ${lifted.length} frames`,
         );
+
+        /* --- and the sound survives the system taking the context away -----
+         *
+         * The regression this stage exists for. A media element source
+         * *replaces* the element's own output, so from the moment the element
+         * is tapped the song comes out of the `AudioContext` — which makes a
+         * context that is not running not a missing animation but a silent
+         * player, with the progress bar still moving and no error anywhere.
+         * iOS interrupts a context when the page leaves the screen (`state`
+         * reads `'interrupted'`, a state no other browser has), and the hook
+         * used to check only for `'suspended'`, so nothing ever asked it back:
+         * play a song, switch apps, come back, and every later song is silent.
+         *
+         * A headless browser cannot be backgrounded, so the interruption is
+         * done by hand — `suspend()` leaves the context in the state the system
+         * leaves it in — and then the page is told it is visible again. Nothing
+         * is clicked and no gesture is given: what is checked is that the app
+         * gets its own sound back, because nothing else in it can. (On a page
+         * that is on screen the frame loop is what notices; the tap, which is
+         * what iOS actually insists on, is the check at the very end.)
+         */
+        const contexts = await evaluate('window.__musicContexts ? window.__musicContexts.length : -1');
+        const interrupted = await evaluate(`(async () => {
+            const c = window.__musicContexts && window.__musicContexts[0];
+            if (!c) return 'no context captured';
+            await c.suspend();
+            return c.state;
+        })()`);
+        check(
+            'the beat reads a real analyser, on a context of its own',
+            contexts >= 1,
+            `${contexts} context(s), now ${interrupted}`,
+        );
+        await evaluate("document.dispatchEvent(new Event('visibilitychange'))");
+        const revived = await waitFor(
+            `(() => {
+                const c = window.__musicContexts && window.__musicContexts[0];
+                return c ? c.state : 'gone';
+            })()`,
+            (v) => v === 'running',
+            6000,
+        );
+        check(
+            '...and it comes back by itself when the system interrupts it',
+            revived.value === 'running',
+            `${interrupted} -> ${trace(revived)} in ${(revived.ms / 1000).toFixed(1)}s`
+                + ` (visibility=${await evaluate('document.visibilityState')})`,
+        );
+
         await evaluate("(() => { const a = document.querySelector('audio'); if (a) a.pause(); })()");
         await sleep(900);
         const settled = await noteTransform();
@@ -1661,6 +1742,38 @@ const drive = async (target, index) => {
             '...and it goes back to rest when the music stops',
             settled === '',
             `transform=${JSON.stringify(settled)}`,
+        );
+
+        /* The other half of the same recovery, and the half that has to be
+         * isolated: a *tap*.
+         *
+         * On iOS a `resume()` is only honoured from a user gesture, and the tap
+         * that presses play arrives before the effect that watches playback has
+         * run — so the tap has to be answered by a listener that is already
+         * there, not by the effect. Pausing first is what makes this a test of
+         * that listener: with the music stopped the frame loop has returned and
+         * nothing else in the app is asking for the context at all, so the only
+         * thing that can bring it back is the tap itself.
+         */
+        const tapped = await evaluate(`(async () => {
+            const c = window.__musicContexts && window.__musicContexts[0];
+            if (!c) return 'no context captured';
+            await c.suspend();
+            document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            return c.state;
+        })()`);
+        const afterTap = await waitFor(
+            `(() => {
+                const c = window.__musicContexts && window.__musicContexts[0];
+                return c ? c.state : 'gone';
+            })()`,
+            (v) => v === 'running',
+            4000,
+        );
+        check(
+            '...and a tap on the screen brings it back even while paused',
+            afterTap.value === 'running',
+            `${tapped} -> ${trace(afterTap)} in ${(afterTap.ms / 1000).toFixed(1)}s`,
         );
     }
 

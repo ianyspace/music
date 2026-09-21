@@ -994,9 +994,20 @@ components/Music/three/
   一个因为音频图失败而彻底僵住的场景看起来是坏的，一个按假节拍脉动的场景看起来是可视化。
 - **`AudioContext` 延迟到第一次播放才建**，并 `resume()`：页面加载就建会以 suspended 起步
   且浏览器会告警，而从不按播放的访客根本不需要它。
+- **上下文只要不是 running，歌就是哑的** —— 因为 `MediaElementAudioSourceNode` **替换**了
+  元素自身的输出，之后声音只从上下文出来，而元素自己照样报 playing、进度条照样走。
+  所以 `ensureRunning()`（`analyzer.js` 与 `h5/useBeat.js` 各一份）问的是**否定式**：
+  `state !== 'running'` 就 `resume()`，只有 `'closed'` 例外。
+  **光判 `'suspended'` 是不够的**：iOS 在页面离开屏幕时不是 suspend 而是 **interrupt**
+  （`state === 'interrupted'`，只有 Safari 有这个态），判 `'suspended'` 正好漏掉
+  「切后台之后每一首都静音」这一整类 bug。重试按图限流（`RETRY_MS` = 1.5s），
+  因为 `update()` / 帧循环每帧都会问一次。
+- **别在页面隐藏时 `suspend()` 上下文**：那是把歌静音，不是把动画停下来 ——
+  `usePlayer` 预取下一首就是为了后台能连播。`ThreeStage` 的 `onVisibility` 只停 rAF；
+  恢复靠回来时的 `resume()` 和每帧的重试，而不是靠 `suspend`/`resume` 成对。
 - **手机端有一份自己的、`h5/useBeat.js`**（三棵树不许互相 import，所以是复制而不是共用；
-  它照着 `THREE.MathUtils.damp` 的写法平滑，读同一个频段）。它和这里的差别只有两处，
-  两处都不是口味问题：
+  它照着 `THREE.MathUtils.damp` 的写法平滑，读同一个频段）。它和 `analyzer.js` 的差别，
+  以及两边都得守住的东西：
   - **只有 `blob:` 源才接分析器。** `createMediaElementSource` 喂跨域资源时输出恒为 0，
     而且它会**替换元素自身的输出** —— 接上去不只是拿不到频谱，**还会把歌静音**。
     本项目的播放源恰好是 blob（`usePlayer` 先下字节再 `createObjectURL`），同源，所以能读；
@@ -1006,6 +1017,11 @@ components/Music/three/
   - 它**不走 React state**：每秒 60 次的电平不该进 state，直接写元素的 `style.transform`。
     跳动幅度在 `MarkNote.js` 的 `JUMP`，**满电平 52 已经是上限**（旗子尖会顶出方块），
     改完要重新对一遍。
+  - **它挂了两个 document 级监听**（`pointerdown` / `visibilitychange`），而且挂在组件
+    生命周期上、不挂在 `playing` 上。两个原因：iOS 只认**手势里**的 `resume()`，而**开始
+    播放的那一次点击发生在这个 effect 跑之前**（那个 effect 是被 `play` 事件推动的）；
+    以及 rAF 在页面隐藏时不跑，所以「回来了」只有 `visibilitychange` 知道。
+    别把这两个监听挪进播放的那个 effect —— 那正好错过需要它的那一刻。
 - 从 `/desktop` 进 `/3d` 会**换一个 `<audio>` 元素**，歌会停一下；但 `usePlayer`
   会用 `LAST_TRACK_KEY` / `LAST_PROGRESS_KEY` 把同一首按原位置**重新载入**（不自动播放）。
   这条链路依赖列表缓存，所以第一次访问、列表还没落盘时不要期待能续上。

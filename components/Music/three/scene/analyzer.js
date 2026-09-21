@@ -33,7 +33,8 @@ const BIN_TO = 5;
  * The 3D stage is mounted and unmounted as the visitor moves between routes,
  * so the graph is kept here, keyed by element, and handed back on remount.
  * Closing the context on unmount is also deliberately not done: the element is
- * still routed through it, and a closed context is silence.
+ * still routed through it, and a closed context is silence — which is what
+ * `ensureRunning` below exists to prevent.
  */
 const graphs = new WeakMap();
 
@@ -59,7 +60,46 @@ const buildGraph = function (audio) {
         source,
         analyser,
         data: new Uint8Array(analyser.frequencyBinCount),
+        /** When this context may be asked to resume again. See below. */
+        retryAt: 0,
     };
+};
+
+/** How long before the same context may be asked to resume again. */
+const RETRY_MS = 1500;
+
+/**
+ * The one thing here that is not about drawing: asking the context to run, and
+ * saying whether it is.
+ *
+ * It is not a nicety. A media element source *replaces* the element's own
+ * output, so from the moment the element is tapped the song comes out of this
+ * context — and a context that is not running is silence, while the element
+ * reports itself as playing. Nothing else in the app knows the context exists,
+ * so nothing else can notice.
+ *
+ * `'suspended'` is the state a browser starts a context in, and the only one a
+ * `resume()` was originally written for. iOS has a second one: when the page
+ * leaves the screen, Safari does not suspend the context, it *interrupts* it,
+ * and `state` reads `'interrupted'`. No other browser has that state, so a
+ * check for `'suspended'` misses the case that matters: play a song, switch
+ * away, come back, and the next song is silent. The question asked here is the
+ * negative one — anything that is not `'running'` is asked to run — and
+ * `'closed'` is the one state that cannot come back.
+ *
+ * The retry is rate-limited per graph because `update` below calls this once a
+ * frame, and an interruption can last minutes (a call), during which a
+ * `resume()` per frame would be a rejected promise per frame.
+ */
+const ensureRunning = function (graph, now) {
+    if (!graph) return false;
+    const state = graph.context.state;
+    if (state === 'running') return true;
+    if (state === 'closed') return false;
+    if (now < graph.retryAt) return false;
+    graph.retryAt = now + RETRY_MS;
+    graph.context.resume().catch(() => { });
+    return false;
 };
 
 /**
@@ -78,7 +118,6 @@ const SYNTH = function (t) {
 
 export const createAnalyzer = function () {
     let graph = null;
-    let synthetic = true;
     let clock = 0;
     let level = 0;
 
@@ -96,27 +135,25 @@ export const createAnalyzer = function () {
                     if (!graph) return false;
                     graphs.set(audio, graph);
                 }
-                synthetic = false;
                 return true;
             } catch (err) {
                 // Already sourced elsewhere, or the browser said no. The
                 // element keeps playing through its own path; only the
                 // analysis is lost.
                 graph = null;
-                synthetic = true;
                 return false;
             }
         },
 
-        /** Browsers start a context suspended until a gesture. */
+        /**
+         * Asked from a tap, or from the page coming back — the two moments iOS
+         * honours a `resume()` — so it is worth an attempt even if the frame
+         * loop asked a moment ago.
+         */
         resume() {
             if (!graph) return;
-            if (graph.context.state === 'suspended') graph.context.resume().catch(() => {});
-        },
-
-        suspend() {
-            if (!graph) return;
-            if (graph.context.state === 'running') graph.context.suspend().catch(() => {});
+            graph.retryAt = 0;
+            ensureRunning(graph, performance.now());
         },
 
         /**
@@ -132,8 +169,12 @@ export const createAnalyzer = function () {
                 return level;
             }
 
+            // A context that is not running reads nothing — and reading
+            // nothing is also the moment to ask for it back, which is the
+            // repair for an interruption the system has not lifted.
+            const live = graph ? ensureRunning(graph, performance.now()) : false;
             let target;
-            if (synthetic || !graph) {
+            if (!live) {
                 clock += delta;
                 target = SYNTH(clock);
             } else {
@@ -158,7 +199,6 @@ export const createAnalyzer = function () {
         /** The graph itself is left connected — see `graphs` above. */
         dispose() {
             graph = null;
-            synthetic = true;
             level = 0;
         },
     };

@@ -122,14 +122,17 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
         raf = requestAnimationFrame(tick);
 
         // A hidden tab keeps its rAF alive in some browsers and throttles it in
-        // others; either way there is nothing to look at, so the loop stops and
-        // the audio context goes with it.
+        // others; either way there is nothing to look at, so the loop stops.
+        // The audio context is deliberately *not* suspended with it: the app's
+        // one `<audio>` element is routed through that context (see
+        // `scene/analyzer.js`), so suspending it would not stop a visual, it
+        // would mute the song — and listening in the background is a thing this
+        // app supports (`usePlayer` prefetches the next track for exactly that).
         const onVisibility = () => {
             if (dead) return;
             if (document.hidden) {
                 if (raf) cancelAnimationFrame(raf);
                 raf = 0;
-                stage.analyzer.suspend();
                 return;
             }
             if (!raf) {
@@ -156,6 +159,10 @@ const ThreeStage = function ({ state, audioRef, onToggleLyrics }) {
 
         const onPointerDown = (event) => {
             if (event.pointerType === 'mouse' && event.button !== 0) return;
+            // The other half of the reasoning in `onVisibility`: a tap is the
+            // one gesture iOS takes a `resume()` from, and this is the surface
+            // the visitor taps to start and stop the music.
+            stage.analyzer.resume();
             pointerId = event.pointerId;
             lastX = event.clientX;
             lastY = event.clientY;
