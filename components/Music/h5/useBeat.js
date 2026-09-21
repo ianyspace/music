@@ -37,6 +37,10 @@ import beatDebug from './beatDebug';
  * is the reason `ensureRunning` exists: when the page leaves the screen it does
  * not suspend the context, it *interrupts* it, and nothing in the platform ever
  * hands it back.
+ *
+ * A context that is not running is one way to lose the sound. The other one has
+ * no state to read at all — `running`, and silent — and it is the reason
+ * `nudge`, `watch` and the second loop below exist. Read `nudge` first.
  */
 
 const FFT_SIZE = 512;
@@ -87,11 +91,16 @@ const buildGraph = function (audio) {
         /** When this context may be asked to resume again. See below. */
         retryAt: 0,
         /** When this graph may be nudged again, and how often it has been. See
-         *  `nudge` below — the bookkeeping lives on the graph rather than in the
-         *  loop because a nudge restarts the loop. */
+         *  `nudge` below — the bookkeeping lives on the graph rather than in a
+         *  loop because a nudge restarts the loop, and because there are two
+         *  loops: the frame loop on screen and the element's `timeupdate` off
+         *  it. Both read and write these, which is what keeps one budget. */
         nudgeAt: 0,
         nudges: 0,
         nudgeSrc: '',
+        /** Wall-clock ms at which the graph last started reading nothing, or 0
+         *  while it is reading something. The same reasoning as above. */
+        quietAt: 0,
     };
 };
 
@@ -176,6 +185,76 @@ const nudge = function (audio) {
         const request = audio.play();
         if (request && typeof request.catch === 'function') request.catch(() => { });
     } catch (err) { /* nothing else left to try */ }
+};
+
+/** The 86–430 Hz band's raw sum. Zero is the whole subject of this file's
+ *  second half: it is what a source node that has come back without its audio
+ *  reads, and it is the only symptom that failure has — no state to check, no
+ *  promise to catch, nothing in the console. */
+const readSum = function (graph) {
+    graph.analyser.getByteFrequencyData(graph.data);
+    let sum = 0;
+    for (let i = BIN_FROM; i < BIN_TO; i += 1) sum += graph.data[i];
+    return sum;
+};
+
+/**
+ * The repair, in one place, because it has two callers — and it needs both.
+ *
+ * The frame loop below is the caller while the page is on screen, and it is a
+ * good one: a frame is a fine clock, and an interruption is noticed within one
+ * of them. But `requestAnimationFrame` does not run at all while the page is
+ * off screen, and *that is where the report came from*: a phone in a pocket
+ * auto-advances to the next song and the next song comes out silent, with the
+ * progress bar moving. Waiting for the visitor to come back and look at the
+ * page would be waiting for the one thing that is not happening.
+ *
+ * So the second caller is the element's own `timeupdate`, which keeps firing
+ * about four times a second for as long as there is audio, hidden or not. It
+ * is a slower clock, which is why the same `QUIET_MS` is measured against wall
+ * time rather than counted in ticks. Both callers read and write the same
+ * fields on the graph, so the budget is one budget and the two of them can
+ * never double-nudge.
+ *
+ * @param quiet whether the graph read nothing on this tick
+ * @returns how long the graph has been reading nothing, in ms
+ */
+const watch = function (graph, audio, quiet, now) {
+    if (!graph || !audio) return 0;
+    // `ended` as well as `paused`, and not for tidiness: an element that has
+    // reached the end of its media reports `paused === false`, so `paused`
+    // alone calls a finished song a playing one — and `play()` on an ended
+    // element starts it again from the top, which would make this "repair"
+    // restart a song that had finished.
+    const alive = !audio.paused && !audio.ended && audio.currentTime > 0;
+    if (!alive) {
+        graph.quietAt = 0;
+        return 0;
+    }
+    // A new track is a new situation, and gets its own budget.
+    if (audio.currentSrc !== graph.nudgeSrc) {
+        graph.nudgeSrc = audio.currentSrc;
+        graph.nudges = 0;
+    }
+    if (!quiet) {
+        graph.quietAt = 0;
+        return 0;
+    }
+    if (!graph.quietAt) {
+        graph.quietAt = now;
+        return 0;
+    }
+    const quietMs = now - graph.quietAt;
+    if (quietMs < QUIET_MS || graph.nudges >= NUDGE_LIMIT || now < graph.nudgeAt) return quietMs;
+    graph.quietAt = 0;
+    graph.nudges += 1;
+    graph.nudgeAt = now + NUDGE_COOLDOWN_MS;
+    beatDebug.event(
+        `nudge ${graph.nudges}/${NUDGE_LIMIT} state=${graph.context.state}`
+        + ` quiet=${Math.round(quietMs)}${document.hidden ? ' hidden' : ''}`,
+    );
+    nudge(audio);
+    return 0;
 };
 
 /**
@@ -310,12 +389,46 @@ const useBeat = function (audioRef, playing, apply) {
         // moment there is a context to ask.
         if (graph) ensureRunning(graph, performance.now());
 
+        /**
+         * The loop for when there is no frame loop. `requestAnimationFrame` is
+         * frozen for a hidden page, so the tick below — and the repair inside
+         * it — simply does not run in the background, which is where the report
+         * came from: 「切后台自动播放下一首就又没声音了」. A media element's own
+         * events do keep firing there, and `timeupdate` is the steady one: about
+         * four a second, for as long as there is audio.
+         *
+         * It is not a second implementation. It asks the same two questions in
+         * the same order — is the context running, is the graph reading
+         * anything — and hands both answers to the same `watch`, which owns the
+         * budget. The only thing it does not do is draw: the mark is not on
+         * screen, and `levelRef` is left where the visitor will find it.
+         *
+         * `graphRef.current` rather than the `graph` in this closure, because
+         * the listener outlives the render that installed it and a paused
+         * player is exactly the case where this closure holds nothing.
+         */
+        const onBeat = function () {
+            const g = graphRef.current;
+            if (!document.hidden || !g) return;
+            const now = performance.now();
+            // Same shape as the loop's: anything not running reads nothing.
+            const live = ensureRunning(g, now);
+            watch(g, audio, live ? readSum(g) === 0 : true, now);
+        };
+        if (audio) {
+            audio.addEventListener('timeupdate', onBeat);
+            audio.addEventListener('playing', onBeat);
+        }
+
         let raf = 0;
         let last = 0;
         let clock = 0;
         let level = levelRef.current;
-        /** Milliseconds of *playback* in which the graph read nothing. Reset by
-         *  any sound, and by a pause — a stopped player is not a broken one. */
+        /** Milliseconds of *playback* in which the graph read nothing, as
+         *  `watch` last reported it. It is the readout's copy and nothing else
+         *  reads it — the repair keeps its own clock on the graph, because the
+         *  hidden half of the page runs `watch` too and this variable does not
+         *  exist there. */
         let quietMs = 0;
 
         const tick = function (now) {
@@ -335,44 +448,21 @@ const useBeat = function (audioRef, playing, apply) {
                     clock += dt;
                     target = SYNTH(clock);
                 } else {
-                    graph.analyser.getByteFrequencyData(graph.data);
-                    let sum = 0;
-                    for (let i = BIN_FROM; i < BIN_TO; i += 1) sum += graph.data[i];
+                    const sum = readSum(graph);
                     quiet = sum === 0;
-                    target = sum / ((BIN_TO - BIN_FROM) * 255);
                     // The bins are linear in amplitude and the eye is not, so
                     // the quiet half of the range is lifted into view. Gently:
                     // the window above has already done the compressing, and a
                     // steep exponent on top of it would leave ordinary music
                     // with nothing to say.
-                    target = Math.pow(Math.min(1, Math.max(0, target)), 1.25);
+                    target = Math.pow(Math.min(1, Math.max(0, sum / ((BIN_TO - BIN_FROM) * 255))), 1.25);
                 }
 
                 // Asking for the context back is not always enough: the report
                 // that produced this hook ends with the visitor doing the
                 // repair by hand. So while the element insists it is playing and
                 // the graph reads nothing, do what they did.
-                const alive = audio && !audio.paused && audio.currentTime > 0;
-                if (alive && graph) {
-                    // A new track is a new situation, and gets its own budget.
-                    if (audio.currentSrc !== graph.nudgeSrc) {
-                        graph.nudgeSrc = audio.currentSrc;
-                        graph.nudges = 0;
-                    }
-                    quietMs = quiet ? quietMs + dt * 1000 : 0;
-                    if (quietMs >= QUIET_MS
-                        && graph.nudges < NUDGE_LIMIT
-                        && now >= graph.nudgeAt) {
-                        const why = `state=${graph.context.state} quiet=${Math.round(quietMs)}`;
-                        quietMs = 0;
-                        graph.nudges += 1;
-                        graph.nudgeAt = now + NUDGE_COOLDOWN_MS;
-                        beatDebug.event(`nudge ${graph.nudges}/${NUDGE_LIMIT} ${why}`);
-                        nudge(audio);
-                    }
-                } else {
-                    quietMs = 0;
-                }
+                quietMs = watch(graph, audio, quiet, now);
             } else {
                 quietMs = 0;
             }
@@ -406,6 +496,10 @@ const useBeat = function (audioRef, playing, apply) {
         raf = window.requestAnimationFrame(tick);
         return () => {
             if (raf) window.cancelAnimationFrame(raf);
+            if (audio) {
+                audio.removeEventListener('timeupdate', onBeat);
+                audio.removeEventListener('playing', onBeat);
+            }
         };
     }, [audioRef, playing]);
 };

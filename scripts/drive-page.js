@@ -1945,6 +1945,83 @@ const drive = async (target, index) => {
             return 'restored';
         })()`);
 
+        /* --- and it still works with no frame loop at all ------------------
+         *
+         * The nudge above proves the repair, and it proves it in the one place
+         * the repair was *not* missing: `requestAnimationFrame` does not run for
+         * a hidden page, so a frame loop was never going to fix a phone in a
+         * pocket — and a phone in a pocket auto-advancing to a silent next song
+         * is the report this whole stage exists for. The repair therefore also
+         * rides on the element's own `timeupdate`, which keeps firing for as
+         * long as there is audio, on screen or off.
+         *
+         * Both halves of that are forced rather than waited for. The page is
+         * told it is hidden, and the frame loop is taken away — the next
+         * `requestAnimationFrame` hands back nothing, so the loop does not
+         * reschedule itself and `timeupdate` is the only clock left. The
+         * analyser is zeroed again, and the element must still be paused and
+         * started again, by a page that is drawing nothing at all.
+         *
+         * What this checks is the code path, not the platform: Chrome's own
+         * idea of whether this page is visible is untouched, so nothing here is
+         * throttled the way a real background page would be. That is the part
+         * that cannot be checked from a machine, and `?beatdebug=1` is for it.
+         */
+        const hidden = await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            if (!a) return 'no audio';
+            window.__realRaf = window.requestAnimationFrame;
+            window.requestAnimationFrame = function () { return 0; };
+            Object.defineProperty(document, 'hidden', {
+                get: function () { return true; },
+                configurable: true,
+            });
+            window.__nudgePauses = 0;
+            // Which resource the element is on, so that a pause which is really
+            // the next track arriving can be told apart from the repair. See
+            // below.
+            window.__nudgeSrc = String(a.currentSrc);
+            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
+            if (proto) proto.getByteFrequencyData = function (array) { array.fill(0); };
+            return 'hidden, no frame loop';
+        })()`);
+        // The nudge above spent one of the three a track gets, and the next one
+        // is not allowed until the cooldown has passed — which is the point of
+        // the cooldown, so the wait is the feature working.
+        const hiddenNudged = await waitFor(
+            '(() => (window.__nudgePauses || 0))()',
+            (v) => Number(v) > 0,
+            25000,
+        );
+        // A pause on its own proves nothing here, and finding that out is what
+        // the mutation test for this check is: a track that ends while it is
+        // running pauses the element too, because the next one arrives as a new
+        // `src` — so with the `timeupdate` listener renamed away, this check
+        // still went green on a pause that had nothing to do with the repair.
+        // The repair leaves the element on the track it was already on, so the
+        // pause only counts if the resource did not change. Without that, this
+        // check passes for the wrong reason, which is the one failure mode a
+        // smoke test cannot afford.
+        const sameTrack = await evaluate(`(() => {
+            const a = document.querySelector('audio');
+            return a ? String(a.currentSrc) === window.__nudgeSrc : false;
+        })()`);
+        check(
+            '...and it still runs with no frame loop, off screen, where the report came from',
+            Number(hiddenNudged.value) > 0 && sameTrack === true,
+            `${hidden}, ${hiddenNudged.value} pause(s) in ${(hiddenNudged.ms / 1000).toFixed(1)}s`
+            + (sameTrack === true ? '' : ', but the element moved on to another track — that pause was not the repair'),
+        );
+        await evaluate(`(() => {
+            window.requestAnimationFrame = window.__realRaf;
+            delete document.hidden;
+            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
+            if (proto && window.__realGetByteFrequencyData) {
+                proto.getByteFrequencyData = window.__realGetByteFrequencyData;
+            }
+            return 'restored';
+        })()`);
+
         /* --- and the readout the next report will be made of ---------------
          *
          * Everything above is checked from a machine that can see the page from
