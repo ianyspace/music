@@ -281,14 +281,24 @@ const drive = async (target, index) => {
     // Set by the 我喜欢 stage to answer the Drive files API with a canned list.
     // Null means "do not intercept anything". See `stubDriveFiles`.
     let driveStub = null;
+    // The bytes that answer a Drive track's *download*. See `silentWav`.
+    let driveAudio = null;
     // How many requests the stub actually answered. Counted rather than assumed:
     // "the list is right" and "the stub never fired and the list is right
     // anyway" look identical from the outside, and only one of them means the
     // Drive path was tested.
     let driveStubHits = 0;
+    // Downloads of a Drive track's audio, counted separately from the listing:
+    // they share a URL prefix, and only one of them means a Drive song reached
+    // the player.
+    let driveMediaHits = 0;
     // How many requests to the likes API were stopped. Same reason as above —
     // and it is the only evidence that the write never reached the database.
     let likesStubHits = 0;
+    // And the play-reporting endpoint, stopped for the same reason and counted
+    // for the opposite one: 0 is the expected number, and it is what makes "a
+    // Drive play is not counted" an assertion rather than a hope.
+    let playsStubHits = 0;
 
     socket.addEventListener('message', (event) => {
         const msg = JSON.parse(event.data);
@@ -316,7 +326,7 @@ const drive = async (target, index) => {
         }
         if (msg.method === 'Fetch.requestPaused') {
             const { requestId, request } = msg.params;
-            // A preflight has to be answered as a preflight, not as the list —
+            // A preflight has to be answered as a preflight, not as the body —
             // fulfilling an OPTIONS with a JSON body and a 200 is a response
             // the browser will reject, and the real request never follows.
             const cors = [
@@ -324,14 +334,19 @@ const drive = async (target, index) => {
                 { name: 'Access-Control-Allow-Headers', value: '*' },
                 { name: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,POST' },
             ];
-            // The likes API is answered here too — and always with a failure.
-            // Two reasons, and the second is the important one: this file must
-            // never write a row into the real database, and a queue that *can*
-            // drain says nothing, because "已全部上传" is what an empty queue
-            // says as well. See `failLikes`.
-            if (request.url.includes('/likes')) {
-                const preflight = request.method === 'OPTIONS';
-                if (!preflight) likesStubHits += 1;
+            const preflight = request.method === 'OPTIONS';
+
+            // The two endpoints that write to D1, answered here and always with
+            // a failure. Two reasons, and the second is the important one: this
+            // file must never write a row into the real database, and a queue
+            // that *can* drain says nothing, because "已全部上传" is what an
+            // empty queue says as well. See `stopWrites`.
+            if (request.url.includes('/likes') || request.url.includes('/plays')) {
+                const likes = request.url.includes('/likes');
+                if (!preflight) {
+                    if (likes) likesStubHits += 1;
+                    else playsStubHits += 1;
+                }
                 send('Fetch.fulfillRequest', {
                     requestId,
                     responseCode: preflight ? 204 : 503,
@@ -342,14 +357,32 @@ const drive = async (target, index) => {
                 }).catch(() => {});
                 return;
             }
-            const reply = request.method === 'OPTIONS'
+
+            // A Drive track's *audio* comes from `files/<id>?alt=media` — the
+            // same prefix as the listing, so the two are told apart by the
+            // query rather than by a second pattern. Answering the download
+            // with the listing (which is what a stub that only knows about
+            // `files*` does) hands the element a JSON body: it never fires
+            // `play`, and every check built on "was a play recorded?" passes
+            // without anything having played.
+            const media = request.url.includes('alt=media');
+            const reply = preflight
                 ? { responseCode: 204, responseHeaders: cors }
-                : {
-                    responseCode: 200,
-                    responseHeaders: cors.concat([{ name: 'Content-Type', value: 'application/json' }]),
-                    body: Buffer.from(JSON.stringify(driveStub)).toString('base64'),
-                };
-            if (request.method !== 'OPTIONS') driveStubHits += 1;
+                : media
+                    ? {
+                        responseCode: 200,
+                        responseHeaders: cors.concat([{ name: 'Content-Type', value: 'audio/wav' }]),
+                        body: (driveAudio || Buffer.alloc(0)).toString('base64'),
+                    }
+                    : {
+                        responseCode: 200,
+                        responseHeaders: cors.concat([{ name: 'Content-Type', value: 'application/json' }]),
+                        body: Buffer.from(JSON.stringify(driveStub)).toString('base64'),
+                    };
+            if (!preflight) {
+                if (media) driveMediaHits += 1;
+                else driveStubHits += 1;
+            }
             send('Fetch.fulfillRequest', { requestId, ...reply }).catch(() => {});
         }
         if (msg.method === 'Network.responseReceived') {
@@ -463,6 +496,57 @@ const drive = async (target, index) => {
     const trace = (waited) => (waited.seen || []).slice(0, 6).join(' -> ');
 
     /**
+     * Every request this run answers itself, in one place.
+     *
+     * `Fetch.enable` **replaces** the pattern set rather than adding to it, so a
+     * stage that enabled only its own pattern would silently un-stub the ones
+     * before it. That is why this list is sent whole by both `stopWrites` and
+     * `stubDriveFiles`.
+     */
+    const STUB_PATTERNS = [
+        // The Drive library's listing *and* its audio: the media URL is
+        // `files/<id>?alt=media`, so one pattern covers both and the handler
+        // tells them apart by the query.
+        { urlPattern: 'https://www.googleapis.com/drive/v3/files*', requestStage: 'Request' },
+        // The two endpoints that write to the real database.
+        { urlPattern: '*://*/likes*', requestStage: 'Request' },
+        { urlPattern: '*://*/plays*', requestStage: 'Request' },
+    ];
+    const enableStubs = () => send('Fetch.enable', { patterns: STUB_PATTERNS });
+
+    /**
+     * A few seconds of silence, as a real WAV file.
+     *
+     * The Drive library's audio is served from the same host as its listing, so
+     * a stub for the listing has to answer the download as well — with
+     * something an `<audio>` element will actually play. Silence is enough:
+     * `play` fires on the element, not on the sound, and the only thing under
+     * test is whether the app recorded a play. Long enough not to run out
+     * mid-check, so playback does not advance to the next track while the
+     * assertions are still reading.
+     */
+    const silentWav = function (seconds) {
+        const rate = 8000;
+        const samples = rate * seconds;
+        const wav = Buffer.alloc(44 + samples);
+        wav.write('RIFF', 0);
+        wav.writeUInt32LE(36 + samples, 4);
+        wav.write('WAVE', 8);
+        wav.write('fmt ', 12);
+        wav.writeUInt32LE(16, 16); // PCM header size
+        wav.writeUInt16LE(1, 20); // format: PCM
+        wav.writeUInt16LE(1, 22); // channels: mono
+        wav.writeUInt32LE(rate, 24);
+        wav.writeUInt32LE(rate, 28); // byte rate: 8-bit mono
+        wav.writeUInt16LE(1, 32); // block align
+        wav.writeUInt16LE(8, 34); // bits per sample
+        wav.write('data', 36);
+        wav.writeUInt32LE(samples, 40);
+        wav.fill(128, 44); // 8-bit silence is 128, not 0
+        return wav;
+    };
+
+    /**
      * Answer the Drive files API with a canned list, at the network layer.
      *
      * The Drive library is the one path this file cannot otherwise reach: its
@@ -475,41 +559,28 @@ const drive = async (target, index) => {
      * and gets back an answer it can use — the stub is the *server*, not the
      * app's own code replayed at it.
      *
-     * Only requests matching the pattern are paused, so nothing else on the
+     * Only requests matching the patterns are paused, so nothing else on the
      * page is disturbed.
      */
     const stubDriveFiles = async (files) => {
         driveStub = { files };
-        await send('Fetch.enable', {
-            patterns: [{
-                urlPattern: 'https://www.googleapis.com/drive/v3/files*',
-                requestStage: 'Request',
-            }],
-        });
+        driveAudio = silentWav(30);
+        await enableStubs();
     };
 
     /**
-     * Stop the likes API, at the network layer — see the branch in the
-     * `Fetch.requestPaused` handler.
+     * Stop the two endpoints that write to the database, at the network layer —
+     * see the branch in the `Fetch.requestPaused` handler. `/plays` gets the
+     * same treatment as `/likes` because it writes rows for the same number.
      *
-     * Two jobs. The first is safety: the endpoint writes to a real D1 database,
-     * and a test run must not leave rows behind under a number nobody owns. The
-     * second is that the failure is the state worth testing: 数据同步's whole
-     * subject is a queue that has *not* arrived, and a queue that drains
+     * Two jobs. The first is safety: both endpoints write to a real D1
+     * database, and a test run must not leave rows behind under a number nobody
+     * owns. The second is that the failure is the state worth testing: 数据同步's
+     * whole subject is a queue that has *not* arrived, and a queue that drains
      * instantly looks exactly like an empty one.
-     *
-     * The Drive pattern is repeated because `Fetch.enable` replaces the set
-     * rather than adding to it — dropping it would un-stub a stage that already
-     * ran, which is harmless, but keeping it is what makes this call idempotent
-     * with respect to order.
      */
-    const failLikes = async () => {
-        await send('Fetch.enable', {
-            patterns: [
-                { urlPattern: 'https://www.googleapis.com/drive/v3/files*', requestStage: 'Request' },
-                { urlPattern: '*://*/likes*', requestStage: 'Request' },
-            ],
-        });
+    const stopWrites = async () => {
+        await enableStubs();
     };
 
     /**
@@ -898,7 +969,7 @@ const drive = async (target, index) => {
      * The guest half is the other reason. 喜欢 works without a confirmed QQ
      * number now, and the likes made that way are *only* local — which is a
      * claim about where a write did **not** go. So the API is stopped
-     * (`failLikes`), the number is confirmed on the sheet, and what is checked
+     * (`stopWrites`), the number is confirmed on the sheet, and what is checked
      * is what the sheet then says about its own queue.
      */
     if (target.shell) {
@@ -1012,7 +1083,7 @@ const drive = async (target, index) => {
         );
 
         // --- a guest likes a song, and nothing leaves the device -------------
-        await failLikes();
+        await stopWrites();
         const likedId = await evaluate(`(() => {
             const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
             const row = ${pick};
@@ -1329,6 +1400,14 @@ const drive = async (target, index) => {
             localStorage.setItem('music:googleToken', JSON.stringify({
                 clientId, accessToken: 'stubbed-token', expiresAt: Date.now() + 3600000,
             }));
+            // A number as well, because the last check in this stage is about
+            // whether a Drive *play* is reported — and with no number nothing is
+            // recorded whatever the source is, so the check would pass for the
+            // wrong reason. (This is also why stopWrites has to keep /likes and
+            // /plays stubbed from here on: confirming a number adopts the
+            // guest's likes, which would otherwise be POSTed to the real
+            // database by the reload below.)
+            localStorage.setItem('music:setting:qq', '10001');
         })()`);
         await send('Page.reload', {});
         await sleep(2500);
@@ -1403,6 +1482,48 @@ const drive = async (target, index) => {
             'no 喜欢 in a Drive row drawer',
             Array.isArray(driveLabels) && !driveLabels.some((t) => t === '喜欢' || t === '取消喜欢'),
             Array.isArray(driveLabels) ? driveLabels.join('/') : String(driveLabels),
+        );
+
+        /* --- and a Drive play is not reported ------------------------------
+         *
+         * 听歌排行 is the public library's ranking, so `recordPlay` refuses a
+         * Drive track — the same line 喜欢 draws. This is the only place the
+         * rule can be observed end to end, and it only works because the stub
+         * now answers the *download* as well as the listing (see `silentWav`):
+         * with the listing alone, the element gets a JSON body, never fires
+         * `play`, and "no play was reported" is true on a page where nothing
+         * ever played. So the element's own state is asserted *first* — a
+         * check that cannot tell "not counted" from "not played" is not a
+         * check.
+         *
+         * The number is confirmed by the time this runs, which is what makes
+         * the refusal the *source* rule rather than the no-number one.
+         */
+        await closeDrawer();
+        const drivePlayed = await evaluate(`(() => {
+            const row = document.querySelector(${JSON.stringify(target.rows)});
+            if (!row) return 'no row';
+            row.click();
+            return 'clicked';
+        })()`);
+        check('a Drive row can be played at all', drivePlayed === 'clicked', String(drivePlayed));
+        let driveReady = 0;
+        for (let i = 0; i < 30 && driveReady === 0; i += 1) {
+            await sleep(1000);
+            driveReady = Number(await evaluate(
+                "(() => { const a = document.querySelector('audio'); return a && !a.paused ? a.readyState : 0; })()",
+            )) || 0;
+        }
+        check('...and it is really playing', driveReady > 0, `readyState=${driveReady}`);
+        check(
+            '...and the Drive audio was served by the stub',
+            driveMediaHits > 0,
+            `${driveMediaHits} media request(s)`,
+        );
+        check(
+            '...and a Drive play is not reported',
+            playsStubHits === 0,
+            `${playsStubHits} request(s) to /plays`,
         );
     }
 
