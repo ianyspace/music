@@ -48,7 +48,7 @@
   这条没有脚本兜底（见「检查脚本已删除」），改完请自己 `grep` 一遍。
 - **basePath**：`config/index.js` 的 `site.pathPrefix = '/music'` 是唯一来源（`next.config.js` 读它）。
   `next/link`、`next/image`、`_next/*` 会自动带上；**`public/` 里的文件不会**，所以手写
-  `<img src="/icon-192.png">` 会 404 —— 走 `shared.js` 的 `assetUrl(path)`（它 import `config`
+  `<img src="/mark-bg.jpg">` 会 404 —— 走 `shared.js` 的 `assetUrl(path)`（它 import `config`
   拼前缀）。原来的 `utils/basePath.js` 随 SW 一起删了，`assetUrl` 是它唯一长回来的那部分。
 - **全屏浮层别放进被 `transform` 的子树**（重要，踩过坑）：手机端 `.view-in` 的 tab 切换动画
   会让 `transform` 保留终态，而带 `transform` 的祖先会成为 `position: fixed` 后代的包含块，
@@ -152,8 +152,8 @@
   变成只能置顶、不能取消 —— 而 `置顶` / `取消置顶` 是**一个按钮两种文案**（`togglePin`），
   和 `喜欢` 同形；`pinTrack` / `unpinTrack` 留在 hook 内部，两套布局都不许自己判断。
 - **手机端顶部栏：应用图标在最左，搜索 / ❤ / ⋮ 在最右**（`h5/TrackList.js` 的 `<header>`）。
-  品牌名和标题被拿掉了，位置给了一个 **`public/icon-192.png` 的 `<img>`**
-  （`.mark` / `.mark-img`），它同时是**进入「账号」抽屉页的按钮**：
+  品牌名和标题被拿掉了，位置给了一个 **40px 的圆角方块**（`MarkNote`，样式在
+  `h5/MarkNote.module.scss` 的 `.mark`），它同时是**进入「账号」抽屉页的按钮**：
   - **它在最左边，因为那里原来就是曲库名的地方**。中间有一版把它挪到了最右（理由是
     「列表的左边缘是内容开始的地方，一个要离开列表的控件不该是眼睛落下的第一件事」），
     后来又挪回来了：**左图标、右操作是手机应用本来的样子**，而「它通向设置」这个顾虑
@@ -167,19 +167,26 @@
     重新有了两个真实边缘可以推开，所以它不再是承重的；留着是为了让「这一组在行尾」属于
     这一组自己，而不是依赖这一行恰好有几个子节点。
   - **它是圆角方块，不是圆**。画的是应用图标，圆形让它读成头像 —— 那正是这个按钮
-    以前的样子（也正因为那样，头像搬去了「账号」页的身份卡）。圆角归按钮、图片
-    `border-radius: inherit`，两者不会走散。
+    以前的样子（也正因为那样，头像搬去了「账号」页的身份卡）。圆角归按钮
+    （`border-radius: 11px`），底图跟着 `background-size: cover`，两者不会走散。
   - **右下角那个小点是 QQ 状态**：灰 = 未确认，绿 = 已确认。它回答的是「我那个号到底
     存上了没有」，而且**从列表就能回答**，不用为此打开一个页面 —— 所以点挂在图标的角上，
     而不是藏在图标里面。状态同时写在按钮的 `aria-label` 里，所以这个点本身是装饰。
   - **那个环用 `--badge-ring`，是一个不透明 token**，这个应用里除了 `--sheet-bg` 之外
     唯一的不透明表面色：别的地方（`--glass` / `--card`）都是半透明的，而**半透明的环
     压在图上读起来是一块污渍**，不是挖空。它近似玻璃顶栏压在页面上的合成色。
-  - **它是应用自己的图标，和 favicon 同一张图**，所以标签页和页面里是同一件事。
-    写 `<img>` 而不是图标组件，是因为它是一张**图**（一张 1440×1440 的原图缩出来的
-    PNG 三档：`favicon.ico` / `icon-192` / `icon-512` / `apple-touch-icon`）。
-  - **src 必须走 `assetUrl('/icon-192.png')`**：`public/**` 是原样拷进 `out/` 的，
-    Next 不会给它们加 `basePath`，手写 `/icon-192.png` 在 GitHub Pages 上是 404。
+  - **它是应用自己的图标，但拆成了两层**：底图是 `public/mark-bg.jpg`（那张 1440×1440
+    原图去掉音符之后的版本），音符是画在上面的一条 `<path>`。**为什么要拆**：位图里的
+    音符动不了，而播放时它要跟着低频抬起来；只有路径能抬。`MarkNote.js` 顶部写着路径是
+    怎么从已发布的 `icon-512.png` 上描出来的（阈值化 → 边界追踪 → 简化，栅格化回去差
+    1.72%，全在 1px 抗锯齿带里），**别改成曲线拟合**，实测更差。
+  - **favicon 那一套没动**（`_document.js` 用 `${BASE_PATH}/icon-512.png`，
+    PNG 三档还是 `favicon.ico` / `icon-192` / `icon-512` / `apple-touch-icon`）：
+    标签页上那张仍然带音符，因为那里没有东西需要动。
+  - **底图的 URL 必须走 `assetUrl('/mark-bg.jpg')`**：`public/**` 是原样拷进 `out/` 的，
+    Next 不会给它们加 `basePath`，手写 `/mark-bg.jpg` 在 GitHub Pages 上是 404。
+    它是 inline 的 `background-image`，所以**样式里只能写 `background-color: transparent`，
+    不能写 `background: transparent`** —— 简写会把 inline 那张图清掉。
   - **它曾经是访客头像**（绑了 QQ 就是 QQ 头像）。那个盘子连同它的全部讲究搬去了
     「账号」页的身份卡（`Account.module.scss` 的 `.identity-avatar`）——**一个头像说的是
     「听歌的是谁」，而这个按钮说的是「设置在哪」**，两件事不该长在同一个位置上。
@@ -907,6 +914,18 @@ components/Music/three/
   一个因为音频图失败而彻底僵住的场景看起来是坏的，一个按假节拍脉动的场景看起来是可视化。
 - **`AudioContext` 延迟到第一次播放才建**，并 `resume()`：页面加载就建会以 suspended 起步
   且浏览器会告警，而从不按播放的访客根本不需要它。
+- **手机端有一份自己的、`h5/useBeat.js`**（三棵树不许互相 import，所以是复制而不是共用；
+  它照着 `THREE.MathUtils.damp` 的写法平滑，读同一个频段）。它和这里的差别只有两处，
+  两处都不是口味问题：
+  - **只有 `blob:` 源才接分析器。** `createMediaElementSource` 喂跨域资源时输出恒为 0，
+    而且它会**替换元素自身的输出** —— 接上去不只是拿不到频谱，**还会把歌静音**。
+    本项目的播放源恰好是 blob（`usePlayer` 先下字节再 `createObjectURL`），同源，所以能读；
+    那个 `/^blob:/` 守卫挡的就是这个。**别删。**
+  - **dB 窗口是 `-70..-10`，不是这里的 `-84..-14`。** 后者是给「一直在亮」的辉光挑的；
+    一个音符拿它会长期钉在顶部（实测恒在 0.89–1.2），看着像坏了。
+  - 它**不走 React state**：每秒 60 次的电平不该进 state，直接写元素的 `style.transform`。
+    跳动幅度在 `MarkNote.js` 的 `JUMP`，**满电平 52 已经是上限**（旗子尖会顶出方块），
+    改完要重新对一遍。
 - 从 `/desktop` 进 `/3d` 会**换一个 `<audio>` 元素**，歌会停一下；但 `usePlayer`
   会用 `LAST_TRACK_KEY` / `LAST_PROGRESS_KEY` 把同一首按原位置**重新载入**（不自动播放）。
   这条链路依赖列表缓存，所以第一次访问、列表还没落盘时不要期待能续上。
