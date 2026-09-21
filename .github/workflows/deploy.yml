@@ -124,11 +124,18 @@ jobs:
       # `/` as a 404 (symptoms in the note on `Setup Pages`).
       #
       # The real fix is one setting: Settings -> Pages -> Build and deployment ->
-      # Source: "GitHub Actions". Until that is flipped, this step makes the race
-      # harmless by waiting for that build to finish *before* we upload our
-      # artifact, so ours is always the newer deployment. It is a no-op once the
-      # setting is right (no such run is ever created) and it is bounded either
-      # way, so a stuck run cannot hang the job.
+      # Source: "GitHub Actions". **It is now set that way (2026-09-21)**, so no
+      # such run is created any more and this step has nothing to wait for — but
+      # it stays: it is the only thing standing between a reverted setting and a
+      # silently Jekyll-rendered site, and a reverted setting is exactly the kind
+      # of change nothing in this repository would notice.
+      #
+      # What it must *not* do is cost five minutes on every deploy, which is what
+      # it did the first time it ran against the fixed setting: `absent` fell
+      # through to `sleep 20` and looked again, all the way to the deadline. A
+      # few looks is the right amount — GitHub creates the legacy run at push
+      # time, seconds before this step even starts (checkout, `npm ci` and a full
+      # build happen first), so three looks is already generous.
       #
       # One-line `python3 -c` rather than a heredoc: a multi-line script inside a
       # `run: |` block has to be indented with the block, and Python rejects a
@@ -147,12 +154,21 @@ jobs:
           }
 
           deadline=$((SECONDS + 300))
+          looks=0
           while [ $SECONDS -lt $deadline ]; do
             state=$(legacy_state || echo absent)
             echo "legacy Pages build: $state"
             if [ "$state" = "done" ]; then break; fi
-            # `absent` means the setting is already right, or the run has not
-            # been created yet — one more look settles which.
+            # `absent` is the answer the fixed setting gives, and it is also
+            # what a brand-new push looks like in branch mode for a second or
+            # two — so look again, but only a few times.
+            if [ "$state" = "absent" ]; then
+              looks=$((looks + 1))
+              if [ $looks -ge 3 ]; then
+                echo "no legacy build after $looks looks — Source is GitHub Actions"
+                break
+              fi
+            fi
             sleep 20
           done
           echo "proceeding; ours will be the newer deployment"

@@ -1320,9 +1320,12 @@ curl -s "https://api.github.com/repos/ianyspace/music/actions/runs?head_sha=<ful
 ```
 
 没有 `pages build and deployment` 就是生效了（`head_sha` 必须传完整 40 位，短 sha 会被静默当成
-「没有这个 run」）。生效之后，`deploy.yml` 里那步「Wait out GitHub's legacy Jekyll build」
-变成空操作 —— **保留它**：它本来就把「查不到」当成正常，而万一日后设置被改回分支模式，
-它就是唯一挡在事故前面的那一步。
+「没有这个 run」）。生效之后 `deploy.yml` 里那步「Wait out GitHub's legacy Jekyll build」
+**保留** —— 万一日后设置被改回分支模式，它是唯一挡在事故前面的东西 —— 但它**不是**免费的空操作：
+2026-09-21 第一次在新设置下跑，它对着「查不到」一路 `sleep 20`，白等满了 5 分钟上限。
+现在 `absent` 只重复看三次（约 40 秒）就收工，`running` 仍然等到 `done` 或 300 秒上限。
+（教训：**「空操作」这种话要跑一遍再说** —— 那一步的注释原来就写着「no-op once the setting
+is right」，而它其实是五分钟。）
 
 **别想着从 CI 改这个设置。** 同一天试过：加一个工作流，用 `GITHUB_TOKEN` 加
 `permissions: pages: write` 调 `PUT /repos/{owner}/{repo}/pages`，GitHub 直接回 **403** ——
