@@ -113,11 +113,11 @@ jobs:
           test -f out/favicon.ico        || { echo "::error::out/favicon.ico missing"; exit 1; }
           test -f out/apple-touch-icon.png || { echo "::error::out/apple-touch-icon.png missing"; exit 1; }
           test -f out/icon-512.png       || { echo "::error::out/icon-512.png missing"; exit 1; }
-          # The mark at the leading end of the phone's bar is drawn on this
-          # picture (see `h5/MarkNote`). It is not decoration: without it the
-          # note sits on nothing, which is a *visual* break with no error
-          # anywhere — and being a `public/` file, nothing else would notice.
-          test -f out/mark-bg.jpg        || { echo "::error::out/mark-bg.jpg missing"; exit 1; }
+          # The mark's rainbow used to be a bitmap (out/mark-bg.jpg) asserted
+          # here; it is drawn on a <canvas> inside `h5/MarkNote` now, so there
+          # is no public/ file left to assert — the component either draws or
+          # the page's JS is broken, and a missing file is no longer a failure
+          # mode this check can see.
           # The service worker was removed on purpose; its reappearance would mean
           # a stale shell is being shipped again.
           test ! -e out/sw.js         || { echo "::error::out/sw.js exists — the service worker was removed on purpose"; exit 1; }
