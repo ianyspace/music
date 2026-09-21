@@ -389,6 +389,10 @@
    keeps the spacing: the row itself is a bare flex line whose only job is to
    hold the two together, so the hover wash can cover both. */
 .row {
+    /* The anchor for the hairline below. Nothing else here is positioned, so
+       this changes no paint order — it only gives the divider a box to be
+       absolute against. */
+    position: relative;
     display: flex;
     align-items: center;
     gap: 2px;
@@ -396,6 +400,30 @@
        `track-pulse` on it (see `MiniPlayer.module.scss`) — without a radius
        that one-shot tint would land as a rectangle around a 12px-rounded row. */
     border-radius: 12px;
+}
+
+/* The separator between two songs — the same `--hairline` the wide layout puts
+   under its rows (`DesktopMusic.module.scss`), so the two lists agree about
+   what a divider weighs. Faint on purpose: the covers are what the eye should
+   be following, and a stronger line would turn the list into a table.
+
+   A pseudo-element rather than `border-top` because the row is a 12px-rounded
+   box — that radius exists for the jump button's one-shot `track-pulse` wash —
+   and a border on a rounded box curves away at both ends, so a 1px line would
+   fade out over its last 12px instead of stopping. Absolutely positioned, it is
+   straight from edge to edge, costs the row no height, and stays out of the
+   flex line the two controls sit on.
+
+   `+` keeps it to the gaps: no line above the first row, and none below the
+   last one. */
+.row + .row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1px;
+    background: var(--hairline);
 }
 
 .track,
@@ -406,9 +434,11 @@
     align-items: center;
     gap: 10px;
     /* The 44px thumb is the tallest thing in a row, so the padding is what
-       separates rows. 3px read as cramped on a phone; 8px gives each row enough
-       air to look tappable without pushing the list off-screen. */
-    padding: 8px 4px;
+       separates rows. 3px read as cramped on a phone; 8px gave each row enough
+       air to look tappable without pushing the list off-screen. It went to 10
+       when the hairline above landed in this gap: a divider needs air on both
+       sides of it, and at 8 the line hugged the covers it was separating. */
+    padding: 10px 4px;
     border: 0;
     border-radius: 12px;
     background: transparent;
