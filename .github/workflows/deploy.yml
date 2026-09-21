@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - master
-    # **No `paths-ignore` here, and it must not come back while the Pages Source
-    # is still "Deploy from a branch".**
+    # **No `paths-ignore` here unless the Pages Source is *confirmed* to still be
+    # "GitHub Actions".**
     #
     # It looks like a free win — a docs-only push has nothing to build — and it
     # was added twice for exactly that reason. It is not a win, it is a way to
@@ -22,8 +22,14 @@ on:
     # cost of a skipped deploy was one wasted CI minute; the cost of this list
     # was five minutes of a dead site.
     #
-    # Once Settings -> Pages -> Source is "GitHub Actions" the legacy build stops
-    # existing, and *then* an ignore list is safe to bring back.
+    # Later that same day the Source was switched to "GitHub Actions", so the
+    # legacy build no longer exists and an ignore list is now safe **in
+    # principle**. "In principle" is doing real work in that sentence: the
+    # setting lives outside this repository, so nothing here can tell whether it
+    # still holds, and a reverted setting would turn this list into a silent
+    # trap — the skipped push shows nothing in the Actions list, and only the
+    # live site changes. Before adding one, check that a fresh push produced no
+    # `pages build and deployment` run (the check is in AGENTS.md, "部署").
   # Still available for "deploy anyway", which is also how to publish a
   # docs-only change.
   workflow_dispatch:
