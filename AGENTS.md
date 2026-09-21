@@ -1150,7 +1150,12 @@ Drive 曲库的办法 —— 列表来自一次真实 API 调用，而每来源�
 推 `master` 触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` → 校验产物 →
 发布 `out/` 到 Pages。
 
-`npm run build` 产出 `out/`，并把 `public/**`（现在的全部内容就是那几个图标文件）
+**纯文档 / 纯测试的推送不触发它**：push 上有 `paths-ignore: ['**.md', 'scripts/**']`。
+改 `AGENTS.md` 或改冒烟脚本不影响构建产物，为它们跑一次完整部署是纯浪费。
+（**但那个列表要跟着这份工作流自己的形状走**：一旦这里加了测试 job，`scripts/**`
+就得从列表里拿掉 —— 改测试的时候正是测试该跑的时候。要强制部署用 `workflow_dispatch`。）
+
+`npm run build` 产出 `out/`，并把 `public/**`（图标那几张 + `mark-bg.jpg`）
 原样拷进去；工作流再补一个 `out/.nojekyll`
 （否则 Pages 的 Jekyll 会丢掉 `_next/` 这类下划线开头的目录）。
 
@@ -1160,6 +1165,7 @@ Drive 曲库的办法 —— 列表来自一次真实 API 调用，而每来源�
 Pages 会把 `/music/h5/` 解析到该文件，并把裸 `/music/h5` 301 到带斜杠形式。
 
 工作流里的 `Verify build output` 会断言这些文件都在；改路由或改 `trailingSlash` 时记得同步它，
+**往 `public/` 里加文件时也要**（那些文件不走 `_next/`，少一个就是浏览器里的静默 404），
 否则 CI 会先于线上报错（这是有意的——少一个文件就是半个死站）。
 
 **Pages 的 Source 必须是 `GitHub Actions`**：Settings → Pages → Build and deployment →
