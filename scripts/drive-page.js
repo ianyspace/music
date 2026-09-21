@@ -871,7 +871,19 @@ const drive = async (target, index) => {
         })()`);
         // Long enough for playback to be under way and the loop to be reading
         // the real analyser, so that what follows is the override's doing.
-        await sleep(1500);
+        await sleep(6000);
+        // ...and long enough that the repair had every chance to misfire: a
+        // nudge that fires while the graph is reading music pauses a healthy
+        // player, which is worse than the silence it was written for. Same
+        // counter the next check waits on. This is the 3D copy's own check
+        // rather than the phone's: `analyzer.js` and `useBeat.js` are two
+        // implementations, so a misfire in one says nothing about the other.
+        const whileHealthy = await evaluate('(() => (window.__nudgePauses || 0))()');
+        check(
+            'a player that is reading music is never nudged',
+            Number(whileHealthy) === 0,
+            `${whileHealthy} pause(s) in 6.0s of healthy playback`,
+        );
         const zeroed = await evaluate(`(() => {
             const proto = window.AnalyserNode && window.AnalyserNode.prototype;
             if (!proto || !proto.getByteFrequencyData) return 'no analyser to override';
@@ -2043,7 +2055,17 @@ const drive = async (target, index) => {
         })()`);
         // Long enough for playback to be under way and the loop to be reading
         // the real analyser, so that what follows is the override's doing.
-        await sleep(1500);
+        await sleep(6000);
+        // ...and long enough that the repair had every chance to misfire: a
+        // nudge that fires while the graph is reading music pauses a healthy
+        // player, which is worse than the silence it was written for. Same
+        // counter the next check waits on.
+        const whileHealthy = await evaluate('(() => (window.__nudgePauses || 0))()');
+        check(
+            'a player that is reading music is never nudged',
+            Number(whileHealthy) === 0,
+            `${whileHealthy} pause(s) in 6.0s of healthy playback`,
+        );
         const zeroed = await evaluate(`(() => {
             const proto = window.AnalyserNode && window.AnalyserNode.prototype;
             if (!proto || !proto.getByteFrequencyData) return 'no analyser to override';
