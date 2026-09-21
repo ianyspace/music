@@ -4,32 +4,33 @@ on:
   push:
     branches:
       - master
-    # **No `paths-ignore` here unless the Pages Source is *confirmed* to still be
-    # "GitHub Actions".**
+    # **Checked, not assumed, on 2026-09-21**: the legacy Jekyll build ("pages
+    # build and deployment", event `dynamic`) has not run once since the Pages
+    # Source was switched to "GitHub Actions". Its last run is on `810739a` —
+    # the push before the setting was changed — and the seven pushes after it
+    # produced this workflow and nothing else. That build is what made an ignore
+    # list dangerous: it publishes the *repository root*, so skipping this
+    # workflow left it unopposed and the site started serving `README.md` (h5
+    # 404, `README.md` 200, `.nojekyll` 404).
     #
-    # It looks like a free win — a docs-only push has nothing to build — and it
-    # was added twice for exactly that reason. It is not a win, it is a way to
-    # take the site down: GitHub runs its *own* legacy Jekyll build
-    # ("pages build and deployment", event `dynamic`) on every push to this
-    # branch whether or not this workflow runs, and that build publishes the
-    # repository root. The only thing that beats it is the "Wait out GitHub's
-    # legacy Jekyll build" step below, which lives *in this workflow*. Skip the
-    # workflow and the Jekyll build is unopposed: the site starts serving
-    # `README.md` and every real route 404s.
+    # The setting lives outside this repository, so nothing here can tell whether
+    # it still holds. **If the Source is ever put back to "Deploy from a branch",
+    # delete this list first** — a reverted setting turns it into a silent trap:
+    # the skipped push shows nothing in the Actions list, and only the live site
+    # changes. How to check is in AGENTS.md, "部署".
     #
-    # It did exactly that on 2026-09-21, on a push that touched nothing but
-    # `scripts/drive-page.js` (h5 404, `README.md` 200, `.nojekyll` 404). The
-    # cost of a skipped deploy was one wasted CI minute; the cost of this list
-    # was five minutes of a dead site.
+    # Nothing listed can change `out/`: `**/*.md` is documentation, `scripts/` is
+    # the smoke harness (node-only, imported by nothing the build compiles), and
+    # `cloudflare-worker/` deploys somewhere else entirely. `config/**` and
+    # `public/**` are deliberately *not* here — `next.config.js` imports the
+    # first, and the second is copied verbatim into `out/`.
     #
-    # Later that same day the Source was switched to "GitHub Actions", so the
-    # legacy build no longer exists and an ignore list is now safe **in
-    # principle**. "In principle" is doing real work in that sentence: the
-    # setting lives outside this repository, so nothing here can tell whether it
-    # still holds, and a reverted setting would turn this list into a silent
-    # trap — the skipped push shows nothing in the Actions list, and only the
-    # live site changes. Before adding one, check that a fresh push produced no
-    # `pages build and deployment` run (the check is in AGENTS.md, "部署").
+    # A push that touches any of these *and* something else still deploys: this
+    # skips the run only when every changed file matches.
+    paths-ignore:
+      - '**/*.md'
+      - 'scripts/**'
+      - 'cloudflare-worker/**'
   # Still available for "deploy anyway", which is also how to publish a
   # docs-only change.
   workflow_dispatch:
