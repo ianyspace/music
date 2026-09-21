@@ -4,23 +4,26 @@ on:
   push:
     branches:
       - master
-    # Docs, the smoke script, and the Cloudflare Worker cannot change what gets
-    # built, and this workflow does nothing *but* build and deploy — so a push
-    # that touches nothing else does not need one. (`AGENTS.md` had to be
-    # corrected after the mark was redrawn, and paying a full deploy for that is
-    # pure waste.)
+    # **No `paths-ignore` here, and it must not come back while the Pages Source
+    # is still "Deploy from a branch".**
     #
-    # `cloudflare-worker/**` is a *separate* deployment (`npx wrangler deploy`,
-    # run by hand) against a different service. The static build never reads a
-    # file from it, so a Worker-only push has nothing for this workflow to do.
+    # It looks like a free win — a docs-only push has nothing to build — and it
+    # was added twice for exactly that reason. It is not a win, it is a way to
+    # take the site down: GitHub runs its *own* legacy Jekyll build
+    # ("pages build and deployment", event `dynamic`) on every push to this
+    # branch whether or not this workflow runs, and that build publishes the
+    # repository root. The only thing that beats it is the "Wait out GitHub's
+    # legacy Jekyll build" step below, which lives *in this workflow*. Skip the
+    # workflow and the Jekyll build is unopposed: the site starts serving
+    # `README.md` and every real route 404s.
     #
-    # The caveat, and the reason this list is short: **if a test job is ever
-    # added to this file, `scripts/**` has to come off it** — a change to the
-    # tests is exactly the push where they need to run.
-    paths-ignore:
-      - '**.md'
-      - 'scripts/**'
-      - 'cloudflare-worker/**'
+    # It did exactly that on 2026-09-21, on a push that touched nothing but
+    # `scripts/drive-page.js` (h5 404, `README.md` 200, `.nojekyll` 404). The
+    # cost of a skipped deploy was one wasted CI minute; the cost of this list
+    # was five minutes of a dead site.
+    #
+    # Once Settings -> Pages -> Source is "GitHub Actions" the legacy build stops
+    # existing, and *then* an ignore list is safe to bring back.
   # Still available for "deploy anyway", which is also how to publish a
   # docs-only change.
   workflow_dispatch:
