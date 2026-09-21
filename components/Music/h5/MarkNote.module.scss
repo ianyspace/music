@@ -2,27 +2,34 @@
 //
 // These rules used to live in `TrackList.module.scss`, next to the bar they sit
 // in. They moved here when the mark stopped being an `<img>` and became a small
-// drawing that reacts to the music: the bar's stylesheet is about the list, and
-// the mark is now a component of its own with a behaviour attached. Nothing
-// about how it looks changed with the move, and the latest change — the
-// backdrop becoming a `<canvas>` and the note breathing instead of jumping —
-// kept the same shape, size, radius and position. The button is still the 40px
-// rounded square at `margin-left: 6px` that lines up with the covers below it.
+// drawing that reacts to the music. At rest it is still the 40px rounded square
+// at `margin-left: 6px` that lines up with the covers below it; while music
+// plays it grows into a bar (`.mark-wide`), a family of small notes fades in
+// across it, and the QQ state dot is gone — a dot needs a corner, and a bar
+// that changes width has none; the state lives in the button's label instead.
 
 /* A **rounded square**, not a circle. The artwork is an app icon, and the circle
    made it read as an avatar — which is exactly what this button used to be, and
    what now lives on 账号's identity card. The radius belongs to the button, and
    the picture inside it is a background so the two cannot drift apart.
 
-   `position: relative` is for the state dot, the one child that has to sit
-   outside the artwork's corner.
+   `position: relative` is for the floating-note layer, the one child that
+   positions itself against the button's box.
 
    `overflow: hidden` is for the breathing: the canvas inside grows past the
-   button's edges on each beat (a 7% scale on a 40px box is ~1.4px per side),
-   and without clipping the rainbow would spill onto the bar. The clip is the
-   rounded corner too — the canvas is a square and the button is not, and the
-   two shapes are reconciled by `border-radius` on the button rather than by a
-   mask on the canvas.
+   button's edges on each beat, and without clipping the rainbow would spill
+   onto the bar. The clip is the rounded corner too — the canvas is a square
+   and the button is not, and the two shapes are reconciled by `border-radius`
+   on the button rather than by a mask on the canvas.
+
+   The flex properties are the widening mechanism. At rest the mark is
+   `flex: 0 0 auto` (its 40px, no growth); `.mark-wide` turns `flex-grow` up
+   to 1, so the bar eats exactly the free space between itself and the trailing
+   actions — "加宽直到右侧搜索" falls out of the row's own layout instead of
+   anybody measuring pixels. `flex-grow` is a number and *animatable*, so the
+   transition below makes the widening a smooth swell rather than a snap; the
+   40px `width` stays as the flex basis, which is why the bar starts its
+   journey from exactly the size it was.
 
    `margin-left: 6px` is not a nudge to taste: it lines the mark up with the
    covers *below* it. A row is a 44px thumb inset 4px into a column that is
@@ -35,7 +42,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     width: 40px;
     height: 40px;
     margin-left: 6px;
@@ -46,17 +53,65 @@
     background-color: transparent;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.15s;
+    transition: transform 0.15s, flex-grow 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
 
     @media (hover: hover) {
         &:hover {
-            transform: scale(1.06);
+            transform: scale(1.02);
         }
     }
 
     &:active {
-        transform: scale(0.94);
+        transform: scale(0.96);
     }
+}
+
+/* The playing state: grow to meet the actions. The hover/active scales above
+   are toned down from the square's 1.06/0.94 — a 6% wobble reads fine on a
+   40px tile but makes a wide bar shiver. */
+.mark-wide {
+    flex-grow: 1;
+}
+
+/* The floating-note layer and its inhabitants. The layer is `pointer-events:
+   none` (the button is the tap target) and the notes fade with `opacity`
+   rather than unmounting: appearing and leaving are both transitions, and the
+   refs stay valid for `paint` to breathe through. */
+.notes {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+
+.notes-on {
+    opacity: 1;
+}
+
+/* One floating note: an absolutely positioned square of `size` px, seat and
+   horizontal position set inline from `FLOATING_NOTES`. The scale transform is
+   written per frame by `paint` (breathing); this rule only carries the pivot.
+   The inner svg fills the box and inherits the same white ink + shadow as the
+   big note, so the family reads as one drawing at several scales. */
+.note-float {
+    position: absolute;
+    transform-origin: center;
+    will-change: transform;
+}
+
+.note-float svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.note-float-ink {
+    fill: #fff;
+    stroke: #fff;
+    stroke-width: 14;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 10px 9px rgba(38, 44, 74, 0.32));
 }
 
 /* The rainbow backdrop. The canvas itself takes the scale transform from
@@ -126,33 +181,13 @@
     will-change: transform;
 }
 
-/* The QQ state as a dot on the bottom-right corner: grey = 未确认, green =
-   已确认. It answers "did my number actually take?" from the list, without
-   opening a page — the button doubles as the indicator, which is why the dot
-   hangs off the artwork's corner instead of being hidden inside it.
-
-   The ring is `--badge-ring`, an opaque token for exactly this job: a
-   translucent ring over the artwork reads as a smudge, and this app's surfaces
-   (`--glass`, `--card`) are all translucent. The same answer is in the button's
-   `aria-label`, so the dot itself is decorative.
-
-   `z-index: 2` lifts the dot above the note — the note sits at z 1, and a dot
-   that disappeared under the note's growing edge would be a regression from
-   the still backdrop, where the corner was always clear. The dot itself does
-   not animate, but the note's breath reaches close to the corner at full
-   level, and the z-index keeps the indicator visible. */
-.dot {
-    position: absolute;
-    right: -1px;
-    bottom: -1px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #8e8e93;
-    box-shadow: 0 0 0 2px var(--badge-ring);
-    z-index: 2;
-}
-
-.dot-on {
-    background: #34c759;
-}
+/* The QQ state dot that used to live here (grey = 未确认, green = 已确认, hung
+   off the artwork's bottom-right corner, ringed with `--badge-ring`) is gone.
+   Two reasons: the user asked it hidden, and the mark no longer has a stable
+   corner for it — while playing the button is a bar of variable width, and a
+   dot pinned to a moving edge reads as a glitch. The state itself is not lost:
+   it is still in the button's `title` and `aria-label`
+   (「账号，已确认/未确认 QQ」), so the answer is one screen-reader query away
+   and one tooltip away, which is where it always also lived. If the at-a-glance
+   dot ever comes back, it belongs on 账号's identity card, not on a shape that
+   changes size. */

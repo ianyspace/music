@@ -4,9 +4,14 @@ import useBeat from './useBeat';
 import styles from './MarkNote.module.scss';
 
 /**
- * The app's mark: the way into 账号, and the answer to "is my number in?" — a
- * rounded square of rainbow at the leading end of the list's bar, with a note on
- * it and a state dot on its corner.
+ * The app's mark: the way into 账号 — a rounded square of rainbow at the leading
+ * end of the list's bar, with a note on it. While music plays it *widens* into
+ * a bar that runs up to the trailing actions (`wide`, animated through
+ * flex-grow), the rainbow heaves like the lines of a bouncing score, and a
+ * family of smaller notes appears across it, each breathing at its own depth.
+ * The QQ state dot that used to hang off the corner is gone: the state lives
+ * in the `title`/`aria-label`, and a dot on a bar that changes width has no
+ * corner to hang off.
  *
  * The backdrop used to be the published app icon's bitmap (`public/mark-bg.jpg`)
  * with the note masked off — and it became two things, because the note had to
@@ -91,6 +96,24 @@ const WAVE_FREQ = 2.4;
  *  ripples instead of one wobbling picture. At ~1 rad/s a crest travels the
  *  canvas in a few seconds: slow enough to stay calm, fast enough to see. */
 const waveDrift = function (b) { return 0.9 + b * 0.17; };
+/** How far the band boundaries heave at full level, as a fraction of the
+ *  canvas height — the "score bouncing" displacement. ±6% (≈2.4px at 40px,
+ *  more across the wide bar) on top of the drifting wave; per-band phase
+ *  `sin(b × 1.7)` makes adjacent bands move against each other instead of
+ *  pumping in unison. */
+const SCORE_BOUNCE = 0.12;
+
+/** The small notes that appear on the wide mark while music plays — 大大小小:
+ *  each with its own size (px), horizontal position (fraction of the bar's
+ *  width), vertical seat (px from the bottom) and breathing depth. Three of
+ *  them, plus the big traced note already at the leading end, is a family
+ *  without turning the bar into a sticker sheet. Positions are percentages
+ *  because the bar's width is whatever the flex row hands it. */
+const FLOATING_NOTES = [
+    { size: 20, left: 0.56, bottom: 7, breath: 0.26 },
+    { size: 13, left: 0.72, bottom: 15, breath: 0.34 },
+    { size: 16, left: 0.86, bottom: 5, breath: 0.30 },
+];
 
 /** The drawing buffer is 4× the 40px display size — high enough that the
  *  browser's downsampling kills the polyline joints before they reach the
@@ -105,13 +128,19 @@ const DRAW_SIZE = 160;
  * (boundary 0 and boundary `BAND_COLORS.length`) — a wave at the very edge
  * would clip against the rounded button and look cut off.
  *
- * `time` (seconds) and `level` (0..1) make the waves *move*: each boundary's
- * phase advances on its own clock (`waveDrift`), and the whole field swells
- * with the beat. This runs once per frame from `useBeat`'s loop while anything
- * is playing — the first version drew once and only scaled, and a 7% scale on
- * a 40px box does not read as motion at all. The cost is seven 49-point
- * polygons on a 160-unit canvas, which is nothing; the bands cover the canvas
- * completely and opaquely, so no `clearRect` is needed.
+ * `time` (seconds) and `level` (0..1) make the waves *move*, in two ways:
+ * each boundary drifts on its own clock (`waveDrift`), and — the score part —
+ * every boundary is displaced vertically by an amount *proportional to the
+ * level*, with a fixed phase per band (`SCORE_BOUNCE` × `sin(b × 1.7)`), so a
+ * kick makes the bands heave up and down against each other like the lines of
+ * a staff jumping. Drift alone read as ripples; the beat-locked heave is what
+ * reads as bouncing. This runs once per frame from `useBeat`'s loop while
+ * anything is playing. The cost is seven 49-point polygons on a 160-unit
+ * canvas, which is nothing; the bands cover the canvas completely and
+ * opaquely, so no `clearRect` is needed.
+ *
+ * Band order survives the heave: worst case stacks a ±6% bounce on a ±6%
+ * static wave across a 14.3% band height, which stays under half a band.
  *
  * `ctx` is expected to already be scaled to device pixels (see the `useEffect`
  * below), so all coordinates here are in the logical 160-unit space.
@@ -126,19 +155,20 @@ const drawBackdrop = function (ctx, size, time, level) {
 
     // Boundary y-values for every polyline step. Boundary 0 is the top of the
     // canvas, boundary `numBands` is the bottom — both flat. The interior ones
-    // wave, with a phase shift per band so the waves do not line up into one
-    // big undulation, and a drift speed per band so they slide over each other.
+    // wave, drift, and heave with the beat.
     const boundaries = [];
     for (let b = 0; b <= numBands; b += 1) {
         const baseY = b * bandH;
         const isEdge = b === 0 || b === numBands;
         const phase = b * 0.85;
         const drift = time * waveDrift(b);
+        // The beat-locked heave. Edges stay put (they would clip).
+        const bounce = isEdge ? 0 : level * SCORE_BOUNCE * Math.sin(b * 1.7);
         const points = new Array(STEPS + 1);
         for (let s = 0; s <= STEPS; s += 1) {
             const t = s / STEPS;
             const wave = isEdge ? 0 : Math.sin(phase + drift + t * twoPiFreq) * amp;
-            points[s] = { x: t * w, y: (baseY + wave) * h };
+            points[s] = { x: t * w, y: (baseY + wave + bounce) * h };
         }
         boundaries.push(points);
     }
@@ -156,17 +186,21 @@ const drawBackdrop = function (ctx, size, time, level) {
     }
 };
 
-const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
+const MarkNote = function ({ audioRef, playing, wide, qqBound, onOpen }) {
     const inkRef = useRef(null);
     const bgRef = useRef(null);
     const canvasRef = useRef(null);
     /** The 2D context, grabbed once — `getContext` per frame is wasted work. */
     const ctxRef = useRef(null);
+    /** One ref per floating note, in `FLOATING_NOTES` order. */
+    const floatRefs = useRef([]);
 
     // Sized once, on mount. The *drawing* happens per frame while the music
     // plays (see `paint`), but the buffer and the DPR transform never change.
-    // The buffer is `DRAW_SIZE × devicePixelRatio` so the downsample to 40px
-    // is sharp on retina screens without being wasteful on a 1× one.
+    // The buffer is `DRAW_SIZE × devicePixelRatio` so the downsample is sharp
+    // on retina screens without being wasteful on a 1× one. The CSS stretches
+    // this square buffer across whatever width the wide bar has — bands stay
+    // horizontal, the waves just read longer, which suits a bar.
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return undefined;
@@ -192,20 +226,27 @@ const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
         if (level < 0.004) {
             ink.style.transform = '';
             bg.style.transform = '';
+            floatRefs.current.forEach((el) => { if (el) el.style.transform = ''; });
             return;
         }
-        // Uniform scale on both layers, from each layer's own centre. No
+        // Uniform scale on every layer, from each one's own centre. No
         // translate, no stretch — the point was to stop the note jumping, and
-        // a breathing scale is the motion that replaces it.
+        // a breathing scale is the motion that replaces it. Each floating
+        // note breathes at its own depth (`breath`), so the family pulses
+        // together but not in lockstep.
         const bgScale = 1 + BREATH_BG * level;
         const noteScale = 1 + BREATH_NOTE * level;
         bg.style.transform = `scale(${bgScale.toFixed(3)})`;
         ink.style.transform = `scale(${noteScale.toFixed(3)})`;
-        // And the waves themselves drift. `paint` runs once per frame from
-        // `useBeat`'s loop while anything is playing — exactly the lifecycle
-        // the drift wants (frozen at rest, running with the music) — so no
-        // second rAF loop of its own. The clock is wall time, so the phase
-        // keeps its speed no matter how the level wobbles.
+        FLOATING_NOTES.forEach((spec, i) => {
+            const el = floatRefs.current[i];
+            if (el) el.style.transform = `scale(${(1 + spec.breath * level).toFixed(3)})`;
+        });
+        // And the waves themselves drift and heave. `paint` runs once per
+        // frame from `useBeat`'s loop while anything is playing — exactly the
+        // lifecycle the motion wants (frozen at rest, running with the music)
+        // — so no second rAF loop of its own. The clock is wall time, so the
+        // phase keeps its speed no matter how the level wobbles.
         const ctx = ctxRef.current;
         if (ctx) drawBackdrop(ctx, DRAW_SIZE, performance.now() / 1000, level);
     };
@@ -215,7 +256,7 @@ const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
     return (
         <button
             type="button"
-            className={styles.mark}
+            className={wide ? `${styles.mark} ${styles['mark-wide']}` : styles.mark}
             title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
             aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
             onClick={onOpen}
@@ -234,14 +275,32 @@ const MarkNote = function ({ audioRef, playing, qqBound, onOpen }) {
             <svg className={styles.art} viewBox="0 0 512 512" aria-hidden="true" focusable="false">
                 <path ref={inkRef} className={styles.ink} d={NOTE} />
             </svg>
-            {/* Decorative: the state is already in the label above, and a
-                screen reader does not need to be told about a coloured pixel. */}
-            <span
-                className={qqBound
-                    ? `${styles.dot} ${styles['dot-on']}`
-                    : styles.dot}
-                aria-hidden="true"
-            />
+            {/* The floating family, visible only while music plays (`playing`
+                drives opacity through CSS, so appearing and leaving is a
+                transition, not a pop). Each one is the same traced NOTE path —
+                the family shares one glyph, which is what makes it read as a
+                choir rather than as clip art — at its own size, seat and
+                breathing depth. First in the DOM after the big note's path, so
+                the smoke test's `svg path` still lands on the big one. */}
+            <span className={playing ? `${styles.notes} ${styles['notes-on']}` : styles.notes} aria-hidden="true">
+                {FLOATING_NOTES.map((spec, i) => (
+                    <span
+                        key={i}
+                        ref={(node) => { floatRefs.current[i] = node; }}
+                        className={styles['note-float']}
+                        style={{
+                            width: spec.size,
+                            height: spec.size,
+                            left: `${Math.round(spec.left * 100)}%`,
+                            bottom: spec.bottom,
+                        }}
+                    >
+                        <svg viewBox="0 0 512 512" focusable="false">
+                            <path className={styles['note-float-ink']} d={NOTE} />
+                        </svg>
+                    </span>
+                ))}
+            </span>
         </button>
     );
 };

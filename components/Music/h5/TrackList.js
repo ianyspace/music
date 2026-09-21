@@ -161,6 +161,13 @@ const TrackList = function ({
                     <MarkNote
                         audioRef={audioRef}
                         playing={isPlaying}
+                        // The wide bar (playing → grow to meet the actions)
+                        // stands down while the search field is unfolded:
+                        // both want the row's free space, and a bar growing
+                        // behind an open field splits the row in two cramped
+                        // halves. Search wins — it is the thing being looked
+                        // at; the bar swells back when the field folds away.
+                        wide={isPlaying && !searchOpen}
                         qqBound={qqBound}
                         onOpen={onGoAccount}
                     />
