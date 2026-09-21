@@ -37,11 +37,12 @@ import styles from './TrackList.module.scss';
  * left and its actions on the right is what a phone app looks like.
  *
  * The mark is not built here. It is `MarkNote`, which owns its artwork and the
- * one thing about it that moves — the note reacts to the music, so it needs the
- * audio element, and `audioRef` is passed down for it alone. Everything this
- * component still decides about the mark is the `qqBound` dot: the button
- * doubles as the "is my number in?" light, so that question does not need a
- * sheet visit to answer.
+ * one thing about it that moves — the fixed-frequency rainbow only while music
+ * is playing. There is no audio analyser here: `playing` is just a class toggle,
+ * so the mark has no backgrounding/audio-context lifecycle of its own.
+ * Everything this component still decides about the mark is the `qqBound` label:
+ * the button remains the way into 账号, and the state is available to assistive
+ * technology / the tooltip without a visible dot.
  *
  * The library's *name* did not leave with the title, though: it is still here as
  * the page's only `<h1>`, off screen (see `.sr-only`). It is the one thing that
@@ -85,7 +86,6 @@ const TrackList = function ({
     onToggleTrack,
     onOpenDrive,
     onGoAccount,
-    audioRef,
     menuOpen,
     onOpenMenu,
     qqBound,
@@ -147,26 +147,16 @@ const TrackList = function ({
                         way into 账号 — the sheet holding the QQ number, 听歌排行,
                         the sync button and the appearance switch.
 
-                        It is `MarkNote`, which owns the artwork: the published
-                        icon's rainbow as the backdrop and the note that came off
-                        it redrawn as a path, so it can react to the music.
-                        `audioRef` is here for that alone — see `MarkNote` and
-                        `useBeat` for what it does with it.
+                        It is `MarkNote`, which owns the artwork: the rainbow
+                        is a fixed-frequency canvas score and the note is a
+                        static path. Playback only toggles the CSS drift class;
+                        there is no analyser or per-frame audio work here.
 
-                        What is still decided here is the **dot at its
-                        bottom-right**: grey = 未确认, green = 已确认. It is the
-                        answer to "did my number actually take?" at a glance,
-                        before opening a sheet to find out — the button *is* the
-                        indicator, so the state is legible from the list. */}
+                        The QQ state remains in the button label/title, but its
+                        decorative bottom-right dot is intentionally hidden.
+                    */}
                     <MarkNote
-                        audioRef={audioRef}
                         playing={isPlaying}
-                        // While playing the mark leaves the row's flow and
-                        // fills the whole header; the search field and the
-                        // icon actions float above it (z-index in this file's
-                        // stylesheet), so nothing has to stand down for
-                        // anything else — search open or not.
-                        wide={isPlaying}
                         qqBound={qqBound}
                         onOpen={onGoAccount}
                     />

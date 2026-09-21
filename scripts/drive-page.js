@@ -550,51 +550,6 @@ const drive = async (target, index) => {
     const enableStubs = () => send('Fetch.enable', { patterns: STUB_PATTERNS });
 
     /**
-     * Catch the beat's `AudioContext` — and its `AnalyserNode` — as they are
-     * made, so that the things that decide whether a tapped song is audible at
-     * all can be looked at.
-     *
-     * `h5/useBeat` reads `window.AudioContext` when the first track starts, so
-     * replacing the global before any tap captures every context the page
-     * creates. Registered twice on purpose: once for the document that is
-     * already loaded, and once for every document after it — the h5 stage
-     * reloads — because the hook has to be in place before the page's own
-     * scripts are.
-     *
-     * The analyser is worth catching for the same reason the context is: it is
-     * the path the sound itself takes (element → source node → analyser →
-     * destination), so an energy reading off it is the closest a headless
-     * browser gets to hearing the song, and it is what reads zero when the tap
-     * has gone wrong.
-     */
-    const captureAudioContexts = async () => {
-        const hook = `(() => {
-            if (window.__musicContexts) return;
-            const Orig = window.AudioContext || window.webkitAudioContext;
-            if (!Orig) return;
-            const contexts = [];
-            const analysers = [];
-            const Wrapped = function (...args) {
-                const ctx = new Orig(...args);
-                contexts.push(ctx);
-                return ctx;
-            };
-            Wrapped.prototype = Orig.prototype;
-            const origCreateAnalyser = Orig.prototype.createAnalyser;
-            Orig.prototype.createAnalyser = function (...args) {
-                const node = origCreateAnalyser.apply(this, args);
-                analysers.push(node);
-                return node;
-            };
-            window.__musicContexts = contexts;
-            window.__musicAnalysers = analysers;
-            window.AudioContext = Wrapped;
-        })()`;
-        await send('Page.addScriptToEvaluateOnNewDocument', { source: hook });
-        await evaluate(hook);
-    };
-
-    /**
      * Thirty seconds of a pulsing tone, as a real WAV file.
      *
      * The Drive library's audio is served from the same host as its listing, so
@@ -765,7 +720,6 @@ const drive = async (target, index) => {
     await send('Runtime.enable');
     await send('Network.enable');
     // Before the first tap: the beat's context is created on the first play.
-    await captureAudioContexts();
 
     process.stdout.write(`\n=== ${target.name}  ${target.url}\n`);
 
@@ -1766,22 +1720,21 @@ const drive = async (target, index) => {
             `${playsStubHits} request(s) to /plays`,
         );
 
-        /* --- and the note on the mark moves with the music -----------------
+        /* --- and the mark moves only in its fixed playing state -------------
          *
-         * The mark is a drawing now: the rainbow as a canvas-drawn backdrop
-         * (the bitmap `mark-bg.jpg` is gone — see `MarkNote.js`), and the note
-         * that was on the published icon redrawn as a path on top, so that
-         * both layers can breathe together with the beat. Three things can go
-         * wrong and all three pass a screenshot — the note can be drawn wrong,
-         * the backdrop can be missing or replaced by an image, and the note
-         * can simply never move. So the geometry is measured against the icon
-         * the trace came from, the backdrop is checked for a `<canvas>`
-         * (and *not* a `background-image` url), and the motion is read off the
-         * transform the note is given while the tone above is playing.
+         * The mark is a drawing now: the rainbow is a canvas-drawn backdrop
+         * (the bitmap `mark-bg.jpg` is gone), and the note is the same traced
+         * path on top. There is deliberately no audio analyser here anymore:
+         * playback only toggles the mark's fixed CSS animation class. Three
+         * things can still go wrong and all three pass a screenshot — the note
+         * can be drawn wrong, the backdrop can be missing or replaced by an
+         * image, and the playing class can fail to start the fixed drift. So
+         * geometry is measured against the icon trace, the backdrop is checked
+         * for a `<canvas>`, and the class / computed animation name are read
+         * while the Drive tone above is playing.
          *
-         * The box is `getBBox`, which is the path's own geometry and so does
-         * not move with the animation. The numbers are the published icon's:
-         * the note occupies x 147..395, y 109..395 of its 512-unit square.
+         * The box is `getBBox`, which is the path's own geometry. The numbers
+         * are the published icon's: x 147..395, y 109..395 of its 512 square.
          */
         const markShape = await evaluate(`(() => {
             const b = document.querySelector(${JSON.stringify(target.mark)});
@@ -1852,58 +1805,42 @@ const drive = async (target, index) => {
                 : (missing || `canvas=${markShape.hasCanvas ? 'yes' : 'no'} bg=${markShape.backdrop ? markShape.backdrop.slice(0, 40) : '(none)'}`),
         );
 
-        // The sentinel carries the reason, so a run that finds no note says
-        // whether the mark itself is gone or only the path on it. The filter
-        // below is a prefix test for the same reason.
-        const NO_NOTE = '(no note)';
-        const noteTransform = () => evaluate(`(() => {
+        const motionState = await evaluate(`(() => {
             const b = document.querySelector(${JSON.stringify(target.mark)});
-            const p = document.querySelector(${JSON.stringify(`${target.mark} svg path`)});
-            if (!p) return ${JSON.stringify(NO_NOTE)} + (b ? ' — mark drawn, no path' : ' — no mark at all');
-            return p.style.transform || '';
+            const canvas = b && b.querySelector('canvas');
+            const path = b && b.querySelector('svg path');
+            return {
+                playingClass: Boolean(b && [...b.classList].some((name) => /mark-playing/.test(name))),
+                animation: canvas ? getComputedStyle(canvas).animationName : '',
+                noteTransform: path ? path.style.transform : '',
+            };
         })()`);
-        const frames = [];
-        for (let i = 0; i < 12; i += 1) {
-            frames.push(await noteTransform());
-            await sleep(180);
-        }
-        const lifted = frames.filter((t) => t && !t.startsWith(NO_NOTE));
         check(
-            'the note on the mark lifts while the music plays',
-            lifted.length >= 10,
-            `${lifted.length}/${frames.length} frames displaced`,
+            'the mark starts its fixed CSS drift while music plays',
+            Boolean(motionState) && motionState.playingClass && motionState.animation !== 'none',
+            motionState
+                ? `class=${motionState.playingClass} animation=${motionState.animation || '(none)'}`
+                : '(no mark)',
         );
         check(
-            '...and it is moving rather than stuck at one height',
-            new Set(lifted).size >= 3,
-            `${new Set(lifted).size} distinct transforms over ${lifted.length} frames`,
+            '...and the note stays static (no breathing transform)',
+            Boolean(motionState) && motionState.noteTransform === '',
+            motionState ? `transform=${motionState.noteTransform || '(none)'}` : '(no mark)',
         );
 
-        /* --- and the graph survives the *next* song -------------------------
+        /* --- and playback still advances to a second song ------------------
          *
-         * The report that produced all of this was about the **second** song,
-         * and until now nothing in this file had ever played two songs on one
-         * element: every earlier playback happens in a fresh document, and a
-         * fresh document means a fresh `<audio>` and a fresh graph. So the two
-         * things only a second song can show were untested — that a tapped
-         * element survives its `src` being replaced (the source node is bound to
-         * the *element*, not to the resource it is playing), and that the audio
-         * still flows through a live context afterwards.
-         *
-         * "Still flows" is read off the analyser rather than off the context's
-         * state, because the analyser is the path the sound takes. It is also
-         * the reading that catches a tap gone wrong: a broken source outputs
-         * zeros while the element reports itself as playing.
+         * This check remains intentionally small. The mark no longer owns an
+         * AudioContext or an analyser, so the smoke test must not manufacture
+         * hidden contexts, zero analyser bins, or background resume paths just
+         * to prove a visual effect. The player itself still has to advance a
+         * second track on its one audio element, which is the actual playback
+         * contract.
          */
         const firstSrc = await evaluate("(() => { const a = document.querySelector('audio'); return a ? a.src : ''; })()");
-        const secondSong = await evaluate(`(async () => {
-            const c = window.__musicContexts && window.__musicContexts[0];
+        const secondSong = await evaluate(`(() => {
             const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
             if (rows.length < 2) return 'only one row to play';
-            // The system takes the context away first — the state iOS leaves
-            // behind after a trip to the background — and *then* the next song
-            // starts, which is the order the report describes.
-            if (c) await c.suspend();
             rows[1].click();
             return 'clicked';
         })()`);
@@ -1923,304 +1860,8 @@ const drive = async (target, index) => {
             `${secondSong}, ${secondPlaying.value && secondPlaying.value.why}`
                 + ` in ${(secondPlaying.ms / 1000).toFixed(1)}s`,
         );
-        // Sampled over several frames rather than read once: the analyser
-        // smooths, so a single reading right after a resume can be the reading
-        // from before it.
-        let loudest = 0;
-        for (let i = 0; i < 6; i += 1) {
-            const level = Number(await evaluate(`(() => {
-                const an = window.__musicAnalysers && window.__musicAnalysers[0];
-                if (!an) return -1;
-                const data = new Uint8Array(an.frequencyBinCount);
-                an.getByteFrequencyData(data);
-                let sum = 0;
-                for (let i = 1; i < 5; i += 1) sum += data[i];
-                return Math.round(sum / 4);
-            })()`)) || 0;
-            loudest = Math.max(loudest, level);
-            await sleep(200);
-        }
-        check(
-            '...and the analyser still reads the music through the new source',
-            loudest > 8,
-            `loudest 1-4 bin average over 6 frames: ${loudest}/255`,
-        );
-
-        /* --- and the sound survives the system taking the context away -----
-         *
-         * The regression this stage exists for. A media element source
-         * *replaces* the element's own output, so from the moment the element
-         * is tapped the song comes out of the `AudioContext` — which makes a
-         * context that is not running not a missing animation but a silent
-         * player, with the progress bar still moving and no error anywhere.
-         * iOS interrupts a context when the page leaves the screen (`state`
-         * reads `'interrupted'`, a state no other browser has), and the hook
-         * used to check only for `'suspended'`, so nothing ever asked it back:
-         * play a song, switch apps, come back, and every later song is silent.
-         *
-         * A headless browser cannot be backgrounded, so the interruption is
-         * done by hand — `suspend()` leaves the context in the state the system
-         * leaves it in — and then the page is told it is visible again. Nothing
-         * is clicked and no gesture is given: what is checked is that the app
-         * gets its own sound back, because nothing else in it can. (On a page
-         * that is on screen the frame loop is what notices; the tap, which is
-         * what iOS actually insists on, is the check at the very end.)
-         */
-        const contexts = await evaluate('window.__musicContexts ? window.__musicContexts.length : -1');
-        const interrupted = await evaluate(`(async () => {
-            const c = window.__musicContexts && window.__musicContexts[0];
-            if (!c) return 'no context captured';
-            await c.suspend();
-            return c.state;
-        })()`);
-        check(
-            'the beat reads a real analyser, on a context of its own',
-            contexts >= 1,
-            `${contexts} context(s), now ${interrupted}`,
-        );
-        await evaluate("document.dispatchEvent(new Event('visibilitychange'))");
-        const revived = await waitFor(
-            `(() => {
-                const c = window.__musicContexts && window.__musicContexts[0];
-                return c ? c.state : 'gone';
-            })()`,
-            (v) => v === 'running',
-            6000,
-        );
-        check(
-            '...and it comes back by itself when the system interrupts it',
-            revived.value === 'running',
-            `${interrupted} -> ${trace(revived)} in ${(revived.ms / 1000).toFixed(1)}s`
-                + ` (visibility=${await evaluate('document.visibilityState')})`,
-        );
-
         await evaluate("(() => { const a = document.querySelector('audio'); if (a) a.pause(); })()");
-        await sleep(900);
-        const settled = await noteTransform();
-        check(
-            '...and it goes back to rest when the music stops',
-            settled === '',
-            `transform=${JSON.stringify(settled)}`,
-        );
-
-        /* The other half of the same recovery, and the half that has to be
-         * isolated: a *tap*.
-         *
-         * On iOS a `resume()` is only honoured from a user gesture, and the tap
-         * that presses play arrives before the effect that watches playback has
-         * run — so the tap has to be answered by a listener that is already
-         * there, not by the effect. Pausing first is what makes this a test of
-         * that listener: with the music stopped the frame loop has returned and
-         * nothing else in the app is asking for the context at all, so the only
-         * thing that can bring it back is the tap itself.
-         */
-        const tapped = await evaluate(`(async () => {
-            const c = window.__musicContexts && window.__musicContexts[0];
-            if (!c) return 'no context captured';
-            await c.suspend();
-            document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-            return c.state;
-        })()`);
-        const afterTap = await waitFor(
-            `(() => {
-                const c = window.__musicContexts && window.__musicContexts[0];
-                return c ? c.state : 'gone';
-            })()`,
-            (v) => v === 'running',
-            4000,
-        );
-        check(
-            '...and a tap on the screen brings it back even while paused',
-            afterTap.value === 'running',
-            `${tapped} -> ${trace(afterTap)} in ${(afterTap.ms / 1000).toFixed(1)}s`,
-        );
-
-        /* --- and the repair the visitor had to do by hand -------------------
-         *
-         * `state` is not the only way for the graph to go quiet. A context that
-         * says `running` while its source node delivers nothing is silence too,
-         * with no promise to catch and no state to read — and the report from
-         * the device ended with the visitor repairing that themselves: go back
-         * to the page, pause, play again. The app now does it for them.
-         *
-         * The silence is forced rather than waited for: the analyser is
-         * overridden to report zeros, which is exactly what a dead source node
-         * reports, and within a few seconds the element must have been paused
-         * and started again. Nothing else in the app pauses it, so a pause event
-         * here is the nudge and cannot be anything else.
-         */
-        await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            if (!a) return 'no audio';
-            window.__nudgePauses = 0;
-            a.addEventListener('pause', () => { window.__nudgePauses += 1; });
-            a.play();
-            return 'playing';
-        })()`);
-        // Long enough for playback to be under way and the loop to be reading
-        // the real analyser, so that what follows is the override's doing.
-        await sleep(6000);
-        // ...and long enough that the repair had every chance to misfire: a
-        // nudge that fires while the graph is reading music pauses a healthy
-        // player, which is worse than the silence it was written for. Same
-        // counter the next check waits on.
-        const whileHealthy = await evaluate('(() => (window.__nudgePauses || 0))()');
-        check(
-            'a player that is reading music is never nudged',
-            Number(whileHealthy) === 0,
-            `${whileHealthy} pause(s) in 6.0s of healthy playback`,
-        );
-        const zeroed = await evaluate(`(() => {
-            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
-            if (!proto || !proto.getByteFrequencyData) return 'no analyser to override';
-            if (!window.__realGetByteFrequencyData) {
-                window.__realGetByteFrequencyData = proto.getByteFrequencyData;
-            }
-            proto.getByteFrequencyData = function (array) { array.fill(0); };
-            return 'zeroed';
-        })()`);
-        const nudged = await waitFor(
-            '(() => (window.__nudgePauses || 0))()',
-            (v) => Number(v) > 0,
-            12000,
-        );
-        check(
-            '...and a graph that reads nothing while the element plays gets a nudge',
-            Number(nudged.value) > 0,
-            `${zeroed}, ${nudged.value} pause(s) in ${(nudged.ms / 1000).toFixed(1)}s`,
-        );
-        const afterNudge = await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            return a ? (a.paused ? 'paused' : 'playing') : 'gone';
-        })()`);
-        check(
-            '...and the nudge leaves the music playing',
-            afterNudge === 'playing',
-            `${afterNudge}`,
-        );
-        await evaluate(`(() => {
-            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
-            if (proto && window.__realGetByteFrequencyData) {
-                proto.getByteFrequencyData = window.__realGetByteFrequencyData;
-            }
-            return 'restored';
-        })()`);
-
-        /* --- and it still works with no frame loop at all ------------------
-         *
-         * The nudge above proves the repair, and it proves it in the one place
-         * the repair was *not* missing: `requestAnimationFrame` does not run for
-         * a hidden page, so a frame loop was never going to fix a phone in a
-         * pocket — and a phone in a pocket auto-advancing to a silent next song
-         * is the report this whole stage exists for. The repair therefore also
-         * rides on the element's own `timeupdate`, which keeps firing for as
-         * long as there is audio, on screen or off.
-         *
-         * Both halves of that are forced rather than waited for. The page is
-         * told it is hidden, and the frame loop is taken away — the next
-         * `requestAnimationFrame` hands back nothing, so the loop does not
-         * reschedule itself and `timeupdate` is the only clock left. The
-         * analyser is zeroed again, and the element must still be paused and
-         * started again, by a page that is drawing nothing at all.
-         *
-         * What this checks is the code path, not the platform: Chrome's own
-         * idea of whether this page is visible is untouched, so nothing here is
-         * throttled the way a real background page would be. That is the part
-         * that cannot be checked from a machine, and `?beatdebug=1` is for it.
-         */
-        const hidden = await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            if (!a) return 'no audio';
-            window.__realRaf = window.requestAnimationFrame;
-            window.requestAnimationFrame = function () { return 0; };
-            Object.defineProperty(document, 'hidden', {
-                get: function () { return true; },
-                configurable: true,
-            });
-            window.__nudgePauses = 0;
-            // Which resource the element is on, so that a pause which is really
-            // the next track arriving can be told apart from the repair. See
-            // below.
-            window.__nudgeSrc = String(a.currentSrc);
-            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
-            if (proto) proto.getByteFrequencyData = function (array) { array.fill(0); };
-            return 'hidden, no frame loop';
-        })()`);
-        // The nudge above spent one of the three a track gets, and the next one
-        // is not allowed until the cooldown has passed — which is the point of
-        // the cooldown, so the wait is the feature working.
-        const hiddenNudged = await waitFor(
-            '(() => (window.__nudgePauses || 0))()',
-            (v) => Number(v) > 0,
-            25000,
-        );
-        // A pause on its own proves nothing here, and finding that out is what
-        // the mutation test for this check is: a track that ends while it is
-        // running pauses the element too, because the next one arrives as a new
-        // `src` — so with the `timeupdate` listener renamed away, this check
-        // still went green on a pause that had nothing to do with the repair.
-        // The repair leaves the element on the track it was already on, so the
-        // pause only counts if the resource did not change. Without that, this
-        // check passes for the wrong reason, which is the one failure mode a
-        // smoke test cannot afford.
-        const sameTrack = await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            return a ? String(a.currentSrc) === window.__nudgeSrc : false;
-        })()`);
-        check(
-            '...and it still runs with no frame loop, off screen, where the report came from',
-            Number(hiddenNudged.value) > 0 && sameTrack === true,
-            `${hidden}, ${hiddenNudged.value} pause(s) in ${(hiddenNudged.ms / 1000).toFixed(1)}s`
-            + (sameTrack === true ? '' : ', but the element moved on to another track — that pause was not the repair'),
-        );
-        await evaluate(`(() => {
-            window.requestAnimationFrame = window.__realRaf;
-            delete document.hidden;
-            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
-            if (proto && window.__realGetByteFrequencyData) {
-                proto.getByteFrequencyData = window.__realGetByteFrequencyData;
-            }
-            return 'restored';
-        })()`);
-
-        /* --- and the readout the next report will be made of ---------------
-         *
-         * Everything above is checked from a machine that can see the page from
-         * the inside. A phone cannot be looked into at all, and the whole
-         * subject of this stage is invisible from the outside — a silent player
-         * reports itself as playing, draws a moving progress bar, and logs
-         * nothing. So the page can be asked to say what it knows:
-         * `?beatdebug=1`. That makes it worth a check of its own, in both
-         * directions: the box must not exist for a visitor who did not ask for
-         * it, and it must be there — reading a context state — for one who did.
-         */
-        const optIn = await evaluate("document.getElementById('beat-debug') ? 'present' : 'absent'");
-        check(
-            'the beat readout is opt-in — no ?beatdebug=1, no box',
-            optIn === 'absent',
-            String(optIn),
-        );
-        await send('Page.navigate', { url: `${target.url}?beatdebug=1` });
-        await sleep(2500);
-        const asked = await evaluate(`(() => {
-            const rows = [...document.querySelectorAll(${JSON.stringify(target.rows)})];
-            if (!rows.length) return 'no rows';
-            rows[0].click();
-            return 'clicked';
-        })()`);
-        const readout = await waitFor(
-            `(() => {
-                const box = document.getElementById('beat-debug');
-                return box ? box.textContent : '';
-            })()`,
-            (v) => typeof v === 'string' && v.indexOf('state=') !== -1,
-            25000,
-        );
-        check(
-            '...and ?beatdebug=1 draws one, reporting the context it found',
-            typeof readout.value === 'string' && readout.value.indexOf('state=') !== -1,
-            `${asked}, ${JSON.stringify(String(readout.value).split('\\n')[0].slice(0, 110))}`,
-        );
+        await sleep(500);
 
         /* --- and a slow public library cannot land on top of the Drive list --
          *

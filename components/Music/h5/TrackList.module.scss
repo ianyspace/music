@@ -81,12 +81,6 @@
     gap: 8px;
     flex-shrink: 0;
     margin-left: auto;
-    /* Float above the mark while it plays: the mark goes absolute and fills
-       the whole header (see `MarkNote.module.scss`), and these need to sit on
-       top of it — visually and for taps. `z-index` only applies to positioned
-       elements, hence the `position: relative`. */
-    position: relative;
-    z-index: 1;
 }
 
 /* bare icon buttons (search / 我喜欢 / more) — no circle frame */
@@ -152,10 +146,6 @@
     height: 34px;
     padding: 0 4px 0 12px;
     border-radius: 17px;
-    /* Same floating as `.head-actions`: the mark fills the header while it
-       plays, and the unfolded field rides on top of it. */
-    position: relative;
-    z-index: 1;
     background: var(--field);
     transition: box-shadow 0.2s;
     animation: search-open 0.22s cubic-bezier(0.32, 0.72, 0.2, 1) both;

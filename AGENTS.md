@@ -169,34 +169,18 @@
   - **它是圆角方块，不是圆**。画的是应用图标，圆形让它读成头像 —— 那正是这个按钮
     以前的样子（也正因为那样，头像搬去了「账号」页的身份卡）。圆角归按钮
     （`border-radius: 11px`），底图跟着 `background-size: cover`，两者不会走散。
-  - **QQ 状态点已移除**（原来右下角灰/绿一个点，环用 `--badge-ring`）：播放时标志会
-    拉宽成一条变宽的 bar，**一个点钉在会动的边上读起来像 glitch**，没有稳定的角可挂。
-    状态本身没丢 —— 仍在按钮的 `title` / `aria-label`（「账号，已确认/未确认 QQ」）里。
-    若将来要恢复「一眼可见」，落点是「账号」页的身份卡，不是这个会变形的按钮。
-  - **播放时的宽条**：`TrackList` 传 `wide={isPlaying && !searchOpen}`，`.mark-wide` 把
-    `flex-grow` 升到 1，**加宽到哪由行布局自己算**（吃到尾部的操作按钮前为止），
-    不量像素。`flex-grow` 是可动画的数值，transition 0.4s 让展开是「胀开」不是「跳变」；
-    40px 的 `width` 留作 flex basis，所以起点就是原来的方块。搜索框展开时宽条让位
-    （两个都抢 `flex: 1` 会把一行挤成两半）。
-  - **播放时出现一串大大小小的音符**（`FLOATING_NOTES`，3 个，同一个描出来的 NOTE
-    路径，不同尺寸/座位/呼吸深度），`opacity` 过渡淡入淡出而不是卸载 —— refs 要保持
-    有效给 `paint` 呼吸用。浮层 `pointer-events: none`，按钮是唯一点击目标。
-    浮动音符的 path 排在大音符 path 之后，烟雾测试的 `svg path` 选择器仍落在大音符上。
-  - **它是应用自己的图标，但拆成了两层**：底图是 `<canvas>` 现场画的（`MarkNote.js`
-    的 `drawBackdrop`，七条正弦波带的彩虹），音符是画在上面的一条 `<path>`。
-    **为什么要拆**：位图里的音符动不了，而播放时它要跟着节奏呼吸；只有路径能呼吸。
-    底图原本是 `public/mark-bg.jpg`（那张 1440×1440 原图去掉音符之后的版本），那张
-    位图连同 `assetUrl('/mark-bg.jpg')` 那条规矩一起拿掉了 —— **底图不再是一张图，
-    也不再需要 `assetUrl`**：画布在组件里画一次（`DRAW_SIZE = 160`，4× 显示尺寸，
-    浏览器降采样到 40px），动的是 `transform: scale(...)`，不是像素。`MarkNote.js`
-    顶部写着音符路径是怎么从已发布的 `icon-512.png` 上描出来的（阈值化 → 边界追踪 →
-    简化，栅格化回去差 1.72%，全在 1px 抗锯齿带里），**别改成曲线拟合**，实测更差。
-  - **favicon 那一套没动**（`_document.js` 用 `${BASE_PATH}/icon-512.png`，
-    PNG 三档还是 `favicon.ico` / `icon-192` / `icon-512` / `apple-touch-icon`）：
-    标签页上那张仍然带音符，因为那里没有东西需要动。
-  - **画布尺寸只在挂载时设一次**（`useEffect` 的空依赖管 buffer 和 DPR），
-    但**播放时每帧重画**（见下面「底图波纹会动」条）—— 这两条不矛盾：
-    尺寸/DPR 是一次性的，内容随时间变。
+  - **QQ 状态点已移除**（原来右下角灰/绿一个点）：状态本身仍在按钮的 `title` /
+    `aria-label`（「账号，已确认/未确认 QQ」）里，但视觉上不再画点。
+  - **播放不改变 logo 尺寸**：没有宽条、没有 `wide`、没有 `flex-grow`，始终是 40px
+    圆角方块，header 里的搜索和操作按钮保持原本的布局与点击区域。
+  - **它是应用自己的图标，但拆成了两层**：底图是 `<canvas>` 现场画的固定彩虹印谱，
+    音符是画在上面的一条静态 `<path>`。底图原本是 `public/mark-bg.jpg`，那张位图
+    连同 `assetUrl('/mark-bg.jpg')` 规则一起拿掉了 —— **底图不再是一张图，也不再需要
+    `assetUrl`**。`MarkNote.js` 挂载时只画一次 160px 缓冲，播放时只是 CSS 平移已画好的
+    画布；音符没有 `transform`，不会呼吸、跳动或放大。
+  - **固定节奏只有一条**：`.mark-playing .bg` 使用 `rainbow-score-drift 2.6s`，
+    不读音频、不拆频段、不重画 canvas；暂停时 class 消失，动画停止。因为没有 Web Audio
+    监听，切后台不会牵连 logo 的动画链路。
   - **它曾经是访客头像**（绑了 QQ 就是 QQ 头像）。那个盘子连同它的全部讲究搬去了
     「账号」页的身份卡（`Account.module.scss` 的 `.identity-avatar`）——**一个头像说的是
     「听歌的是谁」，而这个按钮说的是「设置在哪」**，两件事不该长在同一个位置上。
@@ -995,100 +979,21 @@ components/Music/three/
 - **光标推开粒子用的是射线与地面平面的交点**（`stage.aim(x, y)`，落在 `RING_Y` 高度），
   不是屏幕坐标。这样同一套推开逻辑在扁盘和立环上都是对的，
   而且悬停（没按播放、没拖拽）也要调用 —— 不然鼠标划过是一片没有反应的空场。
-- **`analyzer.js` 用的是裸 Web Audio，不是 `THREE.Audio`。** `THREE.Audio` 自带播放，
-  而播放必须归 `core/PlayerAudio` 那个唯一 `<audio>` 所有（只有它能播 blob、
-  报 `timeupdate`、跨路由存活）。这里要的是「接一根线」，对应的节点就是
-  `MediaElementAudioSourceNode`。**一个元素只能建一次 source**（第二次抛
-  `InvalidStateError`），所以图按元素存在模块级 `WeakMap` 里，重挂载时取回。
-  挂不上（浏览器不支持 / 上下文起不来）就退到合成节拍（1.3Hz + 2.1Hz 两条正弦）——
-  一个因为音频图失败而彻底僵住的场景看起来是坏的，一个按假节拍脉动的场景看起来是可视化。
-- **`AudioContext` 延迟到第一次播放才建**，并 `resume()`：页面加载就建会以 suspended 起步
-  且浏览器会告警，而从不按播放的访客根本不需要它。
-- **上下文只要不是 running，歌就是哑的** —— 因为 `MediaElementAudioSourceNode` **替换**了
-  元素自身的输出，之后声音只从上下文出来，而元素自己照样报 playing、进度条照样走。
-  所以 `ensureRunning()`（`analyzer.js` 与 `h5/useBeat.js` 各一份）问的是**否定式**：
-  `state !== 'running'` 就 `resume()`，只有 `'closed'` 例外。
-  **光判 `'suspended'` 是不够的**：iOS 在页面离开屏幕时不是 suspend 而是 **interrupt**
-  （`state === 'interrupted'`，只有 Safari 有这个态），判 `'suspended'` 正好漏掉
-  「切后台之后每一首都静音」这一整类 bug。重试按图限流（`RETRY_MS` = 1.5s），
-  因为 `update()` / 帧循环每帧都会问一次。
-- **别在页面隐藏时 `suspend()` 上下文**：那是把歌静音，不是把动画停下来 ——
-  `usePlayer` 预取下一首就是为了后台能连播。`ThreeStage` 的 `onVisibility` 只停 rAF；
-  恢复靠回来时的 `resume()` 和每帧的重试，而不是靠 `suspend`/`resume` 成对。
-- **静音还有第二种来源，两份实现现在都修了。** 上下文 `state === 'running'` 但 source node
-  送出来的是静音 —— 没有 promise 可 catch、没有 state 可判、控制台一个字没有。真机复测的结论是
-  「手动暂停再播放一次，这一页就再也没哑过」，所以 `h5/useBeat.js` 与 `three/scene/analyzer.js`
-  都会在「元素自称在播而图连着 3 秒读不到东西」时自己把元素 `pause()` 再 `play()`（`nudge()`）。
-  两份的判据都是同一个形状的 `watch()`：按图限流 `NUDGE_COOLDOWN_MS` = 15s、每首最多 3 次，
-  预算存在图上而不是循环里。**两份也都必须挂两个调用者** —— 帧循环（在屏）和元素自己的
-  `timeupdate` / `playing`（离屏）。**只写在帧循环里等于没写**：rAF 在页面隐藏时不跑，
-  而报告恰恰来自那里（手机在口袋里自动接了下一首）。细节见下面 h5 那一节。
-- **手机端有一份自己的、`h5/useBeat.js`**（三棵树不许互相 import，所以是复制而不是共用；
-  它照着 `THREE.MathUtils.damp` 的写法平滑，读同一个频段）。它和 `analyzer.js` 的差别，
-  以及两边都得守住的东西：
-  - **只有 `blob:` 源才接分析器。** `createMediaElementSource` 喂跨域资源时输出恒为 0，
-    而且它会**替换元素自身的输出** —— 接上去不只是拿不到频谱，**还会把歌静音**。
-    本项目的播放源恰好是 blob（`usePlayer` 先下字节再 `createObjectURL`），同源，所以能读；
-    那个 `/^blob:/` 守卫挡的就是这个。**别删。**
-  - **dB 窗口是 `-70..-10`，不是这里的 `-84..-14`。** 后者是给「一直在亮」的辉光挑的；
-    一个音符拿它会长期钉在顶部（实测恒在 0.89–1.2），看着像坏了。
-  - 它**不走 React state**：每秒 60 次的电平不该进 state，直接写元素的 `style.transform`。
-    呼吸幅度在 `MarkNote.js` 的 `BREATH_BG` / `BREATH_NOTE`（满电平 10% / 24%）。
-    **7% / 14% 试过一版，40px 上是 1.4px / 3px，肉眼看不见**（原跳动的抬升折算是 4px）——
-    调这类幅度别只看数学，要在真机上对。24% 是几何上限以内（音符四角还在 viewBox 里）。
-  - **底图波纹会动**：`drawBackdrop` 每帧重画（由 `useBeat` 的循环驱动，暂停即冻结），
-    每条波界有自己的漂移速度（`waveDrift`）和随电平涨落的振幅（`WAVE_AMP` 0.06，
-    静止时 0.55 倍），**外加随电平的乐谱式起伏**（`SCORE_BOUNCE` 0.12，每条波界按
-    `sin(b×1.7)` 固定相位反向起落 —— 重拍一来各条错落地向上/向下拱，读成「五线谱
-    在跳」；±6% 起伏 + ±6% 静态波 + 14.3% 条高，条带不会互相穿越）。第一版只画一次 +
-    整体 scale，被用户打回：「背景波纹没动」—— 40px 上 7% 的 scale 读不出运动，
-    波纹要自己漂。七条 49 点多边形一帧的开销可忽略，色带不透明铺满画布，无需 clearRect。
-  - **它挂了两个 document 级监听**（`pointerdown` / `visibilitychange`），而且挂在组件
-    生命周期上、不挂在 `playing` 上。两个原因：iOS 只认**手势里**的 `resume()`，而**开始
-    播放的那一次点击发生在这个 effect 跑之前**（那个 effect 是被 `play` 事件推动的）；
-    以及 rAF 在页面隐藏时不跑，所以「回来了」只有 `visibilitychange` 知道。
-    别把这两个监听挪进播放的那个 effect —— 那正好错过需要它的那一刻。
-  - **光 `resume()` 不够，所以还有一次「暂停再播放」。** 真机复测的结论：切后台自动接上
-    下一首仍然会哑，而**回页面手动暂停再播放之后，这一页就再也没哑过**。所以多了一个
-    判据 —— 元素自称在播（`!paused && !ended && currentTime > 0`）而图**连着 `QUIET_MS` = 3s
-    读不到任何东西**（上下文没 running，或 running 但送出来的是静音），就照用户的做法把元素
-    `pause()` 再 `play()`（`nudge()`）。它**只在这两种「本来就没声音」的状态下才会触发**，
-    所以那一下停顿是听不见的；图正常读到音乐时它一次都不会发生。
-    按图限流（`NUDGE_COOLDOWN_MS` = 15s）且每首歌最多 `NUDGE_LIMIT` = 3 次 ——
-    一个永远触发的「修复」本身就是 bug。**冒烟里那条断言是把分析器改写成恒返回 0 来触发的**
-    （那就是坏掉的 source node 的读数），不是等出来的。
-  - **判据只写在一处（`watch()`），因为它有两个调用者，而且缺一不可。** 帧循环是页面上时的
-    那个，但 **rAF 在页面隐藏时根本不跑** —— 而报告恰恰来自那里（手机在口袋里自动接了下一首，
-    下一首是哑的）。所以第二个调用者是元素自己的 `timeupdate`（有音频就一直在，约 4 次/秒，
-    隐藏与否都一样），另外还挂了 `playing`，好在换曲那一刻立刻查一次。两处读写的都是
-    **同一组挂在图上的字段**，所以预算是一份预算，不会重复 nudge。`QUIET_MS` 因此是对**墙上时间**
-    判的，不是数 tick —— 两个时钟频率差 15 倍。**别把修复只留在帧循环里。**
-    - `alive` 里那个 `!audio.ended` 不是洁癖：元素放到末尾时 `paused === false`，只判 `paused`
-      会把「放完了的歌」当成「在播的歌」，而对一个 ended 元素 `play()` 是**从头重放** ——
-      一个会重播已结束歌曲的「修复」。
-    - 冒烟里那条隐藏断言是**造出来**的：把 `document.hidden` 定义成 `true`、把
-      `window.requestAnimationFrame` 换成返回 0 的桩（帧循环不再自排下一帧，于是
-      `timeupdate` 成了唯一的钟），再照旧把分析器改写成恒返回 0。**它验的是代码路径，不是平台**
-      —— Chrome 自己并不认为这个页面隐藏了，所以没有任何节流；真机上被节流的那部分只能在
-      真机上看，`?beatdebug=1` 就是为它准备的。
-    - **这条断言第一版是假的，是突变测试抓出来的。** 只数 `pause` 事件的话，把 `timeupdate`
-      改名（监听就再也不会注册）它**照样绿** —— 因为歌放到末尾时 `handleEnded` 会换 `src`，
-      而给一个正在播的元素换 `src` 本身就会 `pause` 一次。所以那条断言现在还比
-      **`currentSrc` 有没有变**：修复会让元素留在原来那首上，换歌才会变。没有这个比对，
-      它就在为错的原因通过 —— 而「为错的原因通过」是冒烟唯一赔不起的失效方式。
-  - **3D 页那份是同一套，冒烟里也有同样两条**（`target.nudge`，只在 3d 那份 spec 上开；
-    3d 从 16 项变成 19 项）。它的形态和 `useBeat` 不一样：那是个工厂（`createAnalyzer`），
-    `update()` 由 `ThreeStage` 的帧循环驱动，所以 `watch()` 的第二个调用者挂在它自己的
-    `attach(audio)` 上、在 `dispose()` 里摘掉。**改一份就要改另一份** —— 它们是复制不是共用
-    （三棵树不互相 import）。突变测试（把 3d 产物的 `timeupdate` 改名）实测变红：
-    `0 pause(s) in 25.1s`。
-  - **3D 页没有 `?beatdebug=1`**：读数那份在 `h5/beatDebug.js` 里，而三棵树不互相 import。
-    所以 3D 页再出事时只有冒烟那两条加用户的描述，这一点先知道比事后发现好。
-  - **`?beatdebug=1` 是这个 bug 的读数**（`h5/beatDebug.js`）：上下文 state、是否读到声音、
-    静音了多久、nudge 用了几次、当前电平、元素在放哪一首，外加最近几条事件
-    （`visibility` / `resume ->` / `resume refused` / `nudge`）。手机上没有控制台，
-    而这个 bug 的全套证据都在页面里面 —— 再出事时让用户开这个 URL 截图，比再猜一轮强得多。
-    盒子是 `pointer-events:none`：点屏幕本身就是这个 app 需要的那一个手势，读数不能吃掉它。
+- **手机端 logo 不再接音频分析器**：`h5/MarkNote.js` 只在挂载时把固定的彩虹印谱画进
+  canvas；`playing` 只负责切换 `.mark-playing`，让 CSS 以固定 `2.6s` 节奏平移彩虹。
+  没有 `AudioContext`、`AnalyserNode`、频段拆分、合成节拍、后台 `resume` 或 `nudge`，
+  所以切后台不会因为 logo 动画去碰播放链路。
+- **音符是静态的**：没有 `translate`、`scale`、呼吸，也没有浮动音符家族；logo 不放大，
+  始终是 header 左侧的 40px 圆角方块。右下角 QQ 状态点继续隐藏，状态只保留在
+  `title` / `aria-label`。
+- **固定印谱的设计边界**：`BAND_COLORS`、`WAVE_AMP`、`WAVE_FREQ` 和 `WAVE_PHASES`
+  都是 `MarkNote.js` 的常量，画布只画一次；真正的运动只有 `.bg` 上的
+  `rainbow-score-drift` CSS keyframes。不要把 `playing` 改回音频电平，也不要为这枚 logo
+  增加 Web Audio 监听。
+- **烟雾测试也跟着简化**：`scripts/drive-page.js` 只检查固定 CSS 动画类是否在播放时开启、
+  音符没有 transform，以及第二首歌仍能在同一个 audio 元素上播放；不再造
+  `__musicContexts` / `__musicAnalysers`，不再覆盖 `AnalyserNode`，不再测试 logo 的后台恢复。
+
 - 从 `/desktop` 进 `/3d` 会**换一个 `<audio>` 元素**，歌会停一下；但 `usePlayer`
   会用 `LAST_TRACK_KEY` / `LAST_PROGRESS_KEY` 把同一首按原位置**重新载入**（不自动播放）。
   这条链路依赖列表缓存，所以第一次访问、列表还没落盘时不要期待能续上。

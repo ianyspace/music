@@ -1,42 +1,12 @@
-// The app's mark — the leading end of the list's bar, and the way into 账号.
-//
-// These rules used to live in `TrackList.module.scss`, next to the bar they sit
-// in. They moved here when the mark stopped being an `<img>` and became a small
-// drawing that reacts to the music. At rest it is still the 40px rounded square
-// at `margin-left: 6px` that lines up with the covers below it; while music
-// plays it grows into a bar (`.mark-wide`), a family of small notes fades in
-// across it, and the QQ state dot is gone — a dot needs a corner, and a bar
-// that changes width has none; the state lives in the button's label instead.
+// The app's mark — a fixed 40px rounded square at the leading end of the
+// list's bar, and the way into 账号. The logo never grows and the note never
+// breathes. While music plays, only the fixed rainbow score drifts; playback
+// supplies a CSS class, not an analyser signal.
 
-/* A **rounded square**, not a circle. The artwork is an app icon, and the circle
-   made it read as an avatar — which is exactly what this button used to be, and
-   what now lives on 账号's identity card. The radius belongs to the button, and
-   the picture inside it is a background so the two cannot drift apart.
-
-   `position: relative` is for the floating-note layer, the one child that
-   positions itself against the button's box.
-
-   `overflow: hidden` is for the breathing: the canvas inside grows past the
-   button's edges on each beat, and without clipping the rainbow would spill
-   onto the bar. The clip is the rounded corner too — the canvas is a square
-   and the button is not, and the two shapes are reconciled by `border-radius`
-   on the button rather than by a mask on the canvas.
-
-   The flex properties are the widening mechanism. At rest the mark is
-   `flex: 0 0 auto` (its 40px, no growth); `.mark-wide` turns `flex-grow` up
-   to 1, so the bar eats exactly the free space between itself and the trailing
-   actions — "加宽直到右侧搜索" falls out of the row's own layout instead of
-   anybody measuring pixels. `flex-grow` is a number and *animatable*, so the
-   transition below makes the widening a smooth swell rather than a snap; the
-   40px `width` stays as the flex basis, which is why the bar starts its
-   journey from exactly the size it was.
-
-   `margin-left: 6px` is not a nudge to taste: it lines the mark up with the
-   covers *below* it. A row is a 44px thumb inset 4px into a column that is
-   itself inset 18px, so a cover's centre sits 44px from the page edge; a 40px
-   mark flush with the column would centre at 38. Six is exactly the difference.
-   The mark is not a row — it just has to agree with them about where this
-   column starts. */
+/* The button stays the same box in every state. That is deliberate: the earlier
+   full-header experiment made the logo take over the header and introduced
+   layout/stacking work that this mark does not need. The header's other
+   elements therefore keep their ordinary flow and hit areas. */
 .mark {
     position: relative;
     display: inline-flex;
@@ -53,15 +23,7 @@
     background-color: transparent;
     font-family: inherit;
     cursor: pointer;
-    /* The ease shared by every property the wide state animates. One curve,
-       one duration — the bar grows as one motion, not as five. */
-    --mark-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-    --mark-dur: 0.45s;
-    transition:
-        transform 0.15s,
-        width var(--mark-dur) var(--mark-ease),
-        height var(--mark-dur) var(--mark-ease),
-        border-radius var(--mark-dur) var(--mark-ease);
+    transition: transform 0.15s ease;
 
     @media (hover: hover) {
         &:hover {
@@ -74,144 +36,43 @@
     }
 }
 
-/* The playing state: the mark leaves the row's flow and fills the *whole*
-   header — not just the space between the elements, the header itself, padding
-   included. Everything else in the bar (search, the icon actions) floats above
-   it at a higher z-index (see `TrackList.module.scss`), which is why this can
-   be a `<button>` covering them without eating their taps: it sits under, they
-   sit on, and a tap lands on whoever is on top.
-
-   The animated route from square to full-bleed is a **keyframes animation**,
-   not a transition, for a structural reason: `position` itself cannot
-   transition, so the flip from in-flow to absolute cannot be eased — but every
-   property that *describes* the box can be keyframed. In flow the square sits
-   at (24px, 10px) — the header's 18px padding + the mark's 6px margin, and the
-   header's 10px top padding; the `from` frame plants the absolute box at
-   exactly that point (so the flip is invisible), and the `to` frame lands at
-   the header's corner with `width/height: 100%`. px → % interpolates fine in
-   keyframes. `fill-mode: both` holds the end state after the animation, which
-   is what keeps the mark full-bleed for as long as it plays. Radius goes to 0
-   with a plain transition (it is a normal property change either way): a
-   full-bleed surface with rounded corners is a card, and this is not a card,
-   it *is* the header while it plays.
-
-   `z-index: 0` is the floor of the header's stacking: the floating elements
-   sit at z 1. On the way back (class removed) the element re-enters flow
-   immediately and the `width/height` transition in `.mark` eases the shrink —
-   the position snaps, the size does not. */
-.mark-wide {
-    position: absolute;
-    margin-left: 0;
-    border-radius: 0;
-    z-index: 0;
-    /* The big note tracks the left edge instead of the centre: a note
-       centred in a full-width bar floats in nowhere, and the leading end is
-       where the mark has always lived. */
-    justify-content: flex-start;
-    animation: mark-spread var(--mark-dur) var(--mark-ease) both;
+/* The playing flag is the only thing playback changes. It starts one fixed
+   CSS cadence (`2.6s`) and does not read audio amplitude, so it keeps working
+   when the page is backgrounded and comes back without resuming an AudioContext.
+   `animation-play-state` is not used because the class itself entering/leaving
+   lets the browser interpolate from the current frame cleanly. */
+.mark-playing .bg {
+    animation: rainbow-score-drift 2.6s ease-in-out infinite alternate;
 }
 
-/* The big note keeps its aspect while its box goes full-bleed. It fills the
-   button's height (so it grows gently from 40px to the header's 60px as the
-   spread animates) and `aspect-ratio` stops the wide box from stretching it
-   into a smear — width follows height instead of the box. */
-.mark-wide .art {
-    width: auto;
-    height: 100%;
-    aspect-ratio: 1 / 1;
-}
-
-@keyframes mark-spread {
+@keyframes rainbow-score-drift {
     from {
-        left: 24px;
-        top: 10px;
-        width: 40px;
-        height: 40px;
+        transform: translate3d(-3px, 0, 0);
     }
     to {
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
+        transform: translate3d(3px, 1px, 0);
     }
 }
 
-/* The floating-note layer and its inhabitants. The layer is `pointer-events:
-   none` (the button is the tap target) and the notes fade with `opacity`
-   rather than unmounting: appearing and leaving are both transitions, and the
-   refs stay valid for `paint` to breathe through.
-
-   The asymmetry is the point: `.notes-on` carries a `transition-delay` so the
-   fade-in waits for the bar's 0.45s expansion to *finish* — 音符是展开完全后才
-   丝滑出现 — while the fade-out runs with no delay, because a bar that is
-   folding back up should not keep its notes hovering over a shrinking frame. */
-.notes {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.35s ease;
-}
-
-.notes-on {
-    opacity: 1;
-    transition-delay: 0.5s;
-}
-
-/* One floating note: an absolutely positioned square of `size` px, seat and
-   horizontal position set inline from `FLOATING_NOTES`. The scale transform is
-   written per frame by `paint` (breathing); this rule only carries the pivot.
-   The inner svg fills the box and inherits the same white ink + shadow as the
-   big note, so the family reads as one drawing at several scales. */
-.note-float {
-    position: absolute;
-    transform-origin: center;
-    will-change: transform;
-}
-
-.note-float svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-}
-
-.note-float-ink {
-    fill: #fff;
-    stroke: #fff;
-    stroke-width: 14;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 10px 9px rgba(38, 44, 74, 0.32));
-}
-
-/* The rainbow backdrop. The canvas itself takes the scale transform from
-   `paint` (via the `bgRef`); no wrapper, no extra box between the transform
-   and the pixels. `inset: 0` puts it flush with the button's content box, and
-   `display: block` kills the inline-canvas baseline gap that would nudge the
-   note a pixel or two down.
-
-   `will-change: transform` is a hint, not a requirement: the transform runs on
-   the compositor regardless, but the hint keeps the canvas on its own layer
-   so the note's transform does not invalidate it (and vice versa). It costs
-   one extra GPU layer for one button, which is not the budget this app worries
-   about. */
+/* The canvas is oversized *inside* the clipped mark, not the mark itself: the
+   extra 30% provides edge cover for the ±3px fixed drift, while the visible
+   button remains exactly 40px and never scales. A 160px backing store is 4×
+   the visible box on a 1× screen; device-pixel-ratio is applied when it is
+   drawn, so the same canvas stays sharp on retina screens. */
 .bg {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    left: -15%;
+    top: -15%;
+    width: 130%;
+    height: 130%;
     display: block;
     transform-origin: center;
     will-change: transform;
 }
 
-/* The note, drawn over the backdrop. The `viewBox` is the published icon's own
-   512-unit space, so the path's coordinates are the icon's — this element only
-   scales them down to the button.
-
-   `z-index: 1` lifts the note above the canvas. They are both positioned and
-   the canvas came first in the markup, so without this the order would still
-   work — but the number makes the intent obvious: the note sits on the
-   rainbow, not next to it. */
+/* The note is a static foreground. No transform is ever written to it, and
+   its centre/origin are intentionally absent: with no animation there is no
+   pivot to tune. `z-index` keeps it above the canvas. */
 .art {
     position: relative;
     display: block;
@@ -220,43 +81,16 @@
     z-index: 1;
 }
 
-/* The note itself. It is the one thing `useBeat` touches, and it is touched
-   through `style.transform` — so this rule carries the pivot rather than the
-   motion.
-
-   `transform-origin: center` (with `transform-box: fill-box`) puts the pivot
-   at the centre of the note's own bounding box. That is the right origin for a
-   breathing scale: the note grows and shrinks about its own middle, so the
-   flag and the head move together. The previous jump used `27% 100%` — the
-   bottom of the head, so the note rose off its stand. A breathing note has no
-   stand to rise off; the centre is what makes it pulse rather than lean. */
 .ink {
     fill: #fff;
-    /* The published icon draws the note with a soft shadow under it, which is
-       what keeps a white shape from looking pasted flat onto a light band — the
-       flag and the top of the head sit on the yellow one.
-
-       The filter is applied to an SVG child, so its lengths are in the path's
-       own 512-unit space, not in screen pixels: 13 and 12 are about one screen
-       pixel each at the 40px this is drawn at, which is the size the original's
-       shadow reads as. The trace walks pixel centres, so half a unit of stroke
-       puts the outline back on the true edge. */
     stroke: #fff;
     stroke-width: 1;
     stroke-linejoin: round;
     filter: drop-shadow(0 13px 12px rgba(38, 44, 74, 0.3));
-    transform-box: fill-box;
-    transform-origin: center;
-    will-change: transform;
 }
 
-/* The QQ state dot that used to live here (grey = 未确认, green = 已确认, hung
-   off the artwork's bottom-right corner, ringed with `--badge-ring`) is gone.
-   Two reasons: the user asked it hidden, and the mark no longer has a stable
-   corner for it — while playing the button is a bar of variable width, and a
-   dot pinned to a moving edge reads as a glitch. The state itself is not lost:
-   it is still in the button's `title` and `aria-label`
-   (「账号，已确认/未确认 QQ」), so the answer is one screen-reader query away
-   and one tooltip away, which is where it always also lived. If the at-a-glance
-   dot ever comes back, it belongs on 账号's identity card, not on a shape that
-   changes size. */
+@media (prefers-reduced-motion: reduce) {
+    .mark-playing .bg {
+        animation: none;
+    }
+}
