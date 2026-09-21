@@ -912,6 +912,15 @@ const drive = async (target, index) => {
                 header: Boolean(s.querySelector('header')),
                 collapse: Boolean(s.querySelector('button[title="收起"]')),
                 form: Boolean(s.querySelector('form')),
+                // 账号's identity card, and the only structural thing that is
+                // about *the card* rather than about the sheet: 清除 lives on
+                // the card and nowhere else. It is the card's fingerprint
+                // because the card's other half — the verdict — was a 已确认
+                // badge that has since been removed, and a test that reads a
+                // label the product no longer prints is a test that quietly
+                // stops asking anything.
+                card: [...s.querySelectorAll('button')]
+                    .some((b) => (b.innerText || '').trim() === '清除'),
                 text: (s.innerText || '').replace(/\\s+/g, ' ').trim(),
             };
         })()`);
@@ -1052,8 +1061,8 @@ const drive = async (target, index) => {
         );
         check(
             '...and it asks for a number instead of showing one',
-            Boolean(account) && account.form === true && !account.text.includes('已确认'),
-            account ? `form=${account.form} ${account.text.slice(0, 80)}` : '',
+            Boolean(account) && account.form === true && account.card === false,
+            account ? `form=${account.form} card=${account.card} ${account.text.slice(0, 80)}` : '',
         );
 
         const saved = await evaluate(`(() => {
@@ -1074,9 +1083,9 @@ const drive = async (target, index) => {
         const confirmed = await sheetState('账号');
         check(
             '...and the card replaces the form it was typed into',
-            Boolean(confirmed) && confirmed.form === false
-                && confirmed.text.includes('QQ 10001') && confirmed.text.includes('已确认'),
-            confirmed ? `form=${confirmed.form} ${confirmed.text.slice(0, 90)}` : '',
+            Boolean(confirmed) && confirmed.form === false && confirmed.card === true
+                && confirmed.text.includes('QQ 10001'),
+            confirmed ? `form=${confirmed.form} card=${confirmed.card} ${confirmed.text.slice(0, 90)}` : '',
         );
         // The claim under test: the likes made as a guest went *with* the number,
         // and they are still waiting because the API was stopped. Read from the
@@ -1165,8 +1174,8 @@ const drive = async (target, index) => {
         const afterClear = await sheetState('账号');
         check(
             '...and clearing it leaves the confirm block, nothing else',
-            Boolean(afterClear) && afterClear.form === true && !afterClear.text.includes('已确认'),
-            afterClear ? `form=${afterClear.form} ${afterClear.text.slice(0, 80)}` : '',
+            Boolean(afterClear) && afterClear.form === true && afterClear.card === false,
+            afterClear ? `form=${afterClear.form} card=${afterClear.card} ${afterClear.text.slice(0, 80)}` : '',
         );
 
         // Leave the run clean for the 我喜欢 stage, which expects a public

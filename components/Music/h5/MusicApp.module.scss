@@ -24,11 +24,6 @@
        ring drawn over artwork reads as a smudge rather than as a cut-out. It
        approximates what the glass header composites to over the page. */
     --badge-ring: #fbfbfd;
-    /* "Yes, that took" — the QQ number's confirmed state, on 账号's badge. The
-       dot on the list's app mark uses the vivid `#34c759` directly, because a
-       fill on top of artwork needs to shout; this one is *text*, so it has to
-       be legible on a pale badge instead. Same hue, two jobs. */
-    --ok: #1f8a3b;
     /* The default avatar. Apple Music's red ramp — the same red the app already
        uses for `--row-active` (#fa233b), so this is not a new colour entering
        the palette, just the lit version of it. The gradient is what makes the
@@ -85,7 +80,6 @@
         --field: rgba(120, 120, 128, 0.26);
         --card: rgba(28, 28, 34, 0.72);
         --badge-ring: #16161b;
-        --ok: #34c759;
         --slider-track: rgba(120, 120, 128, 0.34);
         --slider-fill: #f5f5f7;
         --option-color: #f5f5f7;

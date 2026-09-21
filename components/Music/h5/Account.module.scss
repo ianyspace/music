@@ -123,16 +123,10 @@
     gap: 4px;
 }
 
-/* Name + verdict on one line. `min-width: 0` on both the row and the name is
-   what lets a long QQ number ellipsis instead of pushing the badge off the
-   card. */
-.identity-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-}
-
+/* The number, on its own. It used to share this line with a 已确认 badge; the
+   badge is gone (the card *is* the confirmation), so there is no second thing
+   for the number to make room for — but the ellipsis stays, because a stored
+   value can always be longer than the card. */
 .identity-name {
     min-width: 0;
     overflow: hidden;
@@ -147,29 +141,6 @@
     font-size: 12.5px;
     line-height: 1.5;
     color: var(--text-2);
-}
-
-/* 已确认 / 未确认 — the word for the state, at the end of the identity card.
-
-   Green, and the same green as the dot on the list's app mark: the visitor's
-   number is *one* piece of state, so it wears one colour wherever it is drawn.
-   (`Profile.module.scss` has the same pair in blue for the Drive connection —
-   a different question, deliberately a different colour.) */
-.badge {
-    flex-shrink: 0;
-    padding: 3px 9px;
-    border-radius: 9px;
-    background: var(--field);
-    border: 1px solid var(--hairline);
-    color: var(--text-2);
-    font-size: 11.5px;
-    font-weight: 600;
-}
-
-.badge-on {
-    background: rgba(52, 199, 89, 0.16);
-    border-color: rgba(52, 199, 89, 0.4);
-    color: var(--ok);
 }
 
 /* --- QQ number --- */

@@ -32,11 +32,18 @@ import styles from './Account.module.scss';
  * whatever was typed — which meant the same question ("is my number in?") had
  * two half-answers on screen at once, and a visitor could read the card, the
  * field's placeholder and the avatar and still not know. Now the sheet shows
- * exactly one of them: with a number, the card (name, 已确认 badge, avatar) and a
- * 清除 button on it; without one, the confirm block — the field, 确认 and the
- * hint. Clearing is the same class of action as 取消置顶: the visitor typed the
- * number, so they have to be able to take it back, and taking it back returns
- * the block they typed it in.
+ * exactly one of them: with a number, the card (avatar, the number, what the
+ * number is for) and a 清除 button on it; without one, the confirm block — the
+ * field, 确认 and the hint. Clearing is the same class of action as 取消置顶:
+ * the visitor typed the number, so they have to be able to take it back, and
+ * taking it back returns the block they typed it in.
+ *
+ * The card carries no verdict word. It had a green 已确认 badge for a while and
+ * the badge was the one thing on it that said nothing the card did not already
+ * say: a card *is* the confirmation, and its alternative — the empty field — is
+ * the absence of one. The state is still spoken, just from where it is actually
+ * needed: the app mark in the list's bar labels itself 已确认 QQ / 未确认 QQ and
+ * wears a dot in the same green.
  *
  * The QQ number is the visitor's, not the app's: it is stored in this browser
  * (`QQ_KEY`) and it is the key *everything personal* is recorded under — play
@@ -127,13 +134,10 @@ const Account = function ({
                                 )}
                             </span>
                             <span className={styles['identity-text']}>
-                                {/* Name and verdict on one line, so the badge
-                                    sits next to the thing it describes rather
-                                    than floating at the card's edge. */}
-                                <span className={styles['identity-head']}>
-                                    <span className={styles['identity-name']}>{`QQ ${qq}`}</span>
-                                    <span className={`${styles.badge} ${styles['badge-on']}`}>已确认</span>
-                                </span>
+                                {/* Just the number, on its own line. It used to
+                                    share this line with a 已确认 badge — see the
+                                    note at the top of the file for why it left. */}
+                                <span className={styles['identity-name']}>{`QQ ${qq}`}</span>
                                 {/* Two things, said plainly: where the picture
                                     came from, and what the number is *for* —
                                     the second used to be the form's hint line,
