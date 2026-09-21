@@ -4,10 +4,15 @@ on:
   push:
     branches:
       - master
-    # Docs and the smoke script cannot change what gets built, and this workflow
-    # does nothing *but* build and deploy — so a push that touches nothing else
-    # does not need one. (`AGENTS.md` had to be corrected after the mark was
-    # redrawn, and paying a full deploy for that is pure waste.)
+    # Docs, the smoke script, and the Cloudflare Worker cannot change what gets
+    # built, and this workflow does nothing *but* build and deploy — so a push
+    # that touches nothing else does not need one. (`AGENTS.md` had to be
+    # corrected after the mark was redrawn, and paying a full deploy for that is
+    # pure waste.)
+    #
+    # `cloudflare-worker/**` is a *separate* deployment (`npx wrangler deploy`,
+    # run by hand) against a different service. The static build never reads a
+    # file from it, so a Worker-only push has nothing for this workflow to do.
     #
     # The caveat, and the reason this list is short: **if a test job is ever
     # added to this file, `scripts/**` has to come off it** — a change to the
@@ -15,6 +20,7 @@ on:
     paths-ignore:
       - '**.md'
       - 'scripts/**'
+      - 'cloudflare-worker/**'
   # Still available for "deploy anyway", which is also how to publish a
   # docs-only change.
   workflow_dispatch:

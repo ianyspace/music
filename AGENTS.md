@@ -503,6 +503,86 @@ Cloudflare D1，由 `cloudflare-worker/` 的 `POST /plays` / `GET /stats`（播�
 被留下 —— 和 `toggleLike` 拒绝 Drive 同一个理由。
 
 
+## 安全姿态
+
+**威胁模型一句话**：静态站没有服务端，所以攻击面**全在 `cloudflare-worker/`**；
+那里的风险是「被刷」和「被读」，不是「被拿下」。前端那部分要守的只有一条（下面第 2 条），
+但它是最贵的一条。**别把这一节当成待办清单 —— 它记的是「什么是有意的、什么是不能碰的」。**
+
+### 1. 已经干净、不用再改的部分
+
+- 站点是 `output: 'export'` 的纯静态产物，**没有服务端、没有凭据、没有 Service Worker**。
+- D1 的每一条 SQL 都走 `?1` 绑定参数。唯一拼进语句里的是模块常量
+  （`RANKING_LIMIT`、`MAX_LIKES_PER_REQUEST`）→ 没有注入面。
+- 仓库**和全部提交历史**里 `client_secret` / `AIza` / `-----BEGIN` / `ghp_` 零命中。
+- R2 桶根路径 404，不能列目录。
+
+### 2. 必须守住的形状：存储型 XSS
+
+这条不是「已经修好了」，是**「现在正好是安全的」**：
+
+> 开放写入口（`POST /plays`、`POST /likes` 谁都能写）+ `track_name` 是访客自己传的字符串
+> + 它会从 `/stats`、`/likes` 原样读回来 + 它会渲染进「听歌排行」和「我喜欢」。
+
+也就是说，**一条完整的存储型 XSS 通道已经搭好了，唯一挡住它的是 React 的自动转义。**
+所以：
+
+- **任何时候都不要**把服务端回来的字符串交给 `dangerouslySetInnerHTML` / `innerHTML` /
+  `eval` / `new Function`。歌名、歌词、`track_id`、QQ 号全算「服务端回来的字符串」。
+  想给歌名加粗、上色、加徽章，用 JSX 拆成元素，不要拼 HTML 字符串。
+- 服务端侧已经加了 `X-Content-Type-Options: nosniff`（在 `withHeaders` 里统一加，
+  缓存 HIT 分支单独补一次），**但那是第二道**。第一道是上面那条纪律。
+- 长度在两端都截断了（`MAX_TRACK_NAME_LENGTH` = 200），**这不是 XSS 防护**，
+  只是防止有人往库里塞一篇小说。
+
+### 3. 无鉴权是设计，不是遗漏
+
+`normalizeQq` 检查的是**形状**（5–11 位数字），QQ 号是访客自己填的**标签**，
+不是凭据 —— 没有东西可以用来验证「你真的是这个号」。所以下面这些是**已知且接受**的后果：
+
+| 谁能做 | 做什么 |
+| --- | --- |
+| 知道某个 QQ 号的人 | `GET /stats?qq=` 读它的播放排行、`GET /likes?qq=` 读它的喜欢 |
+| 知道某个 QQ 号的人 | **`POST /likes` 带 `remove` 能删掉它的喜欢 —— 全站唯一的破坏性操作** |
+| 任何人 | 往 `plays` 刷任意条数的假播放（`MAX_PLAYS_PER_REQUEST` = 200／次） |
+
+改这块之前先想清楚：真加鉴权要引入账号体系，而现在的产品前提是「访客填个号码就能用」。
+**要收窄的话，收窄「删别人的喜欢」那一处（比如给写入加一个服务端签发的 per-visitor 令牌），
+不要动读。**
+
+### 4. `ALLOWED_ORIGINS` 不是访问控制
+
+`corsHeaders()` 只决定**浏览器**允不允许读响应。`curl -H 'Origin: https://evil.example'`
+照样 200 —— 这个已经实测过。它的作用是让线上域名能用，**不是让陌生人不能用**。
+别把它当成防线写进注释。
+
+### 5. 限流不在代码里
+
+Worker 里没有任何速率限制，免费版 D1 的日写入量是**十万行量级** ——
+`MAX_PLAYS_PER_REQUEST = 200` 意味着**几百个请求就能打满一天的配额**，
+之后的真实访客数据会**静默记不上**（客户端只看到写入失败，用户看不到任何异常）。
+
+必须做的运维动作在 Cloudflare 面板（**代码改不了**，写在 `cloudflare-worker/README.md`
+的「安全姿态」一节里）：Rate limiting rules（60 次／1 分钟／IP，匹配 `/plays` `/likes`）
++ Bot Fight Mode。
+
+代码里唯一的天花板是 `?refresh=1` 的 **15 秒冷却**（`withinRefreshCooldown`）——
+那是最便宜的「让 Worker 干最贵的事」的入口，而且它只用 `caches.default` 存时间戳，
+**任何失败都 fail-open**（宁可多列一次桶，也不要让「重新载入」变成一个悄悄失效的按钮）。
+
+### 6. 错误信息不回显
+
+`backendError()` 把真实错误（D1 / R2 的报错里带表名、绑定名、SQL 片段）打进
+`console.error`（`wrangler tail` 能看），对外只回一句 `${what}. Try again in a moment.`。
+**新加 try/catch 时别顺手把 `error.message` 塞进响应体。**
+
+### 7. `/music/` 和 `/space/` 同源，共享 localStorage
+
+两个站点都在 `ianyspace.github.io` 下 → **同一个 origin → 共享 localStorage**，
+包括 `music:googleToken`（`TOKEN_KEY`，见 `components/Music/shared.js`）。
+这意味着：**别在 `/music/` 里加任何能被注入的东西** —— 一次 XSS 拿到的不是一个播放器的
+播放列表，是隔壁博客的 Google 授权。这条是第 2 条的实际代价。
+
 ## 检查脚本已删除
 
 这里原来有 11 个 `scripts/check-*.js`，在 CI 里兜 `npm run build` 抓不到的问题

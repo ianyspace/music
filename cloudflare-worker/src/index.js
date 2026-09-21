@@ -179,8 +179,24 @@ const corsHeaders = function (request, env) {
     };
 };
 
+/**
+ * Every response this Worker builds goes through here, so this is where the one
+ * security header that costs nothing gets applied.
+ *
+ * `nosniff` stops a browser from ignoring our `Content-Type` and guessing at
+ * the body instead. It matters because this Worker is the *only* thing between
+ * a stranger and the text they can write into it: a `track_name` comes back out
+ * of `/stats` as JSON, and the whole reason that is currently harmless is that
+ * the browser is told this is JSON. Sniffing is how "it is only JSON" stops
+ * being true.
+ *
+ * The other half of that story is on the client — nothing may hand a stored
+ * string to `dangerouslySetInnerHTML`. See the note in AGENTS.md.
+ */
+const NO_SNIFF = { 'X-Content-Type-Options': 'nosniff' };
+
 const withHeaders = function (body, status, headers) {
-    return new Response(body, { status, headers });
+    return new Response(body, { status, headers: { ...NO_SNIFF, ...headers } });
 };
 
 const jsonResponse = function (data, status, headers) {
@@ -188,6 +204,22 @@ const jsonResponse = function (data, status, headers) {
         'Content-Type': 'application/json; charset=utf-8',
         ...headers,
     });
+};
+
+/**
+ * A 502 the visitor can read, and the real error it is not.
+ *
+ * D1 and R2 errors carry table names, binding names and fragments of SQL — none
+ * of which anyone outside can act on, and all of which are a free description
+ * of the backend to whoever is probing it. The detail goes to `console.error`
+ * instead, which is what `wrangler tail` reads.
+ *
+ * The client never looks at this string (it branches on `response.ok`), so this
+ * is a wire-format change with nothing to keep in step.
+ */
+const backendError = function (what, error, cors) {
+    console.error(`${what}:`, (error && error.stack) || error);
+    return jsonResponse({ error: `${what}. Try again in a moment.` }, 502, cors);
 };
 
 // Adds CORS to an already built response without disturbing its body.
@@ -206,6 +238,50 @@ const listAllObjects = async function (bucket, prefix) {
         cursor = page.truncated ? page.cursor : undefined;
     } while (cursor && objects.length < LIST_HARD_CAP);
     return objects;
+};
+
+/* --- the ceiling on `?refresh=1` ----------------------------------------- */
+
+// How long a forced re-list locks the door behind it.
+const REFRESH_COOLDOWN_MS = 15 * 1000;
+const REFRESH_MARKER_PATH = '/__space-music-refreshed';
+
+/**
+ * `?refresh=1` makes the Worker re-list the whole bucket, and there is nothing
+ * in front of it but the edge cache — so "refresh" is also the cheapest way for
+ * anyone to make this Worker do the most expensive thing it can do, as often as
+ * they like. There is no rate limiting anywhere in this Worker (see the note in
+ * the README), so this is the one ceiling that lives in the code.
+ *
+ * A cooldown rather than an error: the caller asked for a fresh list and gets
+ * one that is at most `REFRESH_COOLDOWN_MS` old — which is *fresher* than the
+ * ordinary 300-second TTL, so a visitor who gets downgraded this way is not
+ * being lied to. It is also shared across everyone in the same colo, which is
+ * the point: the expensive part is the listing, and one listing serves all of
+ * them.
+ *
+ * **The timestamp is read out of the body rather than trusted to the cache's
+ * own expiry.** If `match` ever handed back a stale marker, a marker that never
+ * expires would turn 重新载入 into a button that silently stops working — a bug
+ * nobody would connect to this function. Reading the time ourselves means every
+ * failure mode here fails *open*: no Cache API, an evicted marker, a stale one,
+ * a body that is not a number — all of them fall through to "go ahead".
+ */
+const withinRefreshCooldown = async function (cache, url) {
+    const key = new Request(`${url.origin}${REFRESH_MARKER_PATH}`, { method: 'GET' });
+    try {
+        const hit = await cache.match(key);
+        if (hit) {
+            const at = Number(await hit.text());
+            if (Number.isFinite(at) && Date.now() - at < REFRESH_COOLDOWN_MS) return true;
+        }
+        await cache.put(key, new Response(String(Date.now()), {
+            headers: { 'Cache-Control': `max-age=${Math.ceil(REFRESH_COOLDOWN_MS / 1000)}` },
+        }));
+        return false;
+    } catch (error) {
+        return false;
+    }
 };
 
 const buildIndex = async function (env) {
@@ -323,7 +399,7 @@ const handlePlays = async function (request, env, cors) {
         const inserted = results.reduce((sum, result) => sum + (result.meta ? result.meta.changes || 0 : 0), 0);
         return jsonResponse({ ok: true, received: rows.length, inserted }, 200, cors);
     } catch (error) {
-        return jsonResponse({ error: `Cannot write plays: ${error.message}` }, 502, cors);
+        return backendError('Cannot write plays', error, cors);
     }
 };
 
@@ -403,7 +479,7 @@ const handleStats = async function (env, url, cors) {
             generatedAt: Date.now(),
         }, 200, cors);
     } catch (error) {
-        return jsonResponse({ error: `Cannot read plays: ${error.message}` }, 502, cors);
+        return backendError('Cannot read plays', error, cors);
     }
 };
 
@@ -445,7 +521,7 @@ const handleLikesRead = async function (env, url, cors) {
             generatedAt: Date.now(),
         }, 200, cors);
     } catch (error) {
-        return jsonResponse({ error: `Cannot read likes: ${error.message}` }, 502, cors);
+        return backendError('Cannot read likes', error, cors);
     }
 };
 
@@ -530,7 +606,7 @@ const handleLikesWrite = async function (request, env, cors) {
             changed,
         }, 200, cors);
     } catch (error) {
-        return jsonResponse({ error: `Cannot write likes: ${error.message}` }, 502, cors);
+        return backendError('Cannot write likes', error, cors);
     }
 };
 
@@ -587,15 +663,22 @@ export default {
             return jsonResponse({ error: 'R2_PUBLIC_BASE variable is missing' }, 500, cors);
         }
 
-        const forceRefresh = url.searchParams.get('refresh') === '1';
         const cache = typeof caches !== 'undefined' ? caches.default : undefined;
         const cacheKey = new Request(`${url.origin}${CACHE_PATH}`, { method: 'GET' });
+        // A forced refresh that arrives inside the cooldown is served from the
+        // cache instead — see `withinRefreshCooldown` for why that is not a lie.
+        const forceRefresh = url.searchParams.get('refresh') === '1'
+            && !(cache && await withinRefreshCooldown(cache, url));
 
         if (cache && !forceRefresh) {
             const hit = await cache.match(cacheKey);
             if (hit) {
                 const headers = new Headers(hit.headers);
                 headers.set('X-Music-Cache', 'HIT');
+                // Not inherited from the cached response: an entry written by an
+                // earlier deploy is still in the cache for up to
+                // CACHE_TTL_SECONDS, and it would not carry the header yet.
+                Object.keys(NO_SNIFF).forEach((name) => headers.set(name, NO_SNIFF[name]));
                 Object.keys(cors).forEach((name) => headers.set(name, cors[name]));
                 return new Response(hit.body, { status: 200, headers });
             }
@@ -605,7 +688,7 @@ export default {
         try {
             index = await buildIndex(env);
         } catch (error) {
-            return jsonResponse({ error: `Cannot list bucket: ${error.message}` }, 502, cors);
+            return backendError('Cannot list bucket', error, cors);
         }
 
         const payload = JSON.stringify(index);
