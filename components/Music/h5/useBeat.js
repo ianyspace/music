@@ -443,7 +443,16 @@ const useBeat = function (audioRef, playing, apply) {
             const now = performance.now();
             // Same shape as the loop's: anything not running reads nothing.
             const live = ensureRunning(g, now);
-            watch(g, audio, live ? readSum(g) === 0 : true, now);
+            // `nudge` (pause + play) is the repair for the one case
+            // `ensureRunning` cannot reach: the context *is* running but
+            // the source node delivers silence — no state to check, no
+            // promise to catch. When the context is *not* running (iOS
+            // interrupted it), only `resume()` can bring it back, and a
+            // nudge there is just a audible hiccup that fixes nothing.
+            // So: only ask `watch` to consider a nudge when the context
+            // is live; otherwise pass `quiet=false` to keep the budget
+            // untouched and let `ensureRunning` keep retrying.
+            watch(g, audio, live ? readSum(g) === 0 : false, now);
         };
         if (audio) {
             audio.addEventListener('timeupdate', onBeat);
