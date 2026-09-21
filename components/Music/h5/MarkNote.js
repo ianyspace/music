@@ -38,20 +38,33 @@ L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
 
 /**
- * The artwork's rainbow, top to bottom. Seven hues rather than the previous
- * pastel set: the reference is a rainbow, and a washed-out palette is what
- * made the canvas read as "not that picture" no matter how the waves were
- * shaped.
+ * The artwork, band by band, top to bottom. Each band is a *pair* — its colour
+ * at the top and at the bottom — because the reference's bands are gradients,
+ * not flat stripes: the orange runs from a deep #f6541c to a light #f9a832,
+ * and the pale yellow barely moves at all. Sampled off the reference image.
  */
-const BAND_COLORS = [
-    '#f4707a', // 红
-    '#f79a5b', // 橙
-    '#f7d45c', // 黄
-    '#7ccb86', // 绿
-    '#5aa6e0', // 蓝
-    '#7379d4', // 靛
-    '#b478cf', // 紫
+const BANDS = [
+    ['#f6535f', '#f77080'], // 红
+    ['#f6541c', '#f9a832'], // 橙
+    ['#f9e08a', '#fbe79a'], // 黄（浅）
+    ['#8bd19d', '#6dc8b5'], // 绿（薄荷）
+    ['#43a9b6', '#419ce6'], // 蓝
+    ['#505cd5', '#905fe6'], // 靛
+    ['#a05fe8', '#c070f2'], // 紫
 ];
+
+/**
+ * Where each boundary sits when the wave is flat, as a fraction of the mark's
+ * height — and how far it swings either side of that. Both are read off the
+ * reference, and neither is even: its bands are 0.11 to 0.18 tall, and the
+ * boundaries through the middle of the rainbow move about half as far as the
+ * outer ones. That taper is what gives the bands their pinched-waist look; a
+ * single amplitude for all six makes the rainbow look inflated instead.
+ *
+ * The first and last entries are the mark's own edges, so they never move.
+ */
+const BOUNDARIES = [0, 0.147, 0.324, 0.472, 0.612, 0.771, 0.89, 1];
+const SWING = [0, 0.071, 0.064, 0.031, 0.034, 0.055, 0.055, 0];
 
 /* --- the fixed score's geometry ------------------------------------------
  *
@@ -70,32 +83,29 @@ const DRAW_H = 160;
  *  nothing per frame. */
 const COLUMNS = DRAW_W;
 
-/** How far either side of a boundary, as a fraction of one band's height, the
- *  colour blends into its neighbour. Short on purpose: a long blend keeps the
- *  rainbow continuous but swallows the ripple, because the transition ends up
- *  wider than the wave. */
+/** How far either side of a boundary, as a fraction of the band it is in, the
+ *  colour blends into its neighbour. Short on purpose: the reference's own
+ *  edges take about a fifth of a band to turn over, and a longer blend keeps
+ *  the rainbow continuous but swallows the ripple. */
 const BLEND = 0.12;
 
-/** One whole wavelength, in buffer px. The CSS flow moves the canvas by 20% of
- *  its own width, which is exactly this, so the loop closes with no seam. */
-const WAVE_LAMBDA = DRAW_W / 5;
+/** One whole wavelength, in buffer px. The flow animation moves the canvas by
+ *  50% of its own width — exactly this — so the loop closes with no seam. Half
+ *  the buffer is also what puts 0.77 of a wave across the mark, which is the
+ *  reference's own scale: one crest and one trough, not a rippled flag. */
+const WAVE_LAMBDA = DRAW_W / 2;
 
-/** Of one band's height. The bands are laid out inside the middle 5/6 of the
- *  buffer and this is small enough that no boundary can reach past it — which
- *  is what keeps the flat red top and violet bottom off screen. Sized by eye
- *  at 40px: much below this the bands read as straight, because the colour
- *  blend across a boundary is wide enough to swallow the ripple. */
-const WAVE_AMP = 0.55;
+/** Where the wave pushes its boundaries furthest down, in buffer px. The
+ *  reference's crest sits about a fifth of the way across, not at the edge.
+ *  Derivation, since it looks arbitrary otherwise: box x = 0.2 × 40px maps to
+ *  buffer (0.2 × 40 + 56) / 0.325, from `.bg`'s 260% width and -140% left. */
+const WAVE_ORIGIN = 197;
 
 /** Mirrors `.bg` in MarkNote.module.scss: the canvas is 120% of the mark's
  *  height and sits 10% above it, so the mark shows the middle 1/1.2 of the
- *  buffer. The leftover sixth is the room the wave's amplitude spends. */
+ *  buffer. The leftover sixth is the room the wave's amplitude spends, and it
+ *  is what keeps the flat red top and violet bottom out of sight. */
 const VISIBLE_FRACTION = 1 / 1.2;
-
-/** The boundaries ripple together, each a little behind the one above, rather
- *  than braiding with unrelated phases: that is what makes the bands read as
- *  one flag waving instead of a comb. */
-const WAVE_PHASES = [0, 0.55, 1.1, 1.65, 2.2, 2.75, 3.3, 3.85];
 
 /** How long the bar is held, in ms, before it starts shrinking. Enough to be
  *  read as a state rather than as a glitch, short enough not to be a wait. */
@@ -128,41 +138,42 @@ const mix = function (a, b, t) {
  *
  * The columns tile the canvas exactly, so there is no gap between them, and
  * neighbouring columns differ by well under a pixel of colour — the wave moves
- * ~1 buffer px per column. Drawn once; CSS owns the only motion.
+ * about 1.6 buffer px per column. Drawn once; CSS owns the only motion.
  */
 const drawBackdrop = function (ctx) {
-    const count = BAND_COLORS.length;
+    const count = BANDS.length;
     const span = DRAW_H * VISIBLE_FRACTION;
     const top = (DRAW_H - span) / 2;
-    const bandH = span / count;
-    const amp = bandH * WAVE_AMP;
     const k = (Math.PI * 2) / WAVE_LAMBDA;
-    const soft = bandH * BLEND;
     const columnW = DRAW_W / COLUMNS;
     const at = (y) => Math.min(1, Math.max(0, y / DRAW_H));
-    const waveAt = (b, x) => (
-        b === 0 || b === count ? 0 : Math.sin(WAVE_PHASES[b] + x * k) * amp
-    );
+    // One wave shared by every boundary: the reference's bands ripple together
+    // like a flag, each by its own amount, rather than braiding out of phase.
+    const ripple = (u) => Math.cos((u - WAVE_ORIGIN) * k);
+    const edgeAt = (b, u) => top + (BOUNDARIES[b] + SWING[b] * ripple(u)) * span;
 
     for (let c = 0; c < COLUMNS; c += 1) {
-        const x = c * columnW;
+        const u = c * columnW;
         const ramp = ctx.createLinearGradient(0, 0, 0, DRAW_H);
-        ramp.addColorStop(0, BAND_COLORS[0]);
+        ramp.addColorStop(0, BANDS[0][0]);
         for (let b = 0; b < count; b += 1) {
-            const colour = BAND_COLORS[b];
-            const upper = top + b * bandH + waveAt(b, x);
-            const lower = top + (b + 1) * bandH + waveAt(b + 1, x);
+            const upper = edgeAt(b, u);
+            const lower = edgeAt(b + 1, u);
+            // The blend is measured off the band it is in, not off a nominal
+            // band height: these bands pinch to two thirds of their average, and
+            // a fixed width would spill one band's blend across its neighbour.
+            const soft = (lower - upper) * BLEND;
             // The band above and the band below meet on the shared boundary at
             // the same half-way colour, which is what keeps the rainbow
             // continuous across it while the boundary still reads as an edge.
-            if (b > 0) ramp.addColorStop(at(upper), mix(BAND_COLORS[b - 1], colour, 0.5));
-            ramp.addColorStop(at(upper + soft), colour);
-            ramp.addColorStop(at(lower - soft), colour);
-            if (b < count - 1) ramp.addColorStop(at(lower), mix(colour, BAND_COLORS[b + 1], 0.5));
+            if (b > 0) ramp.addColorStop(at(upper), mix(BANDS[b - 1][1], BANDS[b][0], 0.5));
+            ramp.addColorStop(at(upper + soft), BANDS[b][0]);
+            ramp.addColorStop(at(lower - soft), BANDS[b][1]);
+            if (b < count - 1) ramp.addColorStop(at(lower), mix(BANDS[b][1], BANDS[b + 1][0], 0.5));
         }
-        ramp.addColorStop(1, BAND_COLORS[count - 1]);
+        ramp.addColorStop(1, BANDS[count - 1][1]);
         ctx.fillStyle = ramp;
-        ctx.fillRect(x, 0, columnW, DRAW_H);
+        ctx.fillRect(u, 0, columnW, DRAW_H);
     }
 };
 

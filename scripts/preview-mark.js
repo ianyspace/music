@@ -7,12 +7,14 @@
  *   - the settled square, stopped,
  *   - the settled square playing, frozen at three points of the flow.
  *
- * It also checks the one thing a screenshot cannot: that the drawing really is
- * periodic at exactly one wavelength, which is what makes the CSS loop seam-free.
+ * It also checks the two things a screenshot cannot: that the drawing really is
+ * periodic at exactly one wavelength (which is what makes the CSS loop
+ * seam-free), and how wide the blend between two bands actually is (which is
+ * what decides whether the ripple reads as a band edge or as a blur).
  *
  * Run: node scripts/preview-mark.js [outFile]   (run `npm run build` first)
  *      defaults to `out/_preview-mark.html`, served as /music/_preview-mark.html
- *      defaults to `out/_preview-mark.html`, served as /music/_preview-mark.html
+ *      append `#zoom` to blow one playing mark up 5× and judge the wave itself
  */
 
 const fs = require('fs');
@@ -46,18 +48,28 @@ const cls = {
 /* --- mirror of MarkNote.js ------------------------------------------------
  *
  * These are copies, not imports: the component is ESM+JSX and this script is
- * plain node. That means they can drift, so the page below *measures* the one
- * relationship that matters (the wavelength) rather than trusting the copy.
+ * plain node. That means they can drift, so the page below *measures* the two
+ * relationships that matter (the wavelength, and the blend) rather than
+ * trusting the copy.
  */
-const BAND_COLORS = ['#f4707a', '#f79a5b', '#f7d45c', '#7ccb86', '#5aa6e0', '#7379d4', '#b478cf'];
+const BANDS = [
+    ['#f6535f', '#f77080'],
+    ['#f6541c', '#f9a832'],
+    ['#f9e08a', '#fbe79a'],
+    ['#8bd19d', '#6dc8b5'],
+    ['#43a9b6', '#419ce6'],
+    ['#505cd5', '#905fe6'],
+    ['#a05fe8', '#c070f2'],
+];
+const BOUNDARIES = [0, 0.147, 0.324, 0.472, 0.612, 0.771, 0.89, 1];
+const SWING = [0, 0.071, 0.064, 0.031, 0.034, 0.055, 0.055, 0];
 const DRAW_W = 320;
 const DRAW_H = 160;
 const COLUMNS = DRAW_W;
 const BLEND = 0.12;
-const WAVE_LAMBDA = DRAW_W / 5;
-const WAVE_AMP = 0.55;
+const WAVE_LAMBDA = DRAW_W / 2;
+const WAVE_ORIGIN = 197;
 const VISIBLE_FRACTION = 1 / 1.2;
-const WAVE_PHASES = [0, 0.55, 1.1, 1.65, 2.2, 2.75, 3.3, 3.85];
 
 const mix = function (a, b, t) {
     const pa = parseInt(a.slice(1), 16);
@@ -71,35 +83,31 @@ const mix = function (a, b, t) {
 };
 
 const drawBackdrop = function (ctx) {
-    const count = BAND_COLORS.length;
+    const count = BANDS.length;
     const span = DRAW_H * VISIBLE_FRACTION;
     const top = (DRAW_H - span) / 2;
-    const bandH = span / count;
-    const amp = bandH * WAVE_AMP;
     const k = (Math.PI * 2) / WAVE_LAMBDA;
-    const soft = bandH * BLEND;
     const columnW = DRAW_W / COLUMNS;
     const at = (y) => Math.min(1, Math.max(0, y / DRAW_H));
-    const waveAt = (b, x) => (
-        b === 0 || b === count ? 0 : Math.sin(WAVE_PHASES[b] + x * k) * amp
-    );
+    const ripple = (u) => Math.cos((u - WAVE_ORIGIN) * k);
+    const edgeAt = (b, u) => top + (BOUNDARIES[b] + SWING[b] * ripple(u)) * span;
 
     for (let c = 0; c < COLUMNS; c += 1) {
-        const x = c * columnW;
+        const u = c * columnW;
         const ramp = ctx.createLinearGradient(0, 0, 0, DRAW_H);
-        ramp.addColorStop(0, BAND_COLORS[0]);
+        ramp.addColorStop(0, BANDS[0][0]);
         for (let b = 0; b < count; b += 1) {
-            const colour = BAND_COLORS[b];
-            const upper = top + b * bandH + waveAt(b, x);
-            const lower = top + (b + 1) * bandH + waveAt(b + 1, x);
-            if (b > 0) ramp.addColorStop(at(upper), mix(BAND_COLORS[b - 1], colour, 0.5));
-            ramp.addColorStop(at(upper + soft), colour);
-            ramp.addColorStop(at(lower - soft), colour);
-            if (b < count - 1) ramp.addColorStop(at(lower), mix(colour, BAND_COLORS[b + 1], 0.5));
+            const upper = edgeAt(b, u);
+            const lower = edgeAt(b + 1, u);
+            const soft = (lower - upper) * BLEND;
+            if (b > 0) ramp.addColorStop(at(upper), mix(BANDS[b - 1][1], BANDS[b][0], 0.5));
+            ramp.addColorStop(at(upper + soft), BANDS[b][0]);
+            ramp.addColorStop(at(lower - soft), BANDS[b][1]);
+            if (b < count - 1) ramp.addColorStop(at(lower), mix(BANDS[b][1], BANDS[b + 1][0], 0.5));
         }
-        ramp.addColorStop(1, BAND_COLORS[count - 1]);
+        ramp.addColorStop(1, BANDS[count - 1][1]);
         ctx.fillStyle = ramp;
-        ctx.fillRect(x, 0, columnW, DRAW_H);
+        ctx.fillRect(u, 0, columnW, DRAW_H);
     }
 };
 
@@ -199,15 +207,16 @@ ${entryRow}
     ${flow(-1.0)}
 </div>
 <script>
-    const BAND_COLORS = ${JSON.stringify(BAND_COLORS)};
+    const BANDS = ${JSON.stringify(BANDS)};
+    const BOUNDARIES = ${JSON.stringify(BOUNDARIES)};
+    const SWING = ${JSON.stringify(SWING)};
     const DRAW_W = ${DRAW_W};
     const DRAW_H = ${DRAW_H};
     const COLUMNS = ${COLUMNS};
     const BLEND = ${BLEND};
     const WAVE_LAMBDA = ${WAVE_LAMBDA};
-    const WAVE_AMP = ${WAVE_AMP};
+    const WAVE_ORIGIN = ${WAVE_ORIGIN};
     const VISIBLE_FRACTION = ${VISIBLE_FRACTION};
-    const WAVE_PHASES = ${JSON.stringify(WAVE_PHASES)};
     const mix = ${mix.toString()};
 
     const canvases = [...document.querySelectorAll('canvas[data-draw="1"]')];
@@ -222,9 +231,8 @@ ${entryRow}
 
     /* The seam check. The CSS loop translates the canvas by exactly one
        wavelength and starts over, which only reads as a continuous flow if the
-       drawing itself repeats at that distance. Sample the top strip of the
-       bitmap — the bands, not the flat edges — and compare every column with
-       the column one wavelength to its right. */
+       drawing itself repeats at that distance. Sample the whole bitmap and
+       compare every column with the column one wavelength to its right. */
     const out = document.getElementById('out');
     const probe = canvases[0];
     const dpr = window.devicePixelRatio || 1;
@@ -241,43 +249,97 @@ ${entryRow}
     const ok = worst === 0;
 
     /* How wide the colour change between two bands actually is, in band
-       heights, measured down one column. This is the number that decides
-       whether the ripple reads as a band edge or as a blur, and it is not
-       something a screenshot can be asked: a 40px mark hides it either way.
-       Rows that sit on one of the band colours are "flat"; the run between two
-       flat runs is the blend. */
-    const pure = BAND_COLORS.map(function (hex) {
-        const n = parseInt(hex.slice(1), 16);
-        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    });
+       heights, measured from the pixels down one column. This is the number
+       that decides whether the ripple reads as a band edge or as a blur, and
+       it is not something a screenshot can be asked: a 40px mark hides it
+       either way.
+
+       The bands are gradients, so "is this row band b's colour" has to mean
+       "is this row on the segment between band b's two endpoint colours". Every
+       row inside a band lies on that segment exactly — the gradient is a
+       straight interpolation between those two colours — so the rows that sit
+       off it are precisely the shoulders where the band hands over to its
+       neighbour, and the test needs no notion of where in the band a row is.
+       Comparing against the plain uncompressed ramp instead would flag most of
+       every band, because the shoulders squeeze the real ramp inward.
+
+       Each boundary is then walked both ways until a row is back on a segment;
+       those rows plus the boundary row are the blend there, over the average
+       height of the two bands that meet. Expect a little under 2 × BLEND: the
+       outermost sliver of a shoulder is within the threshold by definition. */
+    const rgbOf = function (css) {
+        /* Both forms are in play here: the constants are hex, and mix() returns
+           rgb(). Reading a hex with the digit regex would not throw — it would
+           quietly return the digits *inside* the hex, so #f6541c would become
+           6,5,4 — which is why the hex branch comes first. */
+        if (css.charAt(0) === '#') {
+            return [
+                parseInt(css.slice(1, 3), 16),
+                parseInt(css.slice(3, 5), 16),
+                parseInt(css.slice(5, 7), 16),
+            ];
+        }
+        /* The double backslash is deliberate: this line lives inside a template
+           literal, so a single one would be eaten here and the page would get
+           /d+/g — which matches nothing and throws. */
+        const n = css.match(/\\d+/g).map(Number);
+        return [n[0], n[1], n[2]];
+    };
+    const dist = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+    const span = DRAW_H * VISIBLE_FRACTION;
+    /* Named topEdge, not top: this runs at the top level of a page script,
+       where a const named top collides with the window's own top and throws.
+       Inside the component the same line is fine — it is a local there. */
+    const topEdge = (DRAW_H - span) / 2;
+    const twoPi = (Math.PI * 2) / WAVE_LAMBDA;
+    const edgeAt = (b, x) => topEdge + (BOUNDARIES[b] + SWING[b] * Math.cos((x - WAVE_ORIGIN) * twoPi)) * span;
+    const u = Math.round(probe.width / 2) / dpr;
     const column = probe.getContext('2d')
         .getImageData(Math.round(probe.width / 2), 0, 1, probe.height).data;
-    const bandRows = (DRAW_H * VISIBLE_FRACTION / BAND_COLORS.length) * dpr;
-    let run = 0;
-    let widest = 0;
-    for (let y = 0; y < probe.height; y += 1) {
-        const r = column[y * 4];
-        const g = column[y * 4 + 1];
-        const b = column[y * 4 + 2];
-        const flat = pure.some(function (p) {
-            return Math.abs(p[0] - r) + Math.abs(p[1] - g) + Math.abs(p[2] - b) < 12;
-        });
-        if (flat) {
-            widest = Math.max(widest, run);
-            run = 0;
-        } else {
-            run += 1;
-        }
+    const pixelAt = (row) => [column[row * 4], column[row * 4 + 1], column[row * 4 + 2]];
+    /* Distance from a pixel to the segment F→G, and whether it exceeds tol. */
+    const offSegment = function (F, G, row, tol) {
+        const c = pixelAt(row);
+        const v = [G[0] - F[0], G[1] - F[1], G[2] - F[2]];
+        const w = [c[0] - F[0], c[1] - F[1], c[2] - F[2]];
+        const vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        const s = vv === 0 ? 0 : Math.min(1, Math.max(0, (v[0] * w[0] + v[1] * w[1] + v[2] * w[2]) / vv));
+        return dist([F[0] + v[0] * s, F[1] + v[1] * s, F[2] + v[2] * s], c) > tol;
+    };
+    const bandHeight = (b) => (edgeAt(b + 1, u) - edgeAt(b, u)) * dpr;
+    /* Only the visible sixth of the buffer is judged: above and below it the
+       drawing is the flat first and last colours by design, not a wave. */
+    const firstRow = Math.ceil(topEdge * dpr);
+    const lastRow = Math.floor((topEdge + span) * dpr);
+    let blend = 0;
+    for (let b = 1; b < BANDS.length; b += 1) {
+        const boundary = Math.round(edgeAt(b, u) * dpr);
+        /* 3% of the half-jump each band makes at the boundary — proportional,
+           so it means the same thing in the pale yellow band (ends ~25 apart)
+           as in the orange one (~109). Floored at 3, because the canvas
+           quantises to 1/255 a channel and a row that is on the segment can
+           still read a channel or two off it: without the floor, a boundary
+           whose two bands are nearly the same colour (indigo into violet, 18
+           apart) reports the whole band as blend. */
+        const tol = Math.max(0.03 * 0.5 * dist(rgbOf(BANDS[b - 1][1]), rgbOf(BANDS[b][0])), 3);
+        const aboveF = rgbOf(BANDS[b - 1][0]);
+        const aboveG = rgbOf(BANDS[b - 1][1]);
+        const belowF = rgbOf(BANDS[b][0]);
+        const belowG = rgbOf(BANDS[b][1]);
+        let up = 0;
+        while (boundary - up - 1 >= firstRow && offSegment(aboveF, aboveG, boundary - up - 1, tol)) up += 1;
+        let down = 0;
+        while (boundary + down <= lastRow && offSegment(belowF, belowG, boundary + down, tol)) down += 1;
+        blend = Math.max(blend, (up + down + 1) / ((bandHeight(b - 1) + bandHeight(b)) / 2));
     }
-    const blend = widest / bandRows;
 
     out.className = ok ? '' : 'bad';
     out.textContent = [
         ok ? 'periodic at one wavelength: yes' : 'periodic at one wavelength: NO',
         'worst channel delta: ' + worst,
-        'blend widest / band: ' + blend.toFixed(2) + '  (BLEND=' + BLEND + ' -> ' + (2 * BLEND).toFixed(2) + ' expected)',
+        'blend widest / band: ' + blend.toFixed(2) + '  (designed 2 \\u00d7 BLEND = ' + (2 * BLEND).toFixed(2) + ')',
         'buffer: ' + DRAW_W + '\\u00d7' + DRAW_H + ', wavelength ' + WAVE_LAMBDA + ' (' + (DRAW_W / WAVE_LAMBDA) + ' cycles)',
-        'flow: translateX(20%) over 2s linear, infinite',
+        'flow: translateX(50%) over 2s linear, infinite',
         'note: static path, opacity only',
     ].join('\\n');
 

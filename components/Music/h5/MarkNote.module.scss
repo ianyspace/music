@@ -55,7 +55,7 @@
 }
 
 /* Playback only adds this class. The score flows to the right forever: one
-   cycle moves the canvas by exactly one wavelength — `20%` of its own width,
+   cycle moves the canvas by exactly one wavelength — `50%` of its own width,
    which is `WAVE_LAMBDA` in MarkNote.js — so the last frame is the first frame
    and `infinite` loops without a seam. `linear`, because a score that eased
    would visibly stop and start at every wavelength. */
@@ -68,22 +68,27 @@
         transform: translate3d(0, 0, 0);
     }
     to {
-        transform: translate3d(20%, 0, 0);
+        transform: translate3d(50%, 0, 0);
     }
 }
 
 /* The canvas is oversized *inside* the clipped mark, not the mark itself. The
-   240% width is what makes the rightward flow possible: one wavelength is 20%
-   of the canvas, and the 80% of slack to the left of the visible box is the
+   260% width is what makes the rightward flow possible: one wavelength is half
+   of the canvas, and the 140% of slack to the left of the visible box is the
    room one full cycle of travel needs, so the visible 40px is covered at every
    point of the animation. The 120% height, lifted 10%, does the same job
    vertically — it is what hides the score's flat red top and violet bottom,
-   and it is mirrored by `VISIBLE_FRACTION` in MarkNote.js. */
+   and it is mirrored by `VISIBLE_FRACTION` in MarkNote.js.
+
+   These two numbers and `WAVE_LAMBDA` / `WAVE_ORIGIN` are one calculation
+   split across two files: 40px × 260% is the buffer's 320 units wide, so one
+   buffer px is 0.325 of a screen px, and half the buffer is the 52px the
+   animation travels. Change one and the crest lands somewhere else. */
 .bg {
     position: absolute;
-    left: -80%;
+    left: -140%;
     top: -10%;
-    width: 240%;
+    width: 260%;
     height: 120%;
     display: block;
     transform-origin: center;

@@ -1885,7 +1885,69 @@ const drive = async (target, index) => {
          */
         cloudDelayMs = 4000;
         await send('Page.navigate', { url: target.url });
+
+        /* --- the mark's entry, caught across the reload above --------------
+         *
+         * The entry exists for about a second after a load — a 460ms hold at
+         * full width and a 0.62s shrink — so it can only be seen on a
+         * navigation, and this stage was already doing one. Sampling it needs
+         * its own loop: `waitFor` polls every 400ms, which is a coin toss
+         * against a 460ms state, and a coin-toss check is worse than none.
+         *
+         * What the entry promises: at first the mark is the whole run of the
+         * bar up to the actions group with no note on it, then it shrinks into
+         * its square and the note fades in. Both halves are read off the mark's
+         * own box — "wider than it is tall" then "as wide as it is tall" — so
+         * the check does not repeat the stylesheet's 40px back at it and cannot
+         * rot when that number changes.
+         */
+        const entryProbe = `(() => {
+            const b = document.querySelector(${JSON.stringify(target.mark)});
+            if (!b) return { found: false };
+            const note = b.querySelector('svg');
+            const r = b.getBoundingClientRect();
+            return {
+                found: true,
+                intro: [...b.classList].some((name) => /mark-intro/.test(name)),
+                width: r.width,
+                height: r.height,
+                noteOpacity: note ? Number(getComputedStyle(note).opacity) : -1,
+            };
+        })()`;
+        // The old page stays on screen for the first samples, and the new one
+        // renders its class before its stylesheet lands — an unstyled button
+        // that happens to carry the intro class reads as 316x462 with the note
+        // already at 1. The note's opacity is what says the stylesheet is on
+        // (the intro rule is the only thing that takes it to 0), so only a
+        // sample with it at 0 is the entry.
+        let entry = null;
+        for (let i = 0; i < 40 && !entry; i += 1) {
+            const sample = await evaluate(entryProbe);
+            if (sample && sample.found && sample.intro && sample.noteOpacity === 0) entry = sample;
+            await sleep(50);
+        }
+        check(
+            'the mark enters as a wide bar with no note on it yet',
+            Boolean(entry) && entry.width > entry.height * 2.5 && entry.noteOpacity === 0,
+            entry
+                ? `width=${entry.width.toFixed(0)} height=${entry.height.toFixed(0)}`
+                    + ` note opacity=${entry.noteOpacity}`
+                : '(the intro class was never on a styled mark — it only ever showed its square)',
+        );
+
         await sleep(2500);
+        const settled = await evaluate(entryProbe);
+        check(
+            '...and settles into its square with the note on it',
+            Boolean(settled) && settled.found && !settled.intro
+                && Math.abs(settled.width - settled.height) < 1
+                && settled.noteOpacity === 1,
+            settled && settled.found
+                ? `width=${settled.width.toFixed(0)} height=${settled.height.toFixed(0)}`
+                    + ` intro=${settled.intro} note opacity=${settled.noteOpacity}`
+                : '(no mark)',
+        );
+
         const driveAgain = await waitFor(rowTitles, (v) => Array.isArray(v) && v.length === 2, 30000);
         check(
             'a restored Drive session lists the Drive files again',
