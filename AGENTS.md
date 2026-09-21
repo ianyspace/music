@@ -1255,8 +1255,11 @@ Drive 曲库的办法 —— 列表来自一次真实 API 调用，而每来源�
 - 省下的：一次部署（约一分钟 CI）。赔掉的：**整个站点**。
 - 2026-09-21 真的发生了：一条只改 `scripts/drive-page.js` 的推送之后 `/h5/` 404、
   `README.md` 200、`.nojekyll` 404，挂了约五分钟。
-- 只有等 Pages 的 Source 真正切成 `GitHub Actions`（那时这条 legacy 构建根本不会被创建），
-  忽略列表才是安全的。在那之前，**每一次推送都值得跑一遍部署**。
+- **2026-09-21 用户已把 Source 改成 `GitHub Actions`**，所以那条 legacy 构建从此不会被创建，
+  忽略列表在原理上安全了。但**加它之前必须先确认设置还在**（判断方法见本节的
+  「判断它有没有真的生效」）—— 设置一旦被改回分支模式，带忽略列表的推送就会重演上面那次事故，
+  而且是**静默**重演：跳过的那次推送在 Actions 列表里什么都不显示，只有线上会变。
+  没人明确要求「别为文档烧一次部署」时，就别加。省一分钟 CI、赔整个站点，这笔账不值得冒险。
 
 **推完必须验一句「线上到底在服务什么」**，三条一起看：
 
@@ -1307,12 +1310,24 @@ curl -o /dev/null -w "%{http_code}\n" https://ianyspace.github.io/music/h5/     
 
 排查时注意：`api.github.com/repos/<user>/<repo>/pages` 匿名访问返回 404 是**没权限**，不代表 Pages 没开。
 
-**这个设置改不了，只能人来点 —— 试过了。** 2026-09-21 想从 CI 改它（新加一个工作流，
-用 `GITHUB_TOKEN` 加 `permissions: pages: write` 调 `PUT /repos/{owner}/{repo}/pages`），
-GitHub 直接回 **403**：改 Pages 站点设置要的是**仓库管理权限**，而 Actions 的 `GITHUB_TOKEN`
-的权限清单里根本没有这一项（`pages: write` 是给部署用的），换什么 `permissions:` 都不行。
-那条实验用的工作流已经删掉，别再走这条路。**唯一办法是四步点击**：
-Settings → Pages → Build and deployment → Source → `GitHub Actions`。
+**这个设置只能人来点，2026-09-21 用户已经点过了：Source 现在是 `GitHub Actions`。**
+
+判断它有没有真的生效，不看设置页面，看**推送的 SHA 还有没有 `event: dynamic` 的 run**：
+
+```bash
+curl -s "https://api.github.com/repos/ianyspace/music/actions/runs?head_sha=<full sha>&per_page=100" \
+  | python -c "import sys,json;[print(r['name'],r['event']) for r in json.load(sys.stdin)['workflow_runs']]"
+```
+
+没有 `pages build and deployment` 就是生效了（`head_sha` 必须传完整 40 位，短 sha 会被静默当成
+「没有这个 run」）。生效之后，`deploy.yml` 里那步「Wait out GitHub's legacy Jekyll build」
+变成空操作 —— **保留它**：它本来就把「查不到」当成正常，而万一日后设置被改回分支模式，
+它就是唯一挡在事故前面的那一步。
+
+**别想着从 CI 改这个设置。** 同一天试过：加一个工作流，用 `GITHUB_TOKEN` 加
+`permissions: pages: write` 调 `PUT /repos/{owner}/{repo}/pages`，GitHub 直接回 **403** ——
+改 Pages 站点设置要的是**仓库管理权限**，而 Actions 的 `GITHUB_TOKEN` 的权限清单里根本没有
+这一项（`pages: write` 是给部署用的），换什么 `permissions:` 都不行。那条实验工作流已经删掉。
 
 （那次实验顺手验证了一件有用的事：**job 日志要登录才能读**（匿名请求 `/actions/jobs/<id>/logs`
 返回 403），**commit status 不用** —— `curl -s https://api.github.com/repos/<user>/<repo>/commits/<sha>/statuses`
