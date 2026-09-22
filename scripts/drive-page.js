@@ -1818,16 +1818,44 @@ const drive = async (target, index) => {
             const svg = b.querySelector('svg');
             const path = svg && svg.querySelector('path');
             const canvas = b.querySelector('canvas');
+            const pane = [...b.children].find((el) => /MarkNote_pane/.test(el.className || ''));
             let box = null;
             if (path) {
                 const r = path.getBBox();
                 box = { x: r.x, y: r.y, w: r.width, h: r.height };
             }
+            /* The glass. The computed mask comes back as a quoted data URI, so
+               it is decoded back to markup and the outline inside it compared
+               with the note's own d attribute — that comparison is the point:
+               the glass is supposed to be the *same* shape as the note, and a
+               second copy of the outline anywhere would be free to drift away
+               from it. The spacing is normalised first, because the path is
+               written across several lines. */
+            const paneStyle = pane ? getComputedStyle(pane) : null;
+            const blur = paneStyle ? (paneStyle.backdropFilter || paneStyle.webkitBackdropFilter || '') : '';
+            const maskCss = paneStyle ? (paneStyle.maskImage || paneStyle.webkitMaskImage || '') : '';
+            const encoded = (maskCss.match(/url\\("?data:[^,]+,([^")]+)"?\\)/) || [])[1] || '';
+            let maskedD = '';
+            if (encoded) {
+                try {
+                    maskedD = (decodeURIComponent(encoded).match(/d="([^"]*)"/) || [])[1] || '';
+                } catch (err) {
+                    maskedD = '';
+                }
+            }
+            const tidy = (d) => String(d || '').replace(/\\s+/g, ' ').trim();
             return {
                 viewBox: svg ? svg.getAttribute('viewBox') : '',
                 box,
                 hasCanvas: Boolean(canvas),
                 backdrop: b.style.backgroundImage || '',
+                hasPane: Boolean(pane),
+                blur,
+                blurred: /blur\\((\\d+(?:\\.\\d+)?)px\\)/.test(blur),
+                maskIsDataUri: /^url\\("?data:image\\/svg\\+xml/.test(maskCss),
+                maskedD: tidy(maskedD),
+                noteD: tidy(path && path.getAttribute('d')),
+                fill: path ? getComputedStyle(path).fill : '',
             };
         })()`);
         const box = markShape && markShape.box;
@@ -1861,6 +1889,41 @@ const drive = async (target, index) => {
             !markShape
                 ? '(no mark)'
                 : (missing || `canvas=${markShape.hasCanvas ? 'yes' : 'no'} bg=${markShape.backdrop ? markShape.backdrop.slice(0, 40) : '(none)'}`),
+        );
+        /* The note is glass, and it is *two* layers: a masked pane that blurs
+           the rainbow behind the note, and the note's own translucent body over
+           it. The two facts are separate because either alone would pass for
+           the wrong thing — a blur with an opaque note looks like nothing
+           changed, and a translucent note with no blur is just see-through.
+
+           Both are read as the browser computed them rather than as the
+           stylesheet writes them, so a value that never applied fails here. */
+        /* Note the single backslash: this line is *outside* the evaluated
+           string, so it is a plain regex. The doubled form is only needed for
+           the regexes written inside the template literal above, where a single
+           backslash would be eaten by the literal itself — and getting the two
+           mixed up does not throw, it just quietly matches nothing. */
+        const noteAlpha = markShape && markShape.fill
+            ? (markShape.fill.match(/[\d.]+/g) || []).map(Number)
+            : [];
+        const noteFill = noteAlpha.length === 4 ? noteAlpha[3] : 1;
+        check(
+            'the note is a pane of frosted glass, not a white silhouette',
+            Boolean(markShape) && markShape.hasPane && markShape.blurred && noteFill < 1,
+            !markShape
+                ? '(no mark)'
+                : (missing || `backdrop-filter=${markShape.blur || '(none)'} note fill=${markShape.fill || '(none)'}`),
+        );
+        check(
+            "...and the glass is cut to the note's own outline, not a second copy of it",
+            Boolean(markShape) && markShape.maskIsDataUri
+                && markShape.maskedD.length > 0 && markShape.maskedD === markShape.noteD,
+            !markShape
+                ? '(no mark)'
+                : (missing || `mask=${markShape.maskIsDataUri ? 'data uri' : '(none)'}`
+                    + ` masked d ${markShape.maskedD ? `${markShape.maskedD.length} chars` : '(none)'}`
+                    + ` vs note d ${markShape.noteD.length} chars`
+                    + ` ${markShape.maskedD === markShape.noteD ? 'match' : 'DIFFER'}`),
         );
 
         const motionState = await evaluate(`(() => {

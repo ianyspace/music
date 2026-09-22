@@ -4,6 +4,10 @@
 // while music plays the fixed rainbow score inside it flows steadily to the
 // right. No analyser, no breathing, no growth on play, and no size animation on
 // entry.
+//
+// The note is a pane of frosted glass: the rainbow is blurred behind it
+// (`.pane`) and the note is a translucent white body over that blur (`.ink`).
+// Two layers, because it is two effects — see `.pane`.
 
 /* The settled box — and the only box it ever has. The size lives here and only
    here: nothing measures it and nothing overrides it.
@@ -111,21 +115,16 @@
     animation-play-state: paused;
 }
 
-/* The note is a static foreground; no transform is ever written to it. Its
-   arrival is the one thing the mark still animates: a plain CSS fade over a
-   second, starting the moment the mark is on screen. `both` is what makes the
-   first painted frame already transparent — without it the note would flash at
-   full opacity for one frame before the animation took over. No JS holds this
-   state, so nothing can leave the note stuck half-faded.
-   `z-index` keeps it above the canvas. */
+/* The note is a static foreground; no transform is ever written to it, and its
+   arrival is the shared fade further down. `z-index` keeps it above the glass
+   and the canvas. */
 .art {
     position: relative;
     display: block;
     width: 100%;
     height: 100%;
-    z-index: 1;
+    z-index: 2;
     opacity: 1;
-    animation: note-in 1s ease both;
 }
 
 @keyframes note-in {
@@ -138,8 +137,58 @@
     }
 }
 
+/* The note is a pane of frosted glass. Two layers, because it is two effects:
+   this one blurs the rainbow behind the note, and `.ink` draws the note's own
+   translucent body over that blur. A `backdrop-filter` blurs what is *behind*
+   an element, so it cannot be put on the note itself — the ink has to stay
+   sharp, and something has to sit under it and go soft.
+
+   `mask-image` is written by the component rather than here: the mask is the
+   note's own outline, built from the same path the `<svg>` draws, and a copy of
+   that outline in this file would be free to drift away from the icon.
+
+   A `backdrop-filter` on a masked element is clipped by that mask — verified at
+   6×, and worth stating because it is the whole trick: there is no other way to
+   blur an arbitrary shape. Without the mask the entire 40px square goes soft.
+   `saturate` is part of the frosted look and not decoration: blur alone washes
+   the bands out, and this rainbow is saturated by design. */
+.pane {
+    position: absolute;
+    inset: 0;
+    display: block;
+    z-index: 1;
+    mask-size: 100% 100%;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    backdrop-filter: blur(3px) saturate(1.9);
+    -webkit-backdrop-filter: blur(3px) saturate(1.9);
+}
+
+/* The note arrives as one thing, so its one-second fade is declared once for
+   both layers: a change to the timing cannot leave the glass and the ink out of
+   step. `both` is what makes the first painted frame already transparent —
+   without it the note would flash at full opacity for one frame before the
+   animation took over. No JS holds this state, so nothing can leave the note
+   stuck half-faded. */
+.art,
+.pane {
+    animation: note-in 1s ease both;
+}
+
+/* The note itself: white, but translucent, so the blurred rainbow underneath
+   reads through it and the note is glass rather than a hole cut in the artwork.
+   0.62 is a pick, not a derivation. It came off a strip of the real mark at 6×
+   — the real canvas, the real shadow — at three bodies: at 0.45 the note only
+   reads when you are looking at it up close, and at 1.0 it is the opaque white
+   silhouette this replaced. Somewhere above half is where a 40px note is still
+   plainly the subject of the mark while the bands under it stay visible.
+
+   The hairline stroke is not an outline. `stroke-linejoin: round` with a
+   1-unit stroke is what softens this traced path's corners at 512 units, and
+   it is left opaque so the glass keeps a bright edge. */
 .ink {
-    fill: #fff;
+    fill: rgba(255, 255, 255, 0.62);
     stroke: #fff;
     stroke-width: 1;
     stroke-linejoin: round;
@@ -169,7 +218,7 @@
     border-radius: 50%;
     background: #8e8e93;
     box-shadow: 0 0 0 1.5px var(--badge-ring);
-    z-index: 2;
+    z-index: 3;
 }
 
 .dot-on {
@@ -183,8 +232,10 @@
 
     /* The note is simply there: the fade exists only to be watched, and the
        note itself is what the mark is for. The base rule is already opacity 1,
-       so dropping the animation is the whole change. */
-    .art {
+       so dropping the animation is the whole change — for both of the note's
+       layers, glass and ink. */
+    .art,
+    .pane {
         animation: none;
     }
 

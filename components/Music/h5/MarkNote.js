@@ -9,6 +9,11 @@ import styles from './MarkNote.module.scss';
  * without opening a page; the same answer is in the button's title / aria-label,
  * so the dot itself is decorative.
  *
+ * The note is a pane of frosted glass rather than a white silhouette: the
+ * rainbow is blurred behind it (`.pane`) and the note itself is drawn as a
+ * translucent white body over that blur (`.ink`). Neither layer does the other's
+ * job, and both are cut from the same path — see `NOTE_MASK` below.
+ *
  * There is deliberately no audio analyser here. The rainbow is a fixed score:
  * its wave shape and its animation cadence are constants, not a frequency read
  * from the song. `playing` only toggles the score's CSS *play state* — the
@@ -43,6 +48,22 @@ L263 367 L252 378 L247 382 L232 390 L213 395 L192 395 L180 392 L165 384 L159 379
 L153 371 L147 355 L147 338 L149 330 L155 317 L161 309 L171 299 L179 293 L190 288
 L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
+
+/**
+ * The same note as a CSS mask, for the pane of frosted glass that sits between
+ * the canvas and the note (`.pane` in the stylesheet).
+ *
+ * Built here from `NOTE` rather than written into the stylesheet, because a
+ * second copy of the outline over there would be free to drift away from the
+ * one the `<svg>` draws — and the failure would be invisible: the glass would
+ * simply stop lining up with the note it is supposed to be the glass *of*.
+ *
+ * The `viewBox` is the svg's, and the stylesheet stretches the mask to the
+ * pane's box, so the two map the path onto the mark identically.
+ */
+const NOTE_MASK = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="${NOTE}"/></svg>`,
+)}")`;
 
 /**
  * The artwork, band by band, top to bottom. Each band is a *pair* — its colour
@@ -219,6 +240,17 @@ const MarkNote = function ({ playing, qqBound, onOpen }) {
             <span className={styles.clip}>
                 <canvas ref={canvasRef} className={styles.bg} aria-hidden="true" />
             </span>
+            {/* The glass, cut to the note's outline by `mask-image` — written
+                as an inline style rather than in the stylesheet because it is
+                built from `NOTE` (see `NOTE_MASK`). It is a layer of its own
+                rather than a filter on the note, because `backdrop-filter`
+                blurs what is *behind* an element: the note has to stay crisp
+                ink, so something has to sit under it and go soft. */}
+            <span
+                className={styles.pane}
+                style={{ maskImage: NOTE_MASK, WebkitMaskImage: NOTE_MASK }}
+                aria-hidden="true"
+            />
             <svg className={styles.art} viewBox="0 0 512 512" aria-hidden="true" focusable="false">
                 <path className={styles.ink} d={NOTE} />
             </svg>

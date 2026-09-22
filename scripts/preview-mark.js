@@ -7,6 +7,13 @@
  *   - the same square stopped and playing, with the QQ state dot grey and green,
  *   - the note's arrival, frozen at four points of its one-second fade.
  *
+ * The note is a pane of frosted glass — a masked backdrop blur under a
+ * translucent note — and that is the one part of the mark a screenshot of the
+ * app cannot be asked about, because at 40px the blur and the translucency are
+ * both easy to mistake for "the note is just pale". Here it is rendered from
+ * the real stylesheet, the real canvas and the real shadow, so the material can
+ * be judged at size.
+ *
  * The mark has no size animation any more: it used to enter as a bar the width
  * of the row and shrink into the square. It is the square from the first paint
  * now, and the note is the only thing that arrives — so the fade is the state
@@ -47,6 +54,7 @@ const cls = {
     playing: idOf('MarkNote_mark-playing'),
     clip: idOf('MarkNote_clip'),
     bg: idOf('MarkNote_bg'),
+    pane: idOf('MarkNote_pane'),
     art: idOf('MarkNote_art'),
     ink: idOf('MarkNote_ink'),
     dot: idOf('MarkNote_dot'),
@@ -132,24 +140,36 @@ const art = (style) => `<svg class="${cls.art}" viewBox="0 0 512 512" aria-hidde
     <path class="${cls.ink}" d="${NOTE_PATH}"></path>
 </svg>`;
 
+/* The glass, cut to the note's outline — a mirror of `NOTE_MASK` in
+   MarkNote.js, built from the same path the svg draws. */
+const NOTE_MASK = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="${NOTE_PATH}"/></svg>`,
+)}")`;
+
+/* The attribute is single-quoted because the value is a quoted `url("...")`:
+   the two have to use different quote characters. */
+const pane = (style) => `<span class="${cls.pane}" aria-hidden="true"`
+    + ` style='mask-image: ${NOTE_MASK}; -webkit-mask-image: ${NOTE_MASK}${style ? `; ${style}` : ''}'></span>`;
+
 /* The mark's own markup, in the order the component renders it: a clipping
-   layer holding the canvas, the note, and the state dot. The clip is a layer
-   and not the button because the dot has to sit on the corner — the button
-   clipping it cut the dot with the corner's arc (that comparison is what
-   `.workbuddy-ai/serve/dot-probe.html` was for). */
-const markButton = function ({ classes, canvasStyle, artStyle, confirmed }) {
+   layer holding the canvas, the pane of frosted glass cut to the note's
+   outline, the note itself, and the state dot. The clip is a layer and not the
+   button because the dot has to sit on the corner — with the button clipping,
+   the corner's arc cut a visible bite out of the dot at 6×. */
+const markButton = function ({ classes, canvasStyle, noteStyle, confirmed }) {
     return `<button type="button" class="${classes}" aria-label="账号，${confirmed ? '已' : '未'}确认 QQ">
         <span class="${cls.clip}">
             <canvas class="${cls.bg}" data-draw="1"${canvasStyle ? ` style="${canvasStyle}"` : ''}></canvas>
         </span>
-        ${art(artStyle)}
+        ${pane(noteStyle)}
+        ${art(noteStyle)}
         <span class="${cls.dot}${confirmed ? ` ${cls.dotOn}` : ''}" aria-hidden="true"></span>
     </button>`;
 };
 
 const mark = function (opts) {
     return `
-        <figure class="cell${opts.artStyle ? ' freeze-note' : ''}">
+        <figure class="cell${opts.noteStyle ? ' freeze-note' : ''}">
             ${markButton(opts)}
             <figcaption>${opts.label}</figcaption>
         </figure>
@@ -173,7 +193,7 @@ const headerRow = `
 /* Frozen points of the note's fade. The delay is negative, so the animation is
    already that far in — and paused, so the screenshot is reproducible. The
    label is the point in the fade, not the negative delay that gets you there. */
-const fade = (delay, label) => mark({ classes: cls.mark, label, artStyle: `animation-delay: ${delay}s` });
+const fade = (delay, label) => mark({ classes: cls.mark, label, noteStyle: `animation-delay: ${delay}s` });
 
 const flow = (delay) => mark({
     classes: `${cls.mark} ${cls.playing}`,
@@ -205,9 +225,10 @@ const html = `<!doctype html>
     .cell { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
     .cell figcaption { font: 11px/1.4 ui-monospace, monospace; color: #333; }
     /* The frozen cells still run the real animation — the delay only picks the
-       frame. Pausing it keeps the screenshot reproducible. */
+       frame. Pausing it keeps the screenshot reproducible. The note's fade is
+       on two layers now (glass and ink), so both have to be held. */
     .cell .${cls.playing} .${cls.bg} { animation-play-state: paused; }
-    .cell.freeze-note .${cls.art} { animation-play-state: paused; }
+    .cell.freeze-note .${cls.art}, .cell.freeze-note .${cls.pane} { animation-play-state: paused; }
     .note { margin: 0 0 20px; font-size: 13px; color: #555; max-width: 560px; line-height: 1.6; }
     /* The #zoom hash blows one playing mark up 5× so the wave shape can
        actually be judged — at 40px a ripple and a straight line look alike in a
@@ -219,6 +240,8 @@ const html = `<!doctype html>
 <body>
 <div id="out"></div>
 <p class="note">logo 一上来就是 40px 圆角方块，没有任何尺寸动画；音符是唯一进场的东西 —— 一秒淡入。
+音符是一块毛玻璃：彩虹在它后面被模糊（MarkNote_pane），音符本身是一层半透明白（MarkNote_ink）。
+玻璃和音符的轮廓来自同一条路径 —— 遮罩由组件从 NOTE 生成，样式表里没有第二份拷贝。
 右下角那个 9px 的小点是 QQ 状态：未确认灰、已确认绿。它在方块的角上，所以裁切在里层
 （MarkNote_clip）而不是按钮上 —— 按钮裁的话这个点会被圆角咬掉一块。
 播放时彩虹按固定 2 秒周期一直向右流，一个周期正好一个波长，所以首尾帧相同、循环无缝。</p>
@@ -372,6 +395,7 @@ ${headerRow}
         'buffer: ' + DRAW_W + '\\u00d7' + DRAW_H + ', wavelength ' + WAVE_LAMBDA + ' (' + (DRAW_W / WAVE_LAMBDA) + ' cycles)',
         'flow: translateX(50%) over 2s linear, infinite; paused when not playing',
         'note: static path, one 1s opacity fade on mount',
+        'note material: frosted glass — backdrop blur(3px) saturate(1.9) under the note, ink at 62% white',
         'dot: 9px on the bottom-right corner, grey 未确认 / green 已确认',
     ].join('\\n');
 
