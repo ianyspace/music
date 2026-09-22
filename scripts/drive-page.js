@@ -67,8 +67,14 @@
  *      read by the mechanism that makes it that style — the animation name, a
  *      count of computed opacities, and (for the wipe) the fill *advancing*
  *      between two reads. A still frame cannot tell a moving edge from a stuck
- *      one, which is the whole reason the last check samples twice. See `the
- *      phone's lyric styles`.
+ *      one, which is the whole reason the last check samples three times.
+ *      Three more claims come with them: the rise turns *off* under
+ *      `prefers-reduced-motion` (emulated, because the override has to beat a
+ *      two-class selector and that is the kind of thing that silently does not
+ *      apply), the arrow keys move the choice *and* the focus (a roving
+ *      `tabIndex` takes the other rows off the Tab order, so a handler that
+ *      does not work leaves them unreachable), and the choice is still the
+ *      choice after a reload. See `the phone's lyric styles`.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -838,7 +844,16 @@ const drive = async (target, index) => {
                 const row = rows.find((r) => (r.innerText || '').trim().indexOf(${JSON.stringify(title)}) === 0);
                 if (row) row.click();
             })()`);
-            await sleep(450);
+            // Wait for the *choice* to land rather than for a fixed number of
+            // milliseconds, and then wait again for the fade it starts. Both
+            // halves were learned the hard way: `aria-checked` flips in the same
+            // commit that puts the style's class on the element, but the far
+            // lines of 沉浸单行 then fade out over the stylesheet's 0.35s
+            // transition — and `getComputedStyle` during a transition reports the
+            // value being passed *through*, so a read taken too early sees every
+            // line still visible and reports the style as never applied.
+            await waitFor(rowAt(title), (v) => v.found && v.checked === 'true', 4000);
+            await sleep(500);
             return true;
         };
 
@@ -860,6 +875,25 @@ const drive = async (target, index) => {
             '逐行上浮 animates the active line in',
             !rise.error && rise.animation !== 'none',
             rise.error || `animation-name=${rise.animation}`,
+        );
+
+        // ...and off again for a visitor who asked for less motion. Worth its
+        // own check rather than a line of stylesheet read by eye: the rule that
+        // switches the animation on is `.lyrics-rise .lyric-active` — two
+        // classes — so an override written as a bare `.lyric-active` loses to it
+        // however late in the file it appears, and the media query then does
+        // nothing at all while looking perfectly correct.
+        await send('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+        });
+        await sleep(300);
+        const reduced = await evaluate(read);
+        await send('Emulation.setEmulatedMedia', { features: [] });
+        await sleep(300);
+        check(
+            '逐行上浮 stops animating when the visitor asked for less motion',
+            !reduced.error && reduced.animation === 'none',
+            reduced.error || `animation-name=${reduced.animation}`,
         );
 
         await choose('沉浸单行');
@@ -908,11 +942,111 @@ const drive = async (target, index) => {
         }
         await shot('lyric-wipe');
 
-        // Back to the default, so the rest of the run — and every screenshot
-        // after this one — is not looking at whichever style was last clicked.
+        /* --- the arrows, which the roving tabIndex obliges -------------------
+         *
+         * `role="radio"` is a promise that the arrow keys move the choice, and
+         * the roving `tabIndex` is what takes the other three rows off the Tab
+         * order — so without the handler the group is four rows a keyboard
+         * cannot get past the first of. The handler lives on the group, so the
+         * event is dispatched from the focused row and has to bubble: that is
+         * part of what this checks.
+         *
+         * Read in two steps, with a wait between, because the dispatch and the
+         * re-render are not the same turn: a synchronous read straight after the
+         * event sees the old DOM and reports the arrow as inert even though the
+         * handler ran. Focus is read as well as the selection, because those are
+         * two separate statements — a handler that changed the style without
+         * moving focus would pass a check on `aria-checked` alone and still
+         * leave the next press arriving on the wrong row.
+         *
+         * Run from the first row on purpose: `ArrowDown` on the last one wraps
+         * to the first, which is correct for a radiogroup but reads as "nothing
+         * moved" if the expectation is `+1`.
+         */
         await choose('普通');
+        const arrowFrom = await evaluate(`(() => {
+            const rows = Array.from(document.querySelectorAll(
+                ${JSON.stringify(spec.group)} + ' [role="radio"]',
+            ));
+            const at = rows.findIndex((r) => r.getAttribute('aria-checked') === 'true');
+            if (at < 0) return -1;
+            rows[at].focus();
+            rows[at].dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'ArrowDown', bubbles: true, cancelable: true,
+            }));
+            return at;
+        })()`);
+        await sleep(600);
+        const arrowed = await evaluate(`(() => {
+            const rows = Array.from(document.querySelectorAll(
+                ${JSON.stringify(spec.group)} + ' [role="radio"]',
+            ));
+            return {
+                to: rows.findIndex((r) => r.getAttribute('aria-checked') === 'true'),
+                focused: rows.indexOf(document.activeElement),
+                titles: rows.map((r) => (r.innerText || '').trim().split('\\n')[0]),
+            };
+        })()`);
+        check(
+            'the arrow keys move the lyric style',
+            arrowFrom === 0 && arrowed.to === 1,
+            `${arrowed.titles[arrowFrom]} -> ${arrowed.titles[arrowed.to]}`,
+        );
+        check(
+            '...and focus goes with it',
+            arrowed.focused === arrowed.to,
+            `focus is on row ${arrowed.focused}, the choice is row ${arrowed.to}`,
+        );
+
+        // Left on a non-default style, on purpose: the reload below is what
+        // proves the choice was *stored*, and it needs something to look for
+        // that a fresh page would not arrive at by itself.
+        await choose('卡拉OK 扫光');
         await click(spec.collapse);
         await sleep(600);
+
+        /* --- and it is still there after a reload ---------------------------
+         *
+         * The half of a preference that is easy to get wrong is the way back:
+         * `storageSet` with no matching read is a setting that looks saved and
+         * reverts on the next visit, and nothing on screen says so. So the page
+         * is reloaded and the drawer reopened, and the check is on the row that
+         * reports itself checked — not on the localStorage value, which would
+         * pass for a write nobody reads.
+         */
+        const stored = await evaluate(`localStorage.getItem('music:setting:lyricStyle')`);
+        await send('Page.reload', {});
+        await sleep(3000);
+        const back = await waitFor(rowCount, (n) => n > 0, 30000);
+        check('the list comes back after the lyric style reload', back.value > 0, `${back.value} rows`);
+
+        // The mini bar only exists once something has been played, and a reload
+        // is a fresh page — so a row has to be clicked again before the player
+        // can be opened.
+        await evaluate(`(() => {
+            const row = document.querySelector(${JSON.stringify(target.rows)});
+            if (row) row.click();
+        })()`);
+        await sleep(4000);
+        await click(spec.player);
+        await sleep(1000);
+        await click(spec.more);
+        await sleep(600);
+        const restored = await evaluate(`(() => {
+            const rows = Array.from(document.querySelectorAll(
+                ${JSON.stringify(spec.group)} + ' [role="radio"]',
+            ));
+            const checked = rows.filter((r) => r.getAttribute('aria-checked') === 'true');
+            return {
+                count: rows.length,
+                titles: checked.map((r) => (r.innerText || '').trim().split('\\n')[0]),
+            };
+        })()`);
+        check(
+            'the lyric style survived a reload',
+            restored.titles.length === 1 && restored.titles[0] === '卡拉OK 扫光',
+            `stored=${JSON.stringify(stored)}, checked=${JSON.stringify(restored.titles)} of ${restored.count} rows`,
+        );
     };
 
     await send('Page.enable');
@@ -1044,8 +1178,6 @@ const drive = async (target, index) => {
     }
     await shot('keys');
 
-    if (target.lyricStyles) await exerciseLyricStyles(target.lyricStyles);
-
     if (target.lyrics) await exerciseToggle('the lyrics toggle', target.lyrics, 'lyrics');
     if (target.list) await exerciseToggle('the list toggle', target.list, 'list');
 
@@ -1057,6 +1189,11 @@ const drive = async (target, index) => {
     // somewhere along the way, everything above was measured on a dead page.
     const rowsAtEnd = await evaluate(rowCount);
     check('the list survived the interactions', rowsAtEnd > 0, `${rowsAtEnd} rows`);
+
+    // Last of the phone's player-page stages, and after the two checks above on
+    // purpose: the persistence half of it reloads the page, which stops the
+    // music they read.
+    if (target.lyricStyles) await exerciseLyricStyles(target.lyricStyles);
 
     /* --- and the repair the visitor had to do by hand ----------------------
      *
