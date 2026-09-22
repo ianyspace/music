@@ -1347,25 +1347,19 @@
    reads as a card with rounded corners; a capsule with a rail inside it still
    reads as a capsule.
    ------------------------------------------------------------------------
-   The box is layout; the *surface* is not here. The pill is drawn by a WebGL
-   shader (`@ybouane/liquidglass`, configured by `GLASS_CONFIG` in
-   DesktopMusic.js), so nothing that paints is left — no `background`, no
-   `border`, no `border-radius`, no `box-shadow`, no `backdrop-filter`. Their
-   equivalents are the shader's config fields, deliberately not duplicated here:
-   a CSS background under a semi-transparent shader tints it, and a CSS border
-   draws a ring on top of the refraction.
+   The box is layout; the *surface* is not here and must not come back. The
+   pill is drawn by a WebGL shader (`@ybouane/liquidglass`, configured by
+   `GLASS_CONFIG` in DesktopMusic.js), so there is no `background`, no
+   `border`, no `border-radius`, no `box-shadow` and no `backdrop-filter` — a
+   CSS background under a semi-transparent shader tints it, and a CSS border
+   draws a ring on top of the refraction. There is deliberately no CSS fallback
+   either: one surface, one owner.
 
    `z-index` has to stay: the library injects its canvas as the element's first
    child at `z-index: -1`, and a negative-z child only paints above the
    element's own background (and below its content) if the element is itself a
    stacking context. Take the `z-index` away and the canvas falls behind
-   `.backdrop` instead.
-
-   `.bar-no-glass` is the same pill the way it used to be, and it is the state
-   the bar is in until the shader has drawn a frame — so a browser without WebGL,
-   or a library that fails to load, gets the old frosted bar rather than a
-   transparent one. It is a fallback, not a second style: it never applies while
-   the shader is live. */
+   `.backdrop` instead. */
 .bar {
     position: absolute;
     left: 50%;
@@ -1375,15 +1369,6 @@
     width: min(780px, calc(100vw - 96px));
     height: var(--bar-h);
     box-sizing: border-box;
-}
-
-.bar-no-glass {
-    border-radius: 999px;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
 }
 
 /* Three cells, so the transport is centred on the *bar* and not on whatever

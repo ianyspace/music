@@ -65,64 +65,29 @@ const SETTLE_MS = 700;
 const LIST_HIDE_MS = 3000;
 
 /**
- * The play bar's glass, in the shader's own vocabulary — this object is the
- * *only* thing that decides what the pill looks like.
+ * The play bar's glass — one preset per theme, and these two keys are all the
+ * library is told.
  *
- * The stylesheet still positions `.bar` (where it sits, how wide, how tall),
- * because the shader needs a laid-out box to draw into. Everything that used to
- * be painted there — `background`, `border`, `border-radius`, `box-shadow`,
- * `backdrop-filter` — is gone, and its equivalents are the fields below.
+ * Everything else it offers (refraction, chromatic aberration, the rim
+ * highlight, the specular pass, the Fresnel term, the shadow, the bevel depth,
+ * the saturation/brightness pair, the blue tint) is left at the library's own
+ * defaults, deliberately: the fewer numbers we own, the fewer there are to keep
+ * in step with the library. Both presets are the library's own documented
+ * examples — "Frosted Panel" and "Dark Glass" — rather than values invented
+ * here.
  *
- * The mapping from the old CSS, since the numbers do not transfer:
+ * `cornerRadius` is clamped by the shader to half the box's shorter side, so
+ * the two do not look the same: the bar is 72px tall, half of it is 36, so the
+ * light theme's 30 is a slightly squared pill and the dark theme's 50 is
+ * clamped to a full one.
  *
- *   - `cornerRadius: 36` is the old `border-radius: 999px`: the bar is 72px
- *     tall, so half of it is exactly a pill. A number, not `999px`, because
- *     the shader builds the rounded rect from the box it is given.
- *   - `blurAmount: 0.55` is not `blur(26px)` translated — the shader's blur is
- *     `blurAmount * 2.5` texels per pass over three passes, so its whole useful
- *     range is roughly 0–1.5 and 0.55 is a frost, not the 26px smear the CSS
- *     had. It does not need to match: what is behind the bar is already the
- *     24px-blurred cover layer, so this only has to soften what refraction
- *     brings in at the rim.
- *   - `zRadius: 26` is the bevel — the curvature of the pill's cross-section.
- *     The default 40 is tuned for a fat panel and reads as a very deep lens on
- *     a 72px bar; 26 keeps the edge a rounded edge rather than a bulge.
- *   - `shadowOpacity` / `shadowSpread` / `shadowOffsetY` replace
- *     `--glass-shadow`. The old one was one wide ambient layer with no offset;
- *     a small downward offset is what tells the eye the bar floats over the
- *     stage rather than being cut into it.
- *   - `fresnel: 1`, `edgeHighlight: 0.06` and `specular: 0.12` are the lighting.
- *     Kept low on purpose: the bar sits over a page that is already soft, and a
- *     bright rim reads as a border — which is the CSS look this replaces.
- *   - `tintStrength: 0` deliberately. It is a *cool blue* tint, and this app's
- *     accent is red; a blue cast on the one surface that carries the play
- *     button would fight it.
- *   - `floating: false` and `button: false`: the bar is neither draggable nor a
- *     button — it contains buttons, and a press anywhere on the pill must not
- *     flatten it.
- *
- * One value for both themes, like `.cover-bg`. The shader has no idea which
- * theme is on; it samples the backdrop, which already carries the theme, and
- * `brightness: 0` keeps it from arguing with it.
+ * These live in JSX (`data-config` on `.bar`) and not in the stylesheet, which
+ * now holds nothing about how the pill looks. The library watches that
+ * attribute, so toggling the theme re-renders the glass with no other wiring.
  */
 const GLASS_CONFIG = {
-    cornerRadius: 36,
-    zRadius: 26,
-    blurAmount: 0.55,
-    refraction: 0.69,
-    chromAberration: 0.05,
-    edgeHighlight: 0.06,
-    specular: 0.12,
-    fresnel: 1,
-    saturation: 0.08,
-    brightness: 0,
-    tintStrength: 0,
-    shadowOpacity: 0.26,
-    shadowSpread: 12,
-    shadowOffsetY: 6,
-    floating: false,
-    button: false,
-    bevelMode: 0,
+    light: { blurAmount: 0.25, cornerRadius: 30 },
+    dark: { blurAmount: 0.25, cornerRadius: 50, brightness: -0.3 },
 };
 
 /**
@@ -192,9 +157,9 @@ const Tonearm = function ({ playing }) {
  * other surface is a `backdrop-filter` over the `.backdrop` colour field,
  * styled by `DesktopMusic.module.scss` from the `--glass-*` tokens. The play
  * bar is the one exception — its surface is a WebGL shader from
- * `@ybouane/liquidglass`, configured by `GLASS_CONFIG` above, and the stylesheet
- * only gives it a box to draw into. See the effect that initialises it, and the
- * `.bar` notes, for what that costs.
+ * `@ybouane/liquidglass`, configured by `GLASS_CONFIG` above and by nothing
+ * else, with the stylesheet giving it a box to draw into. See the effect that
+ * initialises it.
  */
 const DesktopMusic = function ({
     theme,
@@ -255,11 +220,6 @@ const DesktopMusic = function ({
     // The live instance, in a ref because the render loop owns it: nothing on
     // screen is derived from it.
     const glassRef = useRef(null);
-    // Whether the shader is drawing yet. This is what decides if the pill wears
-    // the CSS glass (see `.bar-no-glass`): while it is false the bar must look
-    // like it always did, so a browser without WebGL, or a capture that throws,
-    // degrades to the old bar instead of to a transparent one.
-    const [glassLive, setGlassLive] = useState(false);
     const searchInputRef = useRef(null);
     const activeLyricRef = useRef(null);
     const pressYRef = useRef(0);
@@ -391,7 +351,7 @@ const DesktopMusic = function ({
      * it. So the glass element must be a direct child of the root, and what the
      * glass *shows* is whatever the root's other children painted there.
      *
-     * Four things follow from that, and each is a decision:
+     * Three things follow from that, and each is a decision:
      *
      *   - The root is `.root`, and `.bar` is already its direct child, so no
      *     restructuring. `.backdrop` being an opaque full-viewport layer matters
@@ -404,15 +364,12 @@ const DesktopMusic = function ({
      *     a static export still evaluates this module on the server. Importing
      *     inside the effect solves both, and keeps it out of the phone page's
      *     bundle entirely — `/h5` never loads it.
-     *   - `glassLive` gates the CSS fallback rather than the other way round.
-     *     The pill's own paint has to be removed once the shader is drawing (the
-     *     shader output is semi-transparent, so a CSS background underneath it
-     *     tints the glass and the CSS `border` draws a ring over the refraction),
-     *     but removing it up front would mean a transparent bar on any browser
-     *     that cannot start the shader. So the CSS glass is the default and this
-     *     flag is what takes it away — after the shader's own canvas has been
-     *     read back and found to have pixels in it, which is the only way to
-     *     tell "drawing" from "failed silently" (see the comment there).
+     *   - There is no CSS fallback behind the shader. The pill's surface is the
+     *     library's and only the library's — a `background` under a
+     *     semi-transparent shader would tint it and a CSS `border` would draw a
+     *     ring over the refraction, which is the opposite of the point. A
+     *     browser that cannot start the shader gets a bar with no surface,
+     *     which is the accepted cost of not owning the look in two places.
      */
     useEffect(() => {
         const root = rootRef.current;
@@ -427,8 +384,6 @@ const DesktopMusic = function ({
             try {
                 ({ LiquidGlass } = await import('@ybouane/liquidglass'));
             } catch (error) {
-                // A failed chunk fetch is a bar with the old glass on it, not a
-                // broken page: `glassLive` simply never becomes true.
                 console.warn('DesktopMusic: liquid glass is unavailable', error);
                 return;
             }
@@ -444,67 +399,7 @@ const DesktopMusic = function ({
                 instance.destroy();
                 return;
             }
-
-            /* The one failure the library cannot report.
-             *
-             * Its render loop catches its own errors and logs them, so a scene
-             * it can never render looks exactly like a scene it has not rendered
-             * *yet*. The realistic cause is a cross-origin image in the band the
-             * glass samples (the bar's box plus the 20px the shader needs for its
-             * shadow): `ctx.drawImage` of it taints the scene canvas, and every
-             * `texImage2D` from that canvas throws from then on. Our covers are
-             * on R2 and on Google Drive and neither sends CORS headers, so this
-             * is a live risk, not a theoretical one — `.side`'s bottom edge is
-             * kept out of that band for exactly this reason (see the stylesheet),
-             * and this is what catches anything else.
-             *
-             * A readback, not a watchdog: "dead" and "fine" are distinguishable
-             * from one drawn frame, and reading the canvas every frame would cost
-             * more than the effect it guards. Three tries, 250ms apart, and a
-             * hidden document is never a verdict — requestAnimationFrame does not
-             * run in a background tab, so a page opened in one would otherwise be
-             * declared broken before it ever had a chance to draw.
-             */
-            const hasDrawn = () => {
-                const canvas = instance.glassCanvases.get(bar);
-                if (!canvas || canvas.width === 0) return false;
-                try {
-                    const pixels = canvas
-                        .getContext('2d')
-                        .getImageData(0, 0, canvas.width, canvas.height).data;
-                    // Every 97th pixel — the pill covers most of the canvas, so
-                    // the stride only has to avoid landing on the same column
-                    // every time, not to be exhaustive.
-                    for (let i = 3; i < pixels.length; i += 4 * 97) {
-                        if (pixels[i] > 8) return true;
-                    }
-                    return false;
-                } catch (error) {
-                    return false;
-                }
-            };
-            const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
-            const visible = () => new Promise((resolve) => {
-                document.addEventListener('visibilitychange', resolve, { once: true });
-            });
-
-            let drew = false;
-            for (let attempt = 0; attempt < 3 && !drew; attempt += 1) {
-                await (document.visibilityState === 'hidden' ? visible() : wait(250));
-                if (cancelled) { instance.destroy(); return; }
-                drew = hasDrawn();
-            }
-            if (cancelled) { instance.destroy(); return; }
-            if (!drew) {
-                console.warn('DesktopMusic: the liquid glass shader never drew; keeping the CSS bar');
-                instance.destroy();
-                return;
-            }
-
             glassRef.current = instance;
-            window.requestAnimationFrame(() => {
-                if (!cancelled) setGlassLive(true);
-            });
         })();
 
         return () => {
@@ -526,9 +421,10 @@ const DesktopMusic = function ({
         if (!instance || !layer) return;
         instance.capture.invalidateCache(layer);
         instance.markChanged(layer);
-        // `glassLive` is a dependency so that a song changed *while* the library
-        // was still starting still gets its artwork into the first snapshot.
-    }, [coverUrl, glassLive]);
+        // Nothing is needed for the mount case: a song that arrives while
+        // `init()` is still running is already in the first snapshot, because
+        // the snapshot is taken after this effect's first run.
+    }, [coverUrl]);
 
     // Announce each mode change on the stage, but never the mode the page
     // happens to mount with (that is not a tap).
@@ -1023,20 +919,19 @@ const DesktopMusic = function ({
 
             {/* --- bottom: the capsule play bar ----------------------------
                 The pill is the one surface on this page whose look is not CSS.
-                `GLASS_CONFIG` above owns every visual property; the class list
-                here only decides whether the shader has taken over yet. The
-                injected shader canvas is the element's first child at
-                `z-index: -1`, which is why `.bar` must keep its `z-index` (a
-                stacking context is what puts the canvas above the element's own
-                background and below its content) and why the element's real
-                content — the seek rail, the record, the title, the transport —
-                stays live DOM rather than a snapshot. */}
+                `GLASS_CONFIG` owns every visual property; the stylesheet gives
+                it a box and nothing else. The injected shader canvas is the
+                element's first child at `z-index: -1`, which is why `.bar` must
+                keep its `z-index` (a stacking context is what puts the canvas
+                above the element's own background and below its content) and why
+                the element's real content — the seek rail, the record, the
+                title, the transport — stays live DOM rather than a snapshot. */}
             <div
                 ref={barRef}
-                className={glassLive
-                    ? styles.bar
-                    : `${styles.bar} ${styles['bar-no-glass']}`}
-                data-config={JSON.stringify(GLASS_CONFIG)}
+                className={styles.bar}
+                data-config={JSON.stringify(
+                    theme === 'dark' ? GLASS_CONFIG.dark : GLASS_CONFIG.light,
+                )}
             >
                 {/* The progress rides the capsule's *upper* edge — inside the
                     glass, one hairline above the content row, so the bar still

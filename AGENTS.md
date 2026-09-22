@@ -946,7 +946,7 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 | token | 用途 |
 | --- | --- |
 | `--glass-blur` / `--glass-sat` | `backdrop-filter: blur() saturate()` 的两个参数 |
-| `--glass-bg` | 常规面：设置按钮、折叠后的列表开关；播放条的 `.bar-no-glass` 兜底也用这一个值 |
+| `--glass-bg` | 常规面：设置按钮、折叠后的列表开关（播放条不再用 `--glass-*`，见下一节） |
 | `--glass-bg-soft` | 玻璃**之上**的凹陷（搜索框、输入框、设置里的曲库卡片） |
 | `--glass-bg-strong` | 要压住繁忙内容的面：设置弹窗、面板卡片、toast、定位按钮 |
 | `--glass-border` / `--glass-shadow` | 描边、环境投影 |
@@ -965,15 +965,25 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 ### 播放条的液态玻璃（`@ybouane/liquidglass`）
 
 **这是全仓库唯一的 WebGL。** 播放条的面由着色器画，`GLASS_CONFIG`
-（`desktop/DesktopMusic.js`）是它**唯一**的样式来源 —— `.bar` 里只剩布局
-（位置、宽、高），`background` / `border` / `border-radius` / `box-shadow` /
-`backdrop-filter` 全部删掉，等价物是配置里的 `cornerRadius` / `shadowOpacity` /
-`blurAmount`。**不要再往 `.bar` 上加任何「画」的属性**：着色器输出是半透明的，
-底下的 CSS 背景会给玻璃上色，CSS 描边会在折射上面画一圈线。
+（`desktop/DesktopMusic.js`）是它**唯一**的样式来源 —— 而且**只配两三个键**：
+浅色 `{ blurAmount: 0.25, cornerRadius: 30 }`，深色 `{ blurAmount: 0.25,
+cornerRadius: 50, brightness: -0.3 }`（库文档里的 Frosted Panel / Dark Glass 两个示例）。
+其余全部留库的默认值：**我们自己拥有的数字越少，要跟着库升级对齐的就越少。**
+`cornerRadius` 会被着色器夹到「短边的一半」，条高 72 → 上限 36，
+所以浅色 30 是略方的胶囊、深色 50 被夹成整颗胶囊。
+
+`.bar` 里只剩布局（位置、宽、高、`z-index`），`background` / `border` /
+`border-radius` / `box-shadow` / `backdrop-filter` 全部删掉，**并且没有 CSS 兜底** ——
+一个面只有一个主人。**不要再往 `.bar` 上加任何「画」的属性**：着色器输出是半透明的，
+底下的 CSS 背景会给玻璃上色，CSS 描边会在折射上面画一圈线。代价是拿不到 WebGL
+或着色器起不来时，播放条是一条没有面的栏。
+
+`data-config` 写在 JSX 上（不是 CSS），库会监听这个属性，所以**切主题会自动重画**，
+不需要额外接线。
 
 > 历史：`d2cd9fa` 那次大重构把库**卸掉**、桌面全改纯 CSS。现在只把播放条这一个面
 > 换回着色器，其余仍按上一节。要恢复「纯 CSS」就在 `DesktopMusic.js` 里删掉那个
-> effect 和 `GLASS_CONFIG`，`.bar-no-glass` 的值搬回 `.bar` 即可。
+> effect 和 `GLASS_CONFIG`，把旧的 `--glass-*` 那几行搬回 `.bar` 即可。
 
 库的模型（决定了下面每一条）：它把 root 的**每个非玻璃直接子元素**用 html-to-image
 栅格化进一张 canvas（静态的只做一次并缓存），然后对每个玻璃元素在它自己的矩形处裁剪
@@ -993,12 +1003,11 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
   我们一个都没用：条后面的东西（唱片、歌词）不在采样带里，`.cover-bg` 换歌时由
   那个 effect 显式处理 —— **`markChanged()` 不够**，它只重跑着色器、不重新抓快照，
   必须同时 `instance.capture.invalidateCache(el)`。
-- **降级是设计的一部分**：`glassLive` 为假时挂 `.bar-no-glass`（就是老的那颗胶囊）。
-  三条路径会走到它 —— 动态 import 失败、`init()` 抛错、以及一次**画布回读**：
-  着色器从没画出任何像素时（上面那条污染是最现实的成因）读回来是空的，
-  于是销毁实例、保留 CSS 胶囊，而不是留一条透明的栏。回读只做一次，不是看门狗。
 - 包是动态 import 的，所以它落在自己的 chunk（~51 kB）里，**`/h5` 完全不会加载**。
   也因为没有顶层 import，静态导出在服务端求值这个模块时不会碰到 `window`。
+- `init()` 会把异常抛出来（动态 import 失败也一样），但**渲染循环里的异常是它自己
+  吃掉的**：起不来时控制台只有一条 `LiquidGlass: render error`，播放条没有面。
+  排查就从那条日志开始。
 
 ### 桌面端：舞台占满全屏，别的东西都浮在上面
 
