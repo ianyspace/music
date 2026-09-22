@@ -31,7 +31,7 @@ const MODES = {
 };
 
 // The lyric styles the drawer offers, in the order it lists them. `plain` is
-// first because it is the default and the one the rest are departures from.
+// first because it is the default and the one the other is a departure from.
 //
 // `LYRIC_STYLE_CLASS` is built once, at module scope, rather than as
 // `styles['lyrics-' + variant]` at the point of use: a computed lookup returns
@@ -41,35 +41,12 @@ const MODES = {
 // the correct answer.
 const LYRIC_OPTIONS = [
     { key: 'plain', title: '普通', sub: '当前行放大，前后文都在' },
-    { key: 'rise', title: '逐行上浮', sub: '换行时从下方升起并淡入' },
     { key: 'solo', title: '沉浸单行', sub: '只留当前行和上下各一行' },
-    { key: 'wipe', title: '卡拉OK 扫光', sub: '当前行从左向右点亮' },
 ];
 
 const LYRIC_STYLE_CLASS = {
     plain: '',
-    rise: styles['lyrics-rise'],
     solo: styles['lyrics-solo'],
-    wipe: styles['lyrics-wipe'],
-};
-
-// How long a line is assumed to last, for the wipe. Same three numbers as the
-// three.js lyrics use (`three/scene/lyrics.js`), so the same song sweeps at the
-// same speed in both renderers. `MIN` keeps a very short line from snapping
-// across in a blink, `MAX` keeps a long instrumental gap from leaving the line
-// half-lit for twenty seconds, and `LAST_LINE_SECONDS` is the stand-in for the
-// last line, which has no next line to measure against.
-const MIN_LINE_SECONDS = 0.6;
-const MAX_LINE_SECONDS = 8;
-const LAST_LINE_SECONDS = 4.5;
-
-/** How long the line at `index` is assumed to last, in seconds. */
-const lineSpan = function (lines, index) {
-    const line = lines[index];
-    if (!line) return 0;
-    const next = lines[index + 1];
-    const raw = (next ? next.time : line.time + LAST_LINE_SECONDS) - line.time;
-    return Math.min(MAX_LINE_SECONDS, Math.max(MIN_LINE_SECONDS, raw));
 };
 
 /**
@@ -138,23 +115,21 @@ const Tonearm = function ({ playing }) {
  * ## The lyric styles
  *
  * The same drawer carries a radio group that picks how the words are drawn —
- * see `LYRIC_OPTIONS`. Three of the four are new, and they divide cleanly into
- * two kinds:
+ * see `LYRIC_OPTIONS`. `solo` is the departure from `plain`: only the line
+ * being sung and one either side of it, with the sung line growing into place
+ * from smaller than its final size.
  *
- *  - `rise` and `solo` are triggered *by a line change*. The page already
- *    re-renders when the active line moves, so they are pure CSS hung off
- *    classes this component was already computing. No clock, no timers.
- *  - `wipe` moves *between* the lines, which is a different problem: the only
- *    clock the page has is the `<audio>` element's `timeupdate`, about four
- *    times a second, and a sweeping edge driven at 4 Hz reads as a stutter.
- *    That one gets the effect below, which reads the element's own
- *    `currentTime` once a frame and writes a single custom property.
+ * Both are triggered *by a line change* and are pure CSS hung off classes this
+ * component was already computing. That is the whole trick: the page already
+ * re-renders when the active line moves, and a CSS animation starts the moment
+ * its property first applies to an element, so the grow runs exactly once per
+ * line — no clock, no timer, nothing to restart by hand.
  *
- * All three are about following the clock, so they are gated on `lyrics.timed`:
- * lyrics without timestamps have no clock to follow, and fall back to `plain`
- * rather than to a style that would look broken. (`solo` in particular would
- * hide every line but the last, because untimed lyrics put every line at
- * `time: 0` and the "active" line is then whichever one the reduce lands on.)
+ * `solo` is gated on `lyrics.timed`: it follows the clock, and lyrics without
+ * timestamps have no clock to follow, so they fall back to `plain` rather than
+ * to a style that would look broken. Untimed lyrics put every line at
+ * `time: 0`, so the "active" line is whichever one the reduce lands on — the
+ * last — and `solo` would hide every other line on screen.
  */
 const NowPlaying = function ({
     track,
@@ -182,7 +157,6 @@ const NowPlaying = function ({
     onToggleRipples,
     lyricStyle = 'plain',
     onChooseLyricStyle,
-    audioRef,
 }) {
     const meta = parseTrackName(track.name);
     const gradient = trackGradient(track.name);
@@ -234,50 +208,6 @@ const NowPlaying = function ({
             activeLyricRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
     }, [activeLyric, lyricsShown]);
-
-    // 卡拉OK: how much of the current line has been sung, written straight onto
-    // the element every frame as `--wipe`.
-    //
-    // Straight onto the element, not into state, and that is the whole point of
-    // this effect existing separately from everything else on the page: the
-    // position of the edge changes sixty times a second, and routing that
-    // through `setState` would re-render the page — the record, the transport,
-    // the slider — sixty times a second to move one gradient stop.
-    //
-    // Only while playing, because a paused song has a fixed answer; but the
-    // effect paints once before it decides, so pausing mid-line, seeking, or
-    // opening the drawer all leave the right amount of fill on screen instead
-    // of whatever the last playing frame happened to write.
-    //
-    // `prefers-reduced-motion` is deliberately *not* checked here. The other two
-    // styles are decoration and the stylesheet turns them off; this one is a
-    // position readout — the same information the progress slider carries —
-    // and a visitor who asked for less motion has not asked for a lyric sheet
-    // that cannot tell them which word is being sung.
-    useEffect(() => {
-        if (lyricVariant !== 'wipe' || !lyricsShown || activeLyric < 0) return undefined;
-        const element = activeLyricRef.current;
-        const lines = lyrics ? lyrics.lines : null;
-        if (!element || !lines) return undefined;
-        const span = lineSpan(lines, activeLyric);
-        if (!span) return undefined;
-
-        const paint = function () {
-            const audio = audioRef ? audioRef.current : null;
-            if (!audio) return;
-            const ratio = (audio.currentTime - lines[activeLyric].time) / span;
-            const clamped = Math.min(1, Math.max(0, ratio));
-            element.style.setProperty('--wipe', `${(clamped * 100).toFixed(2)}%`);
-        };
-
-        paint();
-        if (!isPlaying) return undefined;
-        let frame = requestAnimationFrame(function tick() {
-            paint();
-            frame = requestAnimationFrame(tick);
-        });
-        return () => cancelAnimationFrame(frame);
-    }, [lyricVariant, lyricsShown, isPlaying, activeLyric, lyrics, audioRef]);
 
     const closeSheet = useCallback(function () {
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {

@@ -424,13 +424,6 @@ const MusicApp = function () {
                     onToggleRipples={toggleRipples}
                     lyricStyle={lyricStyle}
                     onChooseLyricStyle={chooseLyricStyle}
-                    // The one prop that is not state: the lyrics' 卡拉OK style
-                    // follows the song *between* the lines, and the page's only
-                    // clock is this element's `timeupdate`. Handing over the ref
-                    // is what lets the page read `currentTime` per frame without
-                    // the shell having to push sixty updates a second through
-                    // React to say the same thing.
-                    audioRef={audioRef}
                 />
             )}
 

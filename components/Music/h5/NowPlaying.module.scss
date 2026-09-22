@@ -527,83 +527,65 @@
     transform: scale(1.04);
 }
 
-/* --- the three alternate lyric styles ---------------------------------- */
+/* --- the alternate lyric style: 沉浸单行 --------------------------------- */
 
-/* 逐行上浮 — the line being sung rises into place instead of appearing at full
-   size. The animation hangs off `.lyric-active`, so it runs exactly once per
-   line change for free: the class moves to a different element each time, and
-   a CSS animation starts the moment its property first applies to an element.
-   No timer, and nothing to restart by hand.
-
-   `both` fill mode, so the line holds the end state — which is deliberately the
-   same scale the plain style uses, and means switching styles mid-song does not
-   make the line jump. */
-.lyrics-rise .lyric-active {
-    animation: lyric-rise 0.3s cubic-bezier(0.32, 0.72, 0.2, 1) both;
-}
-
-@keyframes lyric-rise {
-    from {
-        opacity: 0;
-        transform: translateY(7px) scale(1);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1.04);
-    }
-}
-
-/* 沉浸单行 — the line being sung, plus one either side of it, and nothing else.
-   The other lines keep their place in the flow and are simply invisible: their
-   height is what keeps the active line centred by the same scroll the other
-   styles use, so hiding them with `display: none` would collapse the list and
-   take the centring with it. `.lyric-far` is written by the component in every
-   style and only means anything here, which is why it has to come last — it
-   ties on specificity with `.lyric` below and wins on source order. */
+/* The line being sung, plus one either side of it, and nothing else. The other
+   lines keep their place in the flow and are simply invisible: their height is
+   what keeps the active line centred by the same scroll the plain style uses,
+   so hiding them with `display: none` would collapse the list and take the
+   centring with it. `.lyric-far` is written by the component in every style and
+   only means anything here, which is why it has to come last — it ties on
+   specificity with `.lyrics-solo .lyric` just above it and wins on source order. */
 .lyrics-solo .lyric {
     opacity: 0.3;
 }
 
+/* The grow: the line being sung comes up from its neighbours' size to its own,
+   with the text fading in behind it. It hangs off `.lyric-active`, so it runs
+   exactly once per line change for free — the class moves to a different
+   element each time, and a CSS animation starts the moment its property first
+   applies to an element. No timer, and nothing to restart by hand.
+
+   `transform` and not `font-size`: the active line is 21px while its neighbours
+   are 16px, so animating the font size would relayout the whole list on every
+   frame of the animation, pushing every other line up and down. Scaling draws
+   the same growth without touching layout.
+
+   The easing is a symmetric S-curve, and the first one was not: it was
+   `cubic-bezier(0.2, 0.65, 0.25, 1)`, a hard decelerate, which put **72% of the
+   growth into the first 120ms** of a 440ms animation — measured, by pinning
+   `currentTime` and reading the drawn box (38 -> 46 -> 49 -> 50px tall). The
+   last 320ms moved the line by less than a pixel, so what the eye got was a
+   pop followed by nothing, which is the opposite of the intent. An ease-in-out
+   spends the same 0.42s but spreads the change across it: you see the line
+   grow, and it lands instead of stopping.
+
+   0.42s is also about as long as this can be. A short line can be over in 0.6s
+   (the floor the three.js lyrics clamp their line spans to), and an animation
+   longer than that would still be growing when the next line took over.
+
+   `both` fill mode, so the line holds the end state and nothing snaps when the
+   next line takes over. */
 .lyrics-solo .lyric-active {
     font-size: 21px;
     transform: none;
+    animation: lyric-grow 0.42s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes lyric-grow {
+    from {
+        opacity: 0.4;
+        transform: scale(0.76);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .lyrics-solo .lyric-far {
     opacity: 0;
-}
-
-/* 卡拉OK 扫光 — the line fills with light from left to right as it is sung.
-   `--wipe` is the boundary and the component writes it every frame; the element
-   hugs its own text (`fit-content` + auto margins) so the gradient spans the
-   words rather than the whole column, which is what puts the edge on the glyphs
-   instead of in the empty space beside a short line. */
-.lyrics-wipe .lyric-active {
-    --wipe: 0%;
-    width: fit-content;
-    margin-left: auto;
-    margin-right: auto;
-    transform: none;
-}
-
-/* The fill is a gradient clipped to the glyphs, which is the entire effect — so
-   it sits behind a support check. Without `background-clip: text` the gradient
-   would paint as a solid bar straight over the words, and the line would be
-   unreadable rather than merely unstyled; a browser that fails the check keeps
-   the plain bright line. */
-@supports (background-clip: text) or (-webkit-background-clip: text) {
-    .lyrics-wipe .lyric-active {
-        background-image: linear-gradient(
-            90deg,
-            var(--np-text) 0 var(--wipe),
-            var(--np-text-2) var(--wipe) 100%
-        );
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-        -webkit-text-fill-color: transparent;
-    }
 }
 
 .lyrics-empty {
@@ -1198,13 +1180,14 @@
         animation: none;
     }
 
-    /* The rise animation of 逐行上浮. Written with the variant's own selector
-       rather than as a bare `.lyric-active`, because the rule that switches it
-       on is `.lyrics-rise .lyric-active` — two classes — and a one-class
-       override would lose to it however late it appeared in the file. The
-       other two styles are left alone: neither moves anything the visitor did
-       not ask to be told about. */
-    .lyrics-rise .lyric-active {
+    /* The grow of 沉浸单行. Written with the variant's own selector rather than
+       as a bare `.lyric-active`, because the rule that switches it on is
+       `.lyrics-solo .lyric-active` — two classes — and a one-class override
+       would lose to it however late it appeared in the file. What survives is
+       the size difference itself: the line being sung is still the big bright
+       one, it just arrives there without moving, so the visitor loses the
+       animation and not the answer. */
+    .lyrics-solo .lyric-active {
         animation: none;
     }
 

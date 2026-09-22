@@ -61,20 +61,22 @@
  *      are invisible in a screenshot and obvious on a phone, so this measures
  *      the ink-to-ink gap on each side of the hyphen with a Range per glyph.
  *      Pages with no such label (the 3D room) say so instead of passing.
- *  10. **The four lyric styles are four different things.** Not four skins: 普通
- *      scales the active line, 逐行上浮 animates it in, 沉浸单行 hides all but
- *      three lines, 卡拉OK 扫光 clips a moving gradient to the words. Each is
- *      read by the mechanism that makes it that style — the animation name, a
- *      count of computed opacities, and (for the wipe) the fill *advancing*
- *      between two reads. A still frame cannot tell a moving edge from a stuck
- *      one, which is the whole reason the last check samples three times.
- *      Three more claims come with them: the rise turns *off* under
+ *  10. **The two lyric styles are two different things.** Not two skins: 普通
+ *      scales the active line and keeps its neighbours, 沉浸单行 hides all but
+ *      three lines and grows the line being sung up from its neighbours' size.
+ *      Each is read by the mechanism that makes it that style — the animation
+ *      name and a count of computed opacities — rather than by a screenshot,
+ *      which cannot tell either from a line that happens to be big and bright.
+ *      Three more claims come with them: the grow turns *off* under
  *      `prefers-reduced-motion` (emulated, because the override has to beat a
  *      two-class selector and that is the kind of thing that silently does not
  *      apply), the arrow keys move the choice *and* the focus (a roving
  *      `tabIndex` takes the other rows off the Tab order, so a handler that
  *      does not work leaves them unreachable), and the choice is still the
- *      choice after a reload. See `the phone's lyric styles`.
+ *      choice after a reload. A fourth is about the styles that are *gone*:
+ *      storage may still hold `rise` or `wipe` from a visitor who picked one
+ *      before the drawer lost them, and the restore has to land on 普通 rather
+ *      than on a name with no CSS behind it. See `the phone's lyric styles`.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -236,9 +238,9 @@ const PAGES = [
             more: 'header button[aria-label="更多功能"]',
             rowDrawer: ROW_DRAWER,
         },
-        // The four lyric styles. The phone is the only tree that draws them, so
+        // The two lyric styles. The phone is the only tree that draws them, so
         // the stage lives here rather than in a shared one. See `the phone's
-        // lyric styles` below for what each of the four has to be.
+        // lyric styles` below for what each of the two has to be.
         lyricStyles: {
             player: '[aria-label="打开播放页"]',
             disc: 'button[aria-label="查看歌词"]',
@@ -750,17 +752,21 @@ const drive = async (target, index) => {
     };
 
     /**
-     * The four lyric styles, driven through the drawer and read off the DOM.
+     * The lyric styles, driven through the drawer and read off the DOM.
      *
      * The drawer is left open for the measurements. Nothing here reads a pixel:
-     * every claim is about computed style or about a value the component writes
-     * itself, and a bottom sheet lying over the words changes neither — so the
-     * stage never has to pay the drawer's open/close animation, twice per style.
+     * every claim is about computed style, or about a rule in the stylesheet, and
+     * a bottom sheet lying over the words changes neither — so the stage never
+     * has to pay the drawer's open/close animation, once per style.
      *
-     * `--wipe` is read from `getComputedStyle` rather than from the inline
-     * style, because the inline value is only what the component last wrote
-     * while the computed one is what is actually painted — including the 0% the
-     * stylesheet declares before the first frame.
+     * The grow of 沉浸单行 is checked in two pieces, because neither alone is the
+     * claim. `animation-name` on the active line says the animation is *applied*;
+     * the `@keyframes` rule, read out of the CSSOM, says what it *does* — that it
+     * starts smaller than it ends. Sampling the live transform instead would try
+     * to prove both at once and prove neither reliably: it only moves for 0.42s
+     * after a line change, and a read that lands after it has finished sees the
+     * resting value — which is what a stylesheet with no animation at all would
+     * produce too.
      */
     const exerciseLyricStyles = async (spec) => {
         const click = (selector) => evaluate(
@@ -787,12 +793,35 @@ const drive = async (target, index) => {
                 visible: lines.filter((p) => Number(getComputedStyle(p).opacity) > 0.01).length,
                 fontSize: style.fontSize,
                 animation: style.animationName,
-                gradient: style.backgroundImage.indexOf('gradient') >= 0,
-                wipe: style.getPropertyValue('--wipe').trim(),
-                width: Math.round(active.getBoundingClientRect().width),
-                boxWidth: Math.round(box.getBoundingClientRect().width),
+                transform: style.transform,
                 text: (active.innerText || '').trim(),
             };
+        })()`;
+
+        // The grow's shape, straight out of the stylesheet: every keyframe of any
+        // rule whose name contains `lyric-grow`, wherever it is nested. Read
+        // rather than assumed, so a stylesheet that animates the line from big to
+        // small — or from nothing to nothing — fails instead of passing on the
+        // strength of an `animation-name`.
+        const growFrames = `(() => {
+            const frames = [];
+            const walk = (rules) => Array.from(rules).forEach((rule) => {
+                if (rule.name && rule.name.indexOf('lyric-grow') >= 0 && rule.cssRules) {
+                    Array.from(rule.cssRules).forEach((frame) => {
+                        frames.push({ key: frame.keyText, transform: frame.style.transform });
+                    });
+                    return;
+                }
+                if (rule.cssRules) walk(rule.cssRules);
+            });
+            Array.from(document.styleSheets).forEach((sheet) => {
+                try {
+                    walk(sheet.cssRules);
+                } catch (error) {
+                    /* a cross-origin sheet has no cssRules; none of ours is */
+                }
+            });
+            return frames;
         })()`;
 
         // The player sheet, the lyrics, then the drawer — the three taps a
@@ -820,7 +849,7 @@ const drive = async (target, index) => {
         const group = await evaluate(
             `document.querySelectorAll(${JSON.stringify(spec.group)} + ' [role="radio"]').length`,
         );
-        check('the drawer offers four lyric styles', group === 4, `${group} rows in the radiogroup`);
+        check('the drawer offers two lyric styles', group === 2, `${group} rows in the radiogroup`);
         const chosen = await evaluate(
             `Array.from(document.querySelectorAll(${JSON.stringify(spec.group)} + ' [role="radio"]'))
                 .filter((r) => r.getAttribute('aria-checked') === 'true').length`,
@@ -865,35 +894,8 @@ const drive = async (target, index) => {
         }
         check(
             '普通 draws every line and leaves the active one alone',
-            plain.animation === 'none' && !plain.gradient && plain.visible === plain.lines,
-            `animation=${plain.animation} gradient=${plain.gradient} ${plain.visible}/${plain.lines} lines visible, ${plain.fontSize}`,
-        );
-
-        await choose('逐行上浮');
-        const rise = await evaluate(read);
-        check(
-            '逐行上浮 animates the active line in',
-            !rise.error && rise.animation !== 'none',
-            rise.error || `animation-name=${rise.animation}`,
-        );
-
-        // ...and off again for a visitor who asked for less motion. Worth its
-        // own check rather than a line of stylesheet read by eye: the rule that
-        // switches the animation on is `.lyrics-rise .lyric-active` — two
-        // classes — so an override written as a bare `.lyric-active` loses to it
-        // however late in the file it appears, and the media query then does
-        // nothing at all while looking perfectly correct.
-        await send('Emulation.setEmulatedMedia', {
-            features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
-        });
-        await sleep(300);
-        const reduced = await evaluate(read);
-        await send('Emulation.setEmulatedMedia', { features: [] });
-        await sleep(300);
-        check(
-            '逐行上浮 stops animating when the visitor asked for less motion',
-            !reduced.error && reduced.animation === 'none',
-            reduced.error || `animation-name=${reduced.animation}`,
+            plain.animation === 'none' && plain.visible === plain.lines,
+            `animation=${plain.animation} ${plain.visible}/${plain.lines} lines visible, ${plain.fontSize}`,
         );
 
         await choose('沉浸单行');
@@ -914,42 +916,61 @@ const drive = async (target, index) => {
             );
         }
 
-        await choose('卡拉OK 扫光');
-        const wipeA = await evaluate(read);
-        if (wipeA.error) {
-            check('卡拉OK 扫光 has a line to fill', false, wipeA.error);
-        } else {
-            check(
-                '卡拉OK 扫光 clips its fill to the words',
-                wipeA.gradient && wipeA.width < wipeA.boxWidth,
-                `gradient=${wipeA.gradient} line ${wipeA.width}px in a ${wipeA.boxWidth}px box`,
-            );
-            // Three samples, because a line change resets the fill to zero and
-            // a two-sample check can land either side of one and read it as
-            // "stuck". Any consecutive pair moving forward is the claim.
-            const samples = [wipeA.wipe];
-            await sleep(700);
-            samples.push((await evaluate(read)).wipe);
-            await sleep(700);
-            samples.push((await evaluate(read)).wipe);
-            const numbers = samples.map((value) => parseFloat(value) || 0);
-            const advanced = numbers[1] > numbers[0] || numbers[2] > numbers[1];
-            check(
-                '卡拉OK 扫光 fills left to right as the line is sung',
-                advanced,
-                `--wipe ${samples.join(' -> ')}`,
-            );
-        }
-        await shot('lyric-wipe');
+        // The grow, in the two pieces the docstring describes. First that it is
+        // applied to the line being sung at all...
+        check(
+            '沉浸单行 grows the line being sung',
+            !solo.error && solo.animation.indexOf('lyric-grow') >= 0,
+            solo.error || `animation-name=${solo.animation}, ${solo.fontSize}`,
+        );
+
+        // ...and then that what it applies is a *growth*: `from` smaller than
+        // `to`, with `to` landing on the line's own size. A stylesheet that
+        // shrank the line instead — or that animated only the opacity — passes
+        // the check above and fails this one.
+        const frames = await evaluate(growFrames);
+        const scaleOf = (value) => {
+            const hit = /scale\(([\d.]+)\)/.exec(value || '');
+            return hit ? Number(hit[1]) : null;
+        };
+        const from = frames.find((frame) => frame.key === 'from' || frame.key === '0%');
+        const to = frames.find((frame) => frame.key === 'to' || frame.key === '100%');
+        const fromScale = from ? scaleOf(from.transform) : null;
+        const toScale = to ? scaleOf(to.transform) : null;
+        check(
+            '...and it grows up to its own size rather than down from it',
+            fromScale !== null && toScale !== null && fromScale < toScale && toScale === 1,
+            `${frames.length} keyframes, from scale(${fromScale}) to scale(${toScale})`,
+        );
+        await shot('lyric-solo');
+
+        // ...and off again for a visitor who asked for less motion. Worth its own
+        // check rather than a line of stylesheet read by eye: the rule that
+        // switches the animation on is `.lyrics-solo .lyric-active` — two
+        // classes — so an override written as a bare `.lyric-active` loses to it
+        // however late in the file it appears, and the media query then does
+        // nothing at all while looking perfectly correct.
+        await send('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+        });
+        await sleep(300);
+        const reduced = await evaluate(read);
+        await send('Emulation.setEmulatedMedia', { features: [] });
+        await sleep(300);
+        check(
+            '沉浸单行 stops animating when the visitor asked for less motion',
+            !reduced.error && reduced.animation === 'none',
+            reduced.error || `animation-name=${reduced.animation}`,
+        );
 
         /* --- the arrows, which the roving tabIndex obliges -------------------
          *
          * `role="radio"` is a promise that the arrow keys move the choice, and
-         * the roving `tabIndex` is what takes the other three rows off the Tab
-         * order — so without the handler the group is four rows a keyboard
-         * cannot get past the first of. The handler lives on the group, so the
-         * event is dispatched from the focused row and has to bubble: that is
-         * part of what this checks.
+         * the roving `tabIndex` is what takes the other row off the Tab order —
+         * so without the handler the group is two rows a keyboard cannot get
+         * past the first of. The handler lives on the group, so the event is
+         * dispatched from the focused row and has to bubble: that is part of
+         * what this checks.
          *
          * Read in two steps, with a wait between, because the dispatch and the
          * re-render are not the same turn: a synchronous read straight after the
@@ -1001,7 +1022,7 @@ const drive = async (target, index) => {
         // Left on a non-default style, on purpose: the reload below is what
         // proves the choice was *stored*, and it needs something to look for
         // that a fresh page would not arrive at by itself.
-        await choose('卡拉OK 扫光');
+        await choose('沉浸单行');
         await click(spec.collapse);
         await sleep(600);
 
@@ -1044,8 +1065,50 @@ const drive = async (target, index) => {
         })()`);
         check(
             'the lyric style survived a reload',
-            restored.titles.length === 1 && restored.titles[0] === '卡拉OK 扫光',
+            restored.titles.length === 1 && restored.titles[0] === '沉浸单行',
             `stored=${JSON.stringify(stored)}, checked=${JSON.stringify(restored.titles)} of ${restored.count} rows`,
+        );
+
+        /* --- and a style that no longer exists lands on 普通 ------------------
+         *
+         * Storage outlives the drawer. A visitor who picked 逐行上浮 or 卡拉OK 扫光
+         * before those two were removed is still carrying that name, and the
+         * membership check in the restore is the only thing between them and a
+         * page whose lyric style has no CSS behind it. Seeded rather than
+         * clicked, because a deleted style cannot be reached through the UI —
+         * that is what deleting it means.
+         *
+         * The value is written and the page reloaded, so what is read back is
+         * the restore and not the write: an assertion on the localStorage value
+         * would pass for a name nobody reads.
+         */
+        await evaluate(`localStorage.setItem('music:setting:lyricStyle', 'wipe')`);
+        await send('Page.reload', {});
+        await sleep(3000);
+        await waitFor(rowCount, (n) => n > 0, 30000);
+        await evaluate(`(() => {
+            const row = document.querySelector(${JSON.stringify(target.rows)});
+            if (row) row.click();
+        })()`);
+        await sleep(4000);
+        await click(spec.player);
+        await sleep(1000);
+        await click(spec.more);
+        await sleep(600);
+        const migrated = await evaluate(`(() => {
+            const rows = Array.from(document.querySelectorAll(
+                ${JSON.stringify(spec.group)} + ' [role="radio"]',
+            ));
+            const checked = rows.filter((r) => r.getAttribute('aria-checked') === 'true');
+            return {
+                count: rows.length,
+                titles: checked.map((r) => (r.innerText || '').trim().split('\\n')[0]),
+            };
+        })()`);
+        check(
+            'a lyric style that no longer exists falls back to 普通',
+            migrated.titles.length === 1 && migrated.titles[0] === '普通',
+            `stored="wipe", checked=${JSON.stringify(migrated.titles)} of ${migrated.count} rows`,
         );
     };
 

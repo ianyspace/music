@@ -19,17 +19,24 @@ export const TRACK_LIST_CACHE_KEY = 'music:trackListCache';
 // the visitor chose rather than state the app restored.
 export const RIPPLES_KEY = 'music:setting:ripples';
 // How the phone's now-playing page draws the lyrics. One key holding the *name*
-// of a style rather than one boolean per style: the four are a choice, not four
+// of a style rather than one boolean per style: they are a choice, not
 // independent switches, so a stored value that is not one of them has to fall
 // back to the default instead of turning into a combination nobody picked —
 // the same reasoning as `REPEAT_KEY`, and `LYRIC_STYLES` is the same kind of
 // whitelist as `REPEAT_MODES`.
 //
+// That whitelist is now load-bearing rather than hypothetical: the drawer used
+// to offer 逐行上浮 and 卡拉OK 扫光 as well, and a visitor who picked one of them
+// is still carrying that name in storage. Dropping it from this list is the
+// whole migration — the restore in `usePlayer` checks membership and leaves the
+// default in place, so those visitors open the player on 普通 instead of on a
+// style that no longer has any CSS behind it.
+//
 // The wide-screen layouts do not read this yet; the lyrics they draw are a
 // different renderer each, so the key is stored under the shared `music:setting:`
 // prefix to keep the visitor's taste in one place when they catch up.
 export const LYRIC_STYLE_KEY = 'music:setting:lyricStyle';
-export const LYRIC_STYLES = ['plain', 'rise', 'solo', 'wipe'];
+export const LYRIC_STYLES = ['plain', 'solo'];
 // Playback mode. Shuffle and repeat are two independent states — the phone
 // player folds them into one cycling button, the wide-screen layout shows two
 // buttons — so they get one key each rather than one packed value, and the
