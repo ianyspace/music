@@ -128,16 +128,25 @@
      because a gradient can be made soft by construction; a bitmap cannot, so
      the blur is the only thing that turns a photo into a colour field. It is a
      static layer — the cost is one paint per song, not one per frame.
-   - `transform: scale(1.12)`, which is the fix for the soft edge a blur leaves
+   - `transform: scale(1.06)`, which is the fix for the soft edge a blur leaves
      at the viewport border: the blur samples transparent black past the edges
      and paints a dark rim around the whole screen. Scaling past the viewport
      moves those samples off screen. (Safe here because the element has no
      children — a transform creates a containing block for `position: fixed`
-     descendants, and there are none.)
-   - `opacity: 0.34`, one value for both themes. It is a light source, not a
+     descendants, and there are none.) The margin only has to cover the blur's
+     own bleed, which is a little over the radius, so this tracks the radius
+     rather than being a value in its own right — 24px needs ~1.05.
+   - `opacity: 0.5`, one value for both themes. It is a light source, not a
      surface: over the light theme's near-white it reads as a pastel wash and
      over the dark theme's near-black as a dim one, and in both the lyrics keep
-     their contrast. */
+     their contrast.
+
+   24px and 0.5 rather than 56px and 0.34: at the heavier setting the layer was
+   so far past "a photo, softened" that consecutive songs were indistinguishable
+   — the brief is a *background*, and a background nobody can see changing is
+   just a tint. Enough blur is kept that no detail competes with the record or
+   the lyrics, and the second round of it is paid for with `.has-cover` pushing
+   `.backdrop` and `.glow` further back, not with more blur. */
 .cover-bg {
     position: absolute;
     inset: 0;
@@ -145,9 +154,9 @@
     background-position: center;
     background-size: cover;
     background-repeat: no-repeat;
-    opacity: 0.34;
-    filter: blur(56px) saturate(1.2);
-    transform: scale(1.12);
+    opacity: 0.5;
+    filter: blur(24px) saturate(1.2);
+    transform: scale(1.06);
     pointer-events: none;
 }
 
@@ -159,11 +168,11 @@
    dimmer still, because it is `trackGradient(name)` — a palette derived from the
    song's *name*, which has no relationship at all to the photo of the song. */
 .has-cover .backdrop {
-    opacity: 0.45;
+    opacity: 0.32;
 }
 
 .has-cover .glow {
-    opacity: 0.1;
+    opacity: 0.07;
 }
 
 /* ==========================================================================
