@@ -15,11 +15,13 @@ import styles from './CacheContent.module.scss';
  * with its size and freshness, plus 「全部缓存」 / 「全部删除」.
  *
  * This is the *content* half of the panel and is rendered by both layouts —
- * the phone's `h5/CacheManager` and the desktop's `DesktopCachePanel` — each
- * inside its own chrome. That is why nothing here knows about scrims, columns
- * or entrance animations, and why the return value is a fragment rather than a
- * wrapper element: the panel's chrome is a flex column, and these blocks have
- * to be its direct children to keep their `flex-shrink: 0` / `flex: 1`.
+ * the phone's `h5/CacheManager` and, until the desktop's settings dialog was
+ * deleted, the desktop's own card around the same body. It is only the phone
+ * now, but the split still earns its keep: nothing here knows about scrims,
+ * columns or entrance animations, and the return value is a fragment rather
+ * than a wrapper element, because the chrome it is dropped into is a flex
+ * column and these blocks have to be its direct children to keep their
+ * `flex-shrink: 0` / `flex: 1`.
  *
  * The stored records are keyed `<source>:<trackId>` (`audioCacheKey`), so an
  * entry still renders even when its track is not in the current list: the key

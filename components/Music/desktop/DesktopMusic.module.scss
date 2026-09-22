@@ -4,7 +4,7 @@
 // else is in its layout.**
 //
 //   ┌──────────────────────────────────────────────────────────┐
-//   │ ┌─列表─┐                                    ┌─设置按钮─┐  │
+//   │ ┌─列表─┐                                                 │
 //   │ │      │                                                  │
 //   │ │      │                 唱片 / 歌词                      │
 //   │ │      │              （stage，占满全屏）                   │
@@ -12,8 +12,8 @@
 //   │               ╭───────── 胶囊播放条 ─────────╮             │
 //   └──────────────────────────────────────────────────────────┘
 //
-// `.stage` is `position: absolute; inset: 0`, and the list, the capsule bar
-// and the settings button are all absolutely positioned siblings *over* it.
+// `.stage` is `position: absolute; inset: 0`, and the list and the capsule bar
+// are both absolutely positioned siblings *over* it.
 // That is why folding the list away cannot move the record: they never shared
 // a layout to begin with. The phone layout is the opposite — there the list
 // *is* the page and the player is a screen pushed on top of it.
@@ -381,55 +381,6 @@
     pointer-events: none;
 }
 
-/* rings travelling outwards from the rim while playing */
-.ripples {
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    pointer-events: none;
-}
-
-.ripple {
-    position: absolute;
-    /* matches the ::after halo, so waves emerge from its outer edge */
-    inset: -5%;
-    box-sizing: border-box;
-    border-radius: 50%;
-    border: 1.5px solid var(--accent-2);
-    opacity: 0;
-    transform: scale(1);
-    animation: ripple-out 4.2s cubic-bezier(0.22, 0.6, 0.3, 1) infinite;
-    animation-play-state: paused;
-
-    &:nth-child(2) {
-        animation-delay: 1.4s;
-    }
-
-    &:nth-child(3) {
-        animation-delay: 2.8s;
-    }
-}
-
-.disc-playing .ripple {
-    animation-play-state: running;
-}
-
-@keyframes ripple-out {
-    0% {
-        opacity: 0;
-        transform: scale(1);
-    }
-
-    22% {
-        opacity: 0.4;
-    }
-
-    100% {
-        opacity: 0;
-        transform: scale(1.2);
-    }
-}
-
 /* --- tonearm --------------------------------------------------------------
 
    The phone player's arm, at the phone player's size *relative to the record*.
@@ -697,10 +648,10 @@
 }
 
 /* --- the search, in the row with the toggle -------------------------------
-   One control here now. The three-dots popover that used to sit beside it is
-   gone: its three entries — the Drive account, the cache manager, the hidden
-   songs — are rows in the settings dialog, which is the one surface on this
-   page that is allowed to be a list of actions. */
+   One control here, and no menu beside it. The three-dots popover that used to
+   sit here was folded into the settings dialog, and the settings dialog is now
+   gone as well: there is nothing left on this layout that wants to be a list of
+   actions. What a visitor can still do to the list, they do to the list. */
 
 /* Same tile as the fold toggle it sits beside, down to the radius: the two are
    the row, and two squares that disagree by 2px read as a mistake. */
@@ -887,9 +838,10 @@
 }
 
 /* --- the quiet scroller ---------------------------------------------------
-   Two surfaces on this page scroll: the song list and the settings body. Both
-   are display surfaces rather than panels, so their scrollbars stay out of
-   sight until the surface is actually in use.
+   One surface on this page scrolls: the song list. It is a display surface
+   rather than a panel, so its scrollbar stays out of sight until the list is
+   actually in use. (The rule used to be shared with the settings dialog's
+   body, which is gone — this is the only scroller left.)
 
    `thin` rather than `none` is the important half: the gutter stays reserved,
    so revealing the thumb cannot shift anything sideways — measured with the
@@ -900,8 +852,7 @@
    elements (Chrome takes the geometry from `scrollbar-width` and the painting
    from the pseudo-element), and with both saying the same thing it does not
    matter which one wins. */
-.list,
-.settings-body {
+.list {
     scrollbar-width: thin;
     scrollbar-color: transparent transparent;
 
@@ -953,8 +904,10 @@
    but not what the row means. The `<li>` is the only box that spans the whole
    row, which is why the tint lives there and not on the button.
 
-   Named `track-row`, not `row`: `.row` is the settings dialog's row and is
-   declared further down, so a second `.row` here would be silently overridden.
+   Named `track-row`, not `row`: this used to share the file with the settings
+   dialog's own `.row`, which would have silently overridden it. The dialog is
+   gone, so the name is history rather than a collision now — it is still the
+   clearer one, and renaming it would touch every rule below.
 
    `track-row-active` is *added to* `track-row`, never used instead of it. It
    used to be the other way round — the `<li>` carried one class or the other —
@@ -1290,41 +1243,6 @@
 
     100% {
         background: transparent;
-    }
-}
-
-/* ==========================================================================
-   top right — the settings entry
-   ========================================================================== */
-
-.settings-btn {
-    position: absolute;
-    top: 22px;
-    right: 26px;
-    z-index: 7;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 46px;
-    height: 46px;
-    padding: 0;
-    border: 1px solid var(--glass-border);
-    border-radius: 50%;
-    background: var(--glass-bg);
-    color: var(--text);
-    cursor: pointer;
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    box-shadow: var(--glass-shadow);
-    transition: transform 0.16s, background-color 0.18s;
-
-    &:hover {
-        background: var(--glass-bg-strong);
-        transform: scale(1.06);
-    }
-
-    &:active {
-        transform: scale(0.94);
     }
 }
 
@@ -1676,250 +1594,6 @@
     font-size: 12px;
 }
 
-/* ==========================================================================
-   settings — the shell's dialog chrome, plus this body
-   ========================================================================== */
-
-/* `DesktopSheetChrome` owns the scrim, the card and the header; all this adds
-   is the part that scrolls. The card is a flex column with a `max-height`, so
-   `flex: 1; min-height: 0` here is what actually produces a scroller — without
-   both, the body would grow and push the card past the viewport.
-
-   Its scrollbar is the shared "quiet scroller" rule next to `.list`, which is
-   what keeps the dialog from having a permanent bar down its side. */
-.settings-body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 0 22px 24px;
-}
-
-.group {
-    padding-bottom: 20px;
-}
-
-.group-label {
-    padding-bottom: 10px;
-    color: var(--text-2);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.9px;
-    text-transform: uppercase;
-}
-
-/* --- current library card --- */
-
-.account {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 16px;
-    border-radius: var(--radius-md);
-    background: var(--glass-bg-soft);
-    border: 1px solid var(--glass-border);
-}
-
-.account-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 38px;
-    height: 38px;
-    flex-shrink: 0;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--accent-2), var(--accent));
-    color: #fff;
-}
-
-.account-text {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.account-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 14.5px;
-    font-weight: 600;
-}
-
-.account-sub {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-2);
-    font-size: 12px;
-}
-
-/* --- settings rows (same shape as the phone's profile rows) --- */
-
-.row {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 12px 2px;
-    border: 0;
-    border-bottom: 1px solid var(--hairline);
-    background: transparent;
-    color: var(--text);
-    font-family: inherit;
-    font-size: 13.5px;
-    text-align: left;
-
-    svg {
-        flex-shrink: 0;
-        color: var(--text-2);
-    }
-}
-
-.row-btn {
-    cursor: pointer;
-    transition: background-color 0.16s;
-
-    &:hover {
-        background: var(--hover);
-    }
-}
-
-.row-btn-last {
-    border-bottom: 0;
-}
-
-.row-danger {
-    color: var(--accent);
-}
-
-.row-icon {
-    display: inline-flex;
-    flex-shrink: 0;
-}
-
-.row-label {
-    flex: 1;
-    min-width: 0;
-}
-
-.row-value {
-    flex-shrink: 0;
-    color: var(--text-2);
-    font-size: 12.5px;
-}
-
-.row-chev {
-    display: inline-flex;
-    flex-shrink: 0;
-    color: var(--text-3);
-}
-
-.row-select {
-    appearance: none;
-    -webkit-appearance: none;
-    max-width: 55%;
-    border: 0;
-    background: transparent;
-    color: var(--text-2);
-    font-family: inherit;
-    /* 16px floor — a focused select zooms the page on iOS just like an input. */
-    font-size: 16px;
-    text-align: right;
-    cursor: pointer;
-
-    &:focus {
-        outline: none;
-    }
-}
-
-.hint {
-    margin: 0 0 12px;
-    color: var(--text-2);
-    font-size: 12px;
-    line-height: 1.75;
-}
-
-.steps {
-    margin: 0 0 14px;
-    padding-left: 18px;
-    color: var(--text-2);
-    font-size: 12px;
-    line-height: 1.8;
-
-    code {
-        padding: 1px 5px;
-        border-radius: 5px;
-        background: var(--field);
-        font-size: 11.5px;
-    }
-
-    a {
-        color: var(--accent);
-        text-decoration: none;
-
-        &:hover {
-            text-decoration: underline;
-        }
-    }
-}
-
-.input {
-    width: 100%;
-    height: 42px;
-    box-sizing: border-box;
-    margin-bottom: 10px;
-    padding: 0 13px;
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    background: var(--glass-bg-soft);
-    color: var(--text);
-    font-family: inherit;
-    /* 16px floor — see the note on `.search input` above. */
-    font-size: 16px;
-
-    &:focus {
-        outline: none;
-        border-color: var(--accent);
-    }
-
-    &::placeholder {
-        color: var(--text-2);
-    }
-}
-
-.primary-btn {
-    width: 100%;
-    height: 44px;
-    border: 0;
-    border-radius: 13px;
-    background: linear-gradient(135deg, var(--accent-2), var(--accent));
-    color: #fff;
-    font-family: inherit;
-    font-size: 13.5px;
-    font-weight: 700;
-    cursor: pointer;
-    box-shadow: 0 10px 24px -10px rgba(250, 35, 59, 0.5);
-    transition: opacity 0.2s;
-
-    &:disabled {
-        cursor: wait;
-        opacity: 0.55;
-        box-shadow: none;
-    }
-}
-
-/* `margin: auto 0 0` cannot push this to the bottom of a scroller — there is
-   no free space to absorb. A plain gap is what it wants here. */
-.footnote {
-    margin: 18px 0 0;
-    color: var(--text-2);
-    font-size: 11px;
-    line-height: 1.8;
-}
-
 .spin {
     animation: spin 0.9s linear infinite;
 }
@@ -1973,7 +1647,6 @@
     .disc,
     .disc::after,
     .bar-disc,
-    .ripple,
     .spin,
     .panel,
     .stage-record,

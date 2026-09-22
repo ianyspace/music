@@ -9,9 +9,10 @@ import SheetChrome from './SheetChrome';
  * Cache manager, phone flavour — the chrome is a bottom sheet
  * (`SheetChrome`), the body is the shared `core/CacheContent`.
  *
- * The desktop layout renders the same body inside `DesktopCachePanel`, so the
- * two cannot disagree about what is cached or what deleting it does; what
- * differs between them is only how the panel arrives on screen.
+ * The desktop layout used to render the same body in a glass card; that card
+ * went with the settings dialog it hung off, so the cache manager is a phone
+ * screen now. The body is still the shared `core/CacheContent`, which is what
+ * keeps this from drifting away from the cache policy itself.
  */
 const CacheManager = function ({
     entries,

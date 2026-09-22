@@ -1,13 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-    IconArchive,
-    IconChevronRight,
-    IconCloud,
-    IconFolder,
-    IconGear,
     IconLocate,
-    IconLogout,
     IconMoreVertical,
     IconMusicSpace,
     IconNext,
@@ -21,7 +15,6 @@ import {
     IconRefresh,
     IconRepeat,
     IconRepeatOne,
-    IconRipple,
     IconSearch,
     IconShuffle,
 } from '../icons';
@@ -37,7 +30,6 @@ import {
 import Cover from '../Cover';
 import Marquee from '../Marquee';
 import { coverUrlOf } from '../librarySource';
-import DesktopSheetChrome from './DesktopSheetChrome';
 
 import styles from './DesktopMusic.module.scss';
 
@@ -112,10 +104,14 @@ const Tonearm = function ({ playing }) {
  * One idea: **the record owns the screen.**
  *
  * The stage fills the viewport and is the only block with a layout of its own.
- * Everything else — the song list, the capsule play bar, the settings button —
- * is absolutely positioned *over* it, so nothing a visitor does to them can
- * move the record by a pixel: folding the list away, opening the settings
- * dialog, or swapping in the lyrics all happen in boxes the stage never sees.
+ * Everything else — the song list and the capsule play bar — is absolutely
+ * positioned *over* it, so nothing a visitor does to them can move the record
+ * by a pixel: folding the list away, searching it, or swapping in the lyrics
+ * all happen in boxes the stage never sees.
+ *
+ * There is no settings surface left on this layout at all — no gear button, no
+ * dialog. Everything one used to hold was either about the Drive library or
+ * about the record's ripples, and this layout has neither.
  *
  * The stage holds the record, the lyrics when they are shown, and is where any
  * future audio-visual surface goes — it is the one block with room for it.
@@ -131,23 +127,8 @@ const Tonearm = function ({ playing }) {
  * nothing to initialise — which also means nothing can fail to initialise.
  */
 const DesktopMusic = function ({
-    connected,
-    sourceName,
-    gsiReady,
-    clientIdDraft,
-    onClientIdDraft,
-    onConnect,
-    onDisconnect,
-    folders,
-    folderId,
-    folderName,
-    onFolderChange,
     listLoading,
     visibleTracks,
-    // Count the settings dialog and the library card show. `visibleTracks` is
-    // the list after the visitor's preferences, so this is what agrees with
-    // what they can actually see — a hidden song must not stay in the total.
-    trackCount,
     search,
     onSearch,
     current,
@@ -166,23 +147,16 @@ const DesktopMusic = function ({
     lyricsLoading,
     lyricsVisible,
     onToggleLyrics,
-    ripples = true,
-    onToggleRipples,
     // Id of the row whose actions are open. The drawer itself belongs to the
     // shell (the same one the phone layout opens, in its own desktop dress), so
     // all this needs is the id to report which row's button is expanded — the
     // 置顶 callback lives there, not here.
     rowMenuId,
     onOpenRowMenu,
-    // The cache manager is shell-owned too — it is rendered beside the layout,
-    // not inside it — so the desktop layout only has to be able to ask for it.
-    onOpenCache,
 }) {
     const searchInputRef = useRef(null);
     const activeLyricRef = useRef(null);
     const pressYRef = useRef(0);
-    const [settingsOpen, setSettingsOpen] = useState(false);
-    const [settingsClosing, setSettingsClosing] = useState(false);
     // `false` = folded away, only the toggle button remains. Defaults to open.
     const [listOpen, setListOpen] = useState(true);
     const [searchOpen, setSearchOpen] = useState(false);
@@ -191,11 +165,10 @@ const DesktopMusic = function ({
     const [modeToast, setModeToast] = useState('');
     const lastModeRef = useRef('');
     const modeTimerRef = useRef(0);
-    const [cacheCount, setCacheCount] = useState(0);
 
     const meta = current ? parseTrackName(current.track.name) : null;
     const title = meta ? meta.title : '还没有播放中的歌曲';
-    const artist = meta ? meta.artist : `${sourceName} · 从左侧列表挑一首开始`;
+    const artist = meta ? meta.artist : '从左侧列表挑一首开始';
     const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
     // The playing song's artwork, for the layer behind everything. Empty for a
     // song the library has no cover for — and that is not a special case to
@@ -311,40 +284,6 @@ const DesktopMusic = function ({
         modeTimerRef.current = window.setTimeout(() => setModeToast(''), 1400);
         return () => window.clearTimeout(modeTimerRef.current);
     }, [mode, current]);
-
-    // Escape backs out of the dialog, which is the only thing here that traps
-    // the visitor. The list is not a layer to escape from: it is one button.
-    const closeSettings = useCallback(function () {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            setSettingsOpen(false);
-            setSettingsClosing(false);
-            return;
-        }
-        setSettingsClosing(true);
-    }, []);
-
-    useEffect(() => {
-        if (!settingsOpen) return undefined;
-        const onKeyDown = (event) => { if (event.key === 'Escape') closeSettings(); };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [settingsOpen, closeSettings]);
-
-    // How many tracks are already cached locally — the settings dialog reports
-    // it the way the phone's cache manager does, so the number is honest.
-    useEffect(() => {
-        if (!settingsOpen) return undefined;
-        let alive = true;
-        const run = async function () {
-            try {
-                const { listCachedAudio } = await import('../audioCache');
-                const entries = await listCachedAudio();
-                if (alive) setCacheCount(Array.isArray(entries) ? entries.length : 0);
-            } catch (err) { /* cache layer is best-effort */ }
-        };
-        run();
-        return () => { alive = false; };
-    }, [settingsOpen]);
 
     const closeSearch = function () {
         setSearchOpen(false);
@@ -523,15 +462,6 @@ const DesktopMusic = function ({
                             title={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
                             aria-label={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
                         >
-                            {/* The `ripples` preference governs both layouts — it
-                                is one display setting, not one per screen. */}
-                            {ripples && (
-                                <span className={styles.ripples} aria-hidden="true">
-                                    <span className={styles.ripple} />
-                                    <span className={styles.ripple} />
-                                    <span className={styles.ripple} />
-                                </span>
-                            )}
                             <span className={styles.rotor} aria-hidden="true">
                                 <span className={styles['disc-grooves']} />
                                 <span className={styles['disc-label']} style={{ background: gradient }}>
@@ -775,17 +705,6 @@ const DesktopMusic = function ({
                 </div>
             </div>
 
-            {/* --- top right: the settings entry --------------------------- */}
-            <button
-                type="button"
-                className={styles['settings-btn']}
-                onClick={() => setSettingsOpen(true)}
-                aria-label="打开设置"
-                title="设置"
-            >
-                <IconGear />
-            </button>
-
             {/* --- bottom: the capsule play bar ---------------------------- */}
             <div className={styles.bar}>
                 {/* The progress rides the capsule's *upper* edge — inside the
@@ -892,162 +811,6 @@ const DesktopMusic = function ({
                 </div>
             </div>
 
-            {/* --- settings, as a dialog -----------------------------------
-                The same chrome the cache panel uses: a centred glass card over
-                a dimmed scrim. It used to slide in from the right edge, which
-                on a screen whose whole point is the record read as a second app
-                docked to the side. */}
-            {settingsOpen && (
-                <DesktopSheetChrome
-                    title="设置"
-                    closing={settingsClosing}
-                    onClosed={() => { setSettingsOpen(false); setSettingsClosing(false); }}
-                    onCancelClose={() => setSettingsClosing(false)}
-                    onClose={closeSettings}
-                >
-                    <div className={styles['settings-body']}>
-                        <section className={styles.group}>
-                            <div className={styles['group-label']}>当前曲库</div>
-                            <div className={styles.account}>
-                                <span className={styles['account-icon']}><IconCloud /></span>
-                                <span className={styles['account-text']}>
-                                    <span className={styles['account-name']}>
-                                        {connected ? '我的 Google 云盘' : sourceName}
-                                    </span>
-                                    <span className={styles['account-sub']}>
-                                        {folderName || '整个云盘'} · {listLoading ? '加载中…' : `${trackCount} 首歌曲`}
-                                    </span>
-                                </span>
-                            </div>
-                        </section>
-
-                        {connected ? (
-                            <section className={styles.group}>
-                                <div className={styles['group-label']}>音乐库</div>
-                                <label className={styles.row} htmlFor="desktop-folder">
-                                    <span className={styles['row-icon']}><IconFolder /></span>
-                                    <span className={styles['row-label']}>文件夹</span>
-                                    <select
-                                        id="desktop-folder"
-                                        className={styles['row-select']}
-                                        value={folderId}
-                                        onChange={onFolderChange}
-                                    >
-                                        <option value="">整个云盘</option>
-                                        {folders.map((folder) => (
-                                            <option key={folder.id} value={folder.id}>{folder.name}</option>
-                                        ))}
-                                    </select>
-                                    <span className={styles['row-chev']}><IconChevronRight /></span>
-                                </label>
-                                <button
-                                    type="button"
-                                    className={`${styles.row} ${styles['row-btn']} ${styles['row-danger']}`}
-                                    onClick={onDisconnect}
-                                >
-                                    <span className={styles['row-icon']}><IconLogout /></span>
-                                    <span className={styles['row-label']}>断开连接，回到公共曲库</span>
-                                </button>
-                            </section>
-                        ) : (
-                            <section className={styles.group}>
-                                <div className={styles['group-label']}>连接自己的云盘（可选）</div>
-                                <p className={styles.hint}>
-                                    默认播放公共曲库，不需要任何授权。连接 Google 云盘后会改用你自己云盘里的歌曲，
-                                    播放、歌词和离线缓存体验完全一致。
-                                </p>
-                                <ol className={styles.steps}>
-                                    <li>
-                                        在{' '}
-                                        <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">
-                                            Google Cloud Console
-                                        </a>
-                                        {' '}创建一个「Web 应用」类型的 OAuth 客户端 ID
-                                    </li>
-                                    <li>在「已获授权的 JavaScript 来源」里添加 <code>https://ianyspace.github.io</code></li>
-                                    <li>把客户端 ID 粘贴到下面，点击连接</li>
-                                </ol>
-                                <input
-                                    className={styles.input}
-                                    type="text"
-                                    value={clientIdDraft}
-                                    onChange={(event) => onClientIdDraft(event.target.value)}
-                                    placeholder="粘贴 OAuth 客户端 ID（xxxx.apps.googleusercontent.com）"
-                                    aria-label="Google OAuth 客户端 ID"
-                                />
-                                <button
-                                    type="button"
-                                    className={styles['primary-btn']}
-                                    onClick={onConnect}
-                                    disabled={!gsiReady}
-                                >
-                                    {gsiReady ? '连接 Google 云盘' : '正在加载 Google 组件…'}
-                                </button>
-                            </section>
-                        )}
-
-                        <section className={styles.group}>
-                            <div className={styles['group-label']}>外观</div>
-                            {/* No theme row. `/desktop` is dark-only — see the
-                                palette note in `DesktopApp.module.scss` — so
-                                the switch had nothing left to switch. */}
-                            <button
-                                type="button"
-                                className={`${styles.row} ${styles['row-btn']}`}
-                                onClick={() => setListOpen((open) => !open)}
-                            >
-                                <span className={styles['row-icon']}><IconPanel /></span>
-                                <span className={styles['row-label']}>左侧列表</span>
-                                <span className={styles['row-value']}>{listOpen ? '显示中' : '已隐藏'}</span>
-                            </button>
-                            {/* Same preference as the phone player's drawer, so
-                                the two layouts cannot disagree about it. */}
-                            <button
-                                type="button"
-                                className={`${styles.row} ${styles['row-btn']} ${styles['row-btn-last']}`}
-                                role="switch"
-                                aria-checked={ripples}
-                                onClick={onToggleRipples}
-                            >
-                                <span className={styles['row-icon']}><IconRipple /></span>
-                                <span className={styles['row-label']}>唱片波纹</span>
-                                <span className={styles['row-value']}>{ripples ? '开启' : '关闭'}</span>
-                            </button>
-                        </section>
-
-                        <section className={styles.group}>
-                            <div className={styles['group-label']}>缓存</div>
-                            {/* Same sheet the phone layout opens, so the two
-                                layouts cannot disagree about what is cached or
-                                what deleting it does. */}
-                            <button
-                                type="button"
-                                className={`${styles.row} ${styles['row-btn']}`}
-                                onClick={onOpenCache}
-                            >
-                                <span className={styles['row-icon']}><IconArchive size={18} /></span>
-                                <span className={styles['row-label']}>缓存管理</span>
-                                <span className={styles['row-value']}>{cacheCount} 首</span>
-                            </button>
-                            {/* Used to read 「永久」, which stopped being true
-                                when the 30-day expiry landed. */}
-                            <div className={`${styles.row} ${styles['row-btn-last']}`}>
-                                <span className={styles['row-icon']}><IconRefresh /></span>
-                                <span className={styles['row-label']}>缓存策略</span>
-                                <span className={styles['row-value']}>30 天过期</span>
-                            </div>
-                        </section>
-
-                        <p className={styles.footnote}>
-                            歌曲缓存在本机保留 30 天，期间每播一次就自动续期，30 天没播放过才会清除；
-                            公共曲库来自 Cloudflare R2，无需登录即可播放。
-                            <br />
-                            浮层（胶囊播放条、列表、这个弹窗）为毛玻璃风格，浏览器不支持 backdrop-filter
-                            时会自动回退为半透明底色。
-                        </p>
-                    </div>
-                </DesktopSheetChrome>
-            )}
         </div>
     );
 };

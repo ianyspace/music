@@ -19,7 +19,7 @@ import { GSI_SRC } from '../shared';
  * player's own setters, because "is GSI usable yet" is what decides whether the
  * connect button is enabled, and that answer belongs with the connection code.
  */
-const PageHead = function ({ onReady, onError }) {
+const PageHead = function ({ onReady, onError, gsi = true }) {
     return (
         <>
             <Head>
@@ -27,12 +27,19 @@ const PageHead = function ({ onReady, onError }) {
                 <meta name="description" content={site.description} />
             </Head>
 
-            <Script
-                src={GSI_SRC}
-                strategy="afterInteractive"
-                onLoad={onReady}
-                onError={onError}
-            />
+            {/* The title and the description are what every page wants; the
+                script is what only a layout with a Drive connection needs.
+                `gsi={false}` is for the one that has none — `/desktop` plays
+                the public library only, so loading an authorization library
+                there would be a request nobody can act on. */}
+            {gsi && (
+                <Script
+                    src={GSI_SRC}
+                    strategy="afterInteractive"
+                    onLoad={onReady}
+                    onError={onError}
+                />
+            )}
         </>
     );
 };

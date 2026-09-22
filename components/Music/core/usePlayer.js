@@ -102,7 +102,7 @@ import {
 // bottleneck is bandwidth and IndexedDB writes, not the request count.
 const CACHE_ALL_CONCURRENCY = 3;
 
-const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
+const usePlayer = function ({ lyricsAutoOpen = false, drive = true } = {}) {
     const [theme, setTheme] = useState('light');
     // Display preference of the now-playing page: the ripples travelling out
     // from the record. On unless the visitor turned them off — a decorative
@@ -922,7 +922,16 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // different client id) is left alone — the page simply stays on the public
     // library. No network call, no `initTokenClient`, so a refresh can never
     // reach Google on its own. Reconnecting is a tap on connect.
+    //
+    // `drive: false` is the whole of "this layout only plays the public
+    // library": it is the one place the Drive library is adopted without a tap,
+    // so refusing to read the token here is enough — no client id means no
+    // token, no token means `librarySource` stays `cloud`, and every Drive path
+    // below is already guarded on one of those two. The client id itself is
+    // still restored above, because it also namespaces the *public* library's
+    // list cache.
     useEffect(() => {
+        if (!drive) return;
         if (!clientId || tokenRestoreRef.current) return;
         tokenRestoreRef.current = true;
         let saved;
@@ -933,7 +942,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
             setToken(saved.accessToken);
             setLibrarySource(DRIVE_SOURCE);
         }
-    }, [clientId]);
+    }, [clientId, drive]);
 
     /**
      * Expiry is handled by letting the token lapse, never by renewing in the

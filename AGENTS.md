@@ -886,13 +886,16 @@ pages/desktop.js ──▶ components/Music/desktop/DesktopApp.js ─┘   + Cov
 | `core/` 文件 | 是什么 | 为什么放这儿 |
 | --- | --- | --- |
 | `usePlayer.js` | 全部播放状态：曲库、缓存、歌词、Google、主题、抽屉开关 | 两套布局要共享**行为**，且必须逐字一致 |
-| `PageHead.js` | `<Head>` 标题 + GSI `<Script>` | 两个页面都要有同样的 title 和同一份 GSI 加载错误文案 |
+| `PageHead.js` | `<Head>` 标题 + GSI `<Script>` | 两个页面都要有同样的 title；GSI 只给真的会去连云盘的布局加载（`gsi={false}` 的页面连那个库都不下载） |
 | `PlayerAudio.js` | 那唯一一个 `<audio>` | 六种 handler 由 `usePlayer` 统一返回，少接一个就是「进度条永远不动」且不报错 |
 | `CacheContent.js` | 缓存管理的**内容** | 两个面板的**外壳**不同（底部抽屉 vs 玻璃卡片），内容相同 |
 | `sheetBase.module.scss` | `.body` / `.state` | 面板内容共用的滚动容器与加载文案 |
 
-**面板一律「内容 + 外壳」两半**：内容在 `core/`，外壳各自实现
-（`h5/SheetChrome.*` 是底部升起的抽屉，`desktop/DesktopSheetChrome.*` 是居中的玻璃卡片）。
+**面板一律「内容 + 外壳」两半**：内容在 `core/`，外壳各自实现（`h5/SheetChrome.*` 是底部
+升起的抽屉）。桌面端那一半**已经没有了** —— 它的设置弹窗连同 `desktop/DesktopSheetChrome.*`、
+`desktop/DesktopCachePanel.js` 一起删掉了，所以 `core/CacheContent.js` 现在只剩手机端一个外壳。
+**「缓存」这个功能本身没动**：缓存在 `usePlayer` 里，照常下载、照常续期，只是桌面端不再有
+能看它的面板。
 内容组件返回的是 **Fragment**，因为外壳是个 flex column，它那几块要当直接子节点才能保住
 `flex-shrink: 0` / `flex: 1`。
 
@@ -938,20 +941,19 @@ pages/desktop.js ──▶ components/Music/desktop/DesktopApp.js ─┘   + Cov
 都会把这个观感带回来**，要加请先确认。
 
 token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
-`DesktopMusic.module.scss`、`DesktopSheetChrome.module.scss`
-以及 `core/` 的内容组件全部只**消费**、不声明 —— 一个定义，工作台和外壳就不可能各走各的。
+`DesktopMusic.module.scss` 以及 `core/` 的内容组件全部只**消费**、不声明 —— 一个定义，工作台和外壳就不可能各走各的。
 
 **桌面端只有深色一套。** 这里原本是 `.page`（浅色）+ `.page.theme-dark`（深色）两个块，
-设置弹窗的「外观」组里有一行 `切换到浅色 / 深色模式`。那一行和浅色值一起删掉了：
+设置弹窗（现已整个删除）的「外观」组里有一行 `切换到浅色 / 深色模式`。那一行和浅色值一起删掉了：
 `/desktop` 不再读 `usePlayer` 的 `theme`，手机端那个开关也就管不到这个页面。
 **加回浅色模式 = 重新引入一整套 token + 一个 modifier 类 + 一个入口**，不是加一行。
 
 | token | 用途 |
 | --- | --- |
 | `--glass-blur` / `--glass-sat` | `backdrop-filter: blur() saturate()` 的两个参数 |
-| `--glass-bg` | 常规面：胶囊播放条、设置按钮、折叠后的列表开关 |
-| `--glass-bg-soft` | 玻璃**之上**的凹陷（搜索框、输入框、设置里的曲库卡片） |
-| `--glass-bg-strong` | 要压住繁忙内容的面：设置弹窗、面板卡片、toast、定位按钮 |
+| `--glass-bg` | 常规面：胶囊播放条、折叠后的列表开关 |
+| `--glass-bg-soft` | 玻璃**之上**的凹陷（搜索框、输入框） |
+| `--glass-bg-strong` | 要压住繁忙内容的面：列表面板卡片、toast、定位按钮 |
 | `--glass-border` / `--glass-shadow` | 描边、环境投影 |
 
 `.backdrop` 是**独立的兄弟层**（不是 `.root` 自己的背景）：`backdrop-filter` 只采样
@@ -974,12 +976,14 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
 │     ├── .stage-record         唱片（有歌词时 opacity: 0，不卸载）
 │     └── .lyrics               歌词，absolute 铺在 stage 上
 ├── .side    (absolute)  列表：无面板背景，直接滚动
-├── .settings-btn (absolute)
 └── .bar     (absolute)  胶囊播放条
 ```
 
+（这里曾经还有一行 `.settings-btn (absolute)` —— 右上角那个齿轮。它和它打开的整个设置
+弹窗都已删除，见下面「桌面端只有公共曲库」。）
+
 **这是桌面端最容易改坏的一条约定**：舞台是 `position: absolute; inset: 0`，
-其余全是它的**兄弟**、绝对定位在它上面 —— 所以折叠列表、开设置弹窗、切歌词
+其余全是它的**兄弟**、绝对定位在它上面 —— 所以折叠列表、开行抽屉、切歌词
 都不可能让唱片挪一个像素。想让某个新控件「浮着」，就绝对定位；一旦把它塞进
 `.stage` 的流里，它就会开始推唱片。
 
@@ -1055,7 +1059,8 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
   「收起来」），折叠时 `IconPanel`（朝右，「拿出来」）—— 两个是同一枚图标的镜像，
   形状不同会被读成两个控件。原来两种状态共用一枚图标，那个按钮就没法说明自己要往哪走。
   列表头上那个三点弹出菜单（`.menu-*`）**已删除**：它的几项都搬进了右上角设置弹窗。
-  （其中「不喜欢歌曲」后来连同它所在的整个「曲库」分组一起删掉了 —— 见上面「列表偏好」一节。）
+  （其中「不喜欢歌曲」后来连同它所在的整个「曲库」分组一起删掉了 —— 见上面「列表偏好」一节。
+  再后来**那个设置弹窗也整个删掉了**，所以这些项现在哪儿都没有 —— 见下面「桌面端只有公共曲库」。）
 - **唱片下方不再有歌名 / 歌手**（`.head*` 四条规则已删除，`.stage-record` 现在只装唱片）。
   理由不是「简洁」，是**同一首歌在页面上被说了三遍**：列表行、唱片下方、胶囊条，
   而唱片下方那遍最响、却既点不动也拖不动。要再放东西到唱片下面，
@@ -1077,8 +1082,9 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
   重量落在环上，这才是「一排 36px 里的主按钮」该有的样子。
 - **条里的字号**：歌名 14px（手机端迷你条在 58px 高里用 13px），时间 12px。
   胶囊矮下来之后字号必须跟上，否则会显得空。
-- **滚动条默认隐形，hover / focus 才显形**：这条规则是 `.list, .settings-body` **并列**的
-  一条（页面上只有这两处滚动）。`scrollbar-width: thin` +
+- **滚动条默认隐形，hover / focus 才显形**：这条规则现在只挂在 `.list` 上
+  （它曾经和 `.settings-body` 并列，那个设置弹窗删掉之后就只剩这一处滚动了）。
+  `scrollbar-width: thin` +
   `scrollbar-color: transparent transparent`，`:hover` / `:focus-within` 时换成
   `var(--track)`，同时把 `::-webkit-scrollbar-thumb` 的 `background` 一起换掉
   （两套写法都设成同一行为，因为引擎可能认标准属性、也可能认 `::-webkit-*` 伪元素：
@@ -1100,6 +1106,33 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
   才开始生效，已经在 `pages/index.js` 把访客送去 `/h5` 的 900px 之下 ——
   所以桌面布局真正服务的每个宽度都还是正间距（900×1000 是 32px）。
 
+### 桌面端只有公共曲库
+
+右上角**没有齿轮、没有设置弹窗**了。那个弹窗里的东西要么是「连接自己的云盘」，
+要么是唱片波纹，而这两样这个布局现在都不做。跟着删掉的是三样：
+`desktop/DesktopCachePanel.js`、`desktop/DesktopSheetChrome.{js,module.scss}`
+（它们只被那个弹窗引用，没有别的进口），以及 `DesktopMusic.module.scss` 里那 244 行设置样式。
+判断哪个组件是死的，用**谁 import 它**，不要用「名字里有没有 desktop」猜 ——
+`core/CacheContent.js` 看着像桌面端的，其实是手机端 `h5/CacheManager` 在渲染它。
+
+「只播公共曲库」不是把 Drive 的代码删掉，是 **`usePlayer({ drive: false })`**。
+`usePlayer` 里唯一一处「不用点一下就切到云盘曲库」的地方就是那个 token 恢复 effect，
+所以只要它 `if (!drive) return;`，client id 就不会被读出来 —— 没有 client id 就没有 token，
+没有 token 就 `librarySource` 一直停在公共曲库，而下面每一条 Drive 路径本来就守着这两个之一。
+**client id 本身还是照旧恢复**，因为公共曲库的清单缓存也拿它做命名空间
+（`readListCache(CLOUD_SOURCE, savedId)`）。云盘那套状态、`connect` / `disconnect`、
+`fallbackToPublicLibrary`、过期监听全都还在 `usePlayer` 里 —— 在 `/desktop` 上只是永远走不到，
+手机端一行没动。**要真删就得两棵树一起改，那是另一件事。**
+
+`PageHead` 跟着多了个 `gsi` 参数（`/desktop` 传 `gsi={false}`）：title 和 description 每页都要，
+但**授权库不是** —— 一个连不上云盘的页面不该去下载 GSI。
+
+**唱片不再有波纹，这个布局也没有这个设置**：那三个 `<span className={styles.ripple} />`
+是桌面端自己画的，偏好却是和手机端共用的那一个 `ripples`。JSX 连同 `.ripples` / `.ripple` /
+`@keyframes ripple-out` 一起删掉之后，这个布局就没有它的消费者了。
+**手机端播放设置抽屉里那一项还在**，它从来是另一处开关（`h5/NowPlaying.js` 自己的抽屉），
+这次动的只是 `/desktop`。
+
 ## 迁移时替换了什么
 
 | 原（space 博客） | 现（本仓库） |
@@ -1110,6 +1143,7 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
 | 挂在 `pages/music/` 下 | 改成根路径 `/`、`/h5`、`/desktop` |
 | `utils/basePath.js` | **已删除** —— 唯一调用者是 SW 注册，SW 移除后无人使用 |
 | 一个 `MusicApp` + `variant` 分支渲染两套布局 | 拆成 `h5/MusicApp` 与 `desktop/DesktopApp` 两棵独立的树，共用 `core/` |
+| `desktop/DesktopCachePanel.js` + `desktop/DesktopSheetChrome.*` | **已删除** —— 它们只被桌面端的设置弹窗引用；那个弹窗（连接云盘、缓存管理、外观、唱片波纹）整个删掉了，因为 `/desktop` 现在只播公共曲库、也没有波纹 |
 | `@ybouane/liquidglass`（WebGL 玻璃） | `d2cd9fa` 时**已卸载** —— 桌面端全部改成纯 CSS `backdrop-filter`；`7921a1c` 起又给底部播放条装回来试过一轮，`cfae6bd` 之后**再次卸载**（原因见那条提交：背后没有可折射的结构、72px 高的条上默认倒角 40px 把整条变成鼓包，所以怎么调都不像 demo） |
 
 ## 常用命令

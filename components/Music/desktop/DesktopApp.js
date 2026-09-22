@@ -6,7 +6,6 @@ import PageHead from '../core/PageHead';
 import PlayerAudio from '../core/PlayerAudio';
 import Cover from '../Cover';
 import DesktopMusic from './DesktopMusic';
-import DesktopCachePanel from './DesktopCachePanel';
 import {
     IconNote,
     IconPin,
@@ -27,16 +26,25 @@ import styles from './DesktopApp.module.scss';
  * workspace:
  *
  *  - the **token root**. `DesktopApp.module.scss` declares the desktop palette
- *    and the `--glass-*` recipe, and `DesktopMusic` plus the panels below
- *    consume them. One declaration is what keeps the workspace and its chrome
- *    from drifting apart. That palette is dark-only: this layout has no theme
- *    switch and no light values, so `usePlayer`'s `theme` is deliberately not
- *    read here — the phone's copy of that preference has no say on `/desktop`.
+ *    and the `--glass-*` recipe, and `DesktopMusic` consumes them. One
+ *    declaration is what keeps the workspace and its chrome from drifting
+ *    apart. That palette is dark-only: this layout has no theme switch and no
+ *    light values, so `usePlayer`'s `theme` is deliberately not read here — the
+ *    phone's copy of that preference has no say on `/desktop`.
  *  - the **row drawer** (置顶). It is rendered here, not in the
  *    list, so it can centre itself over the viewport instead of inside the
  *    scroller.
- *  - the **cache manager panel**, the same body the phone layout shows in a
- *    bottom sheet — only the frame differs.
+ *
+ * Two things the phone layout has and this one deliberately does not:
+ *
+ *  - **the Google Drive library.** `/desktop` plays the public library, full
+ *    stop — `drive: false` on the hook, no GSI script in the head, and no
+ *    connect screen anywhere. There used to be a settings dialog here that
+ *    could raise Google's account picker; it is gone, and with it the folder
+ *    picker, the disconnect row and the "connect your own Drive" steps.
+ *  - **the cache manager.** Its only entry on this layout was a row in that
+ *    same dialog. Audio caching itself is untouched and still shared with the
+ *    phone (one IndexedDB, one 30-day policy) — what is gone is the screen.
  *
  * `lyricsAutoOpen` is the one genuine disagreement between the layouts: the
  * desktop stage *is* the lyrics card, so opening them for a song that has them
@@ -44,17 +52,9 @@ import styles from './DesktopApp.module.scss';
  */
 const DesktopApp = function () {
     const {
-        ripples,
-        toggleRipples,
         isPinned,
         togglePin,
-        tracks,
         visibleTracks,
-        sourceName,
-        folderName,
-        folders,
-        folderId,
-        handleFolderChange,
         listLoading,
         search,
         setSearch,
@@ -81,60 +81,24 @@ const DesktopApp = function () {
         closeRowMenu,
         setRowMenu,
         setRowMenuClosing,
-        cacheOpen,
-        cacheClosing,
-        setCacheOpen,
-        setCacheClosing,
-        cacheEntries,
-        cacheLoading,
-        cacheBusyId,
-        cacheAllRunning,
-        cacheProgress,
-        goCacheManager,
-        closeCacheManager,
-        readCache,
-        deleteCacheEntries,
-        cacheAllTracks,
-        gsiReady,
-        setGsiReady,
-        clientIdDraft,
-        setClientIdDraft,
-        token,
-        connect,
-        disconnect,
         error,
         notice,
-        setError,
         audioRef,
         onEnded,
         onPlay,
         onPause,
         onTimeUpdate,
         onMetadata,
-    } = usePlayer({ lyricsAutoOpen: true });
+    } = usePlayer({ lyricsAutoOpen: true, drive: false });
 
     return (
         <div className={styles.page}>
-            <PageHead
-                onReady={() => setGsiReady(true)}
-                onError={() => setError('Google 登录组件加载失败，请检查网络')}
-            />
+            {/* No GSI script: this layout has no Drive connection to make. */}
+            <PageHead gsi={false} />
 
             <DesktopMusic
-                connected={!!token}
-                sourceName={sourceName}
-                gsiReady={gsiReady}
-                clientIdDraft={clientIdDraft}
-                onClientIdDraft={setClientIdDraft}
-                onConnect={connect}
-                onDisconnect={disconnect}
-                folders={folders}
-                folderId={folderId}
-                folderName={folderName}
-                onFolderChange={handleFolderChange}
                 listLoading={listLoading}
                 visibleTracks={visibleTracks}
-                trackCount={visibleTracks.length}
                 search={search}
                 onSearch={setSearch}
                 current={current}
@@ -153,11 +117,8 @@ const DesktopApp = function () {
                 lyricsLoading={lyricsLoading}
                 lyricsVisible={lyricsVisible}
                 onToggleLyrics={toggleLyrics}
-                ripples={ripples}
-                onToggleRipples={toggleRipples}
                 rowMenuId={rowMenuId}
                 onOpenRowMenu={openRowMenu}
-                onOpenCache={goCacheManager}
             />
 
             {/* The row drawer, opened by a row's own three-dots button. It is
@@ -238,24 +199,6 @@ const DesktopApp = function () {
                         </button>
                     </div>
                 </div>
-            )}
-
-            {cacheOpen && (
-                <DesktopCachePanel
-                    entries={cacheEntries}
-                    tracks={tracks}
-                    loading={cacheLoading}
-                    busyId={cacheBusyId}
-                    caching={cacheAllRunning}
-                    cacheProgress={cacheProgress}
-                    closing={cacheClosing}
-                    onClosed={() => { setCacheOpen(false); setCacheClosing(false); }}
-                    onCancelClose={() => setCacheClosing(false)}
-                    onClose={closeCacheManager}
-                    onRefresh={readCache}
-                    onDelete={deleteCacheEntries}
-                    onCacheAll={cacheAllTracks}
-                />
             )}
 
             {(error || notice) && (

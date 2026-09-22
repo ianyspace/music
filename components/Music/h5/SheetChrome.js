@@ -11,10 +11,11 @@ import styles from './SheetChrome.module.scss';
  *
  * It owns nothing but the frame — the body is passed in as children. The two
  * panels it serves (`CacheManager`, `DriveSheet`) supply either a content
- * component from `components/Music/core/` or their own markup,
- * and the desktop layout supplies the same bodies to its own
- * `desktop/DesktopSheetChrome` instead. That split is the whole point: the two
- * layouts share what a panel *says* and not how it *arrives*.
+ * component from `components/Music/core/` or their own markup, so the frame
+ * and the content are separable on purpose: what a panel *says* is shared, how
+ * it *arrives* is not. (The desktop used to have a `DesktopSheetChrome` for
+ * that same split. It went with the desktop's settings dialog — this layout is
+ * the only one with sheets now.)
  *
  * Dismissal is the sheet-unmount-via-animation-end trick: `closing` flips the
  * panel to the reverse animation, and the owner unmounts it once that ends.
