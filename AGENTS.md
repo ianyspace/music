@@ -206,13 +206,18 @@
     一道淡淡的接缝。列与列刚好铺满，没有缝。列内每条带的两端各留 `BLEND`（12%）做混色，
     而混色的宽度按**那条带自己的高度**算：这些带会收到平均高度的三分之二，固定宽度会让一条
     带的混色溢到邻居身上。
-  - **播放时彩虹一直向右流**：`.mark-playing .bg` 用 `rainbow-score-flow 2s linear
-    infinite`，一个周期正好平移一个波长（自身宽度的 `50%`，即 `WAVE_LAMBDA = DRAW_W / 2`），
+  - **播放时彩虹一直向右流**：`rainbow-score-flow 2s linear infinite` 挂在 `.bg` 上，
+    一个周期正好平移一个波长（自身宽度的 `50%`，即 `WAVE_LAMBDA = DRAW_W / 2`），
     首尾帧相同，所以循环无缝。`linear` 是必需的：一缓动就会在每个波长处看得出停顿。
     canvas 做成 260% 宽、-140% 靠左，多出来的 140% 就是这一整周期行程的余量 ——
     这两个数和 `WAVE_LAMBDA` / `WAVE_ORIGIN` 是**同一笔账拆在两个文件里**，改一个波峰就换位置。
-    不读音频、不拆频段、不重画 canvas；暂停时 class 消失，动画停止。因为没有 Web Audio
-    监听，切后台不会牵连 logo 的动画链路。
+    - **暂停/播放切的是 `animation-play-state`，不是「有没有动画」**：`.mark-playing .bg`
+      只写 `running`，`.bg` 自己带 `paused`。**不要改回「暂停时把动画摘掉」** ——
+      摘掉动画会把 canvas 弹回 `translate(0)`，而一个周期正好一个波长，所以这一跳只有在
+      周期边界上才看不出来，真实暂停不会正好落在那里，看起来就是背景硬切一下。
+      `paused` 则停在当时的帧，再播从那儿接着走。同一招在 `.disc-paused`（唱片）和
+      `.eq-paused i`（均衡条）上已经用了。
+    - 不读音频、不拆频段、不重画 canvas。因为没有 Web Audio 监听，切后台不会牵连 logo 的动画链路。
   - **它曾经是访客头像**（绑了 QQ 就是 QQ 头像）。那个盘子连同它的全部讲究搬去了
     「账号」页的身份卡（`Account.module.scss` 的 `.identity-avatar`）——**一个头像说的是
     「听歌的是谁」，而这个按钮说的是「设置在哪」**，两件事不该长在同一个位置上。
@@ -1022,7 +1027,8 @@ components/Music/three/
   不是屏幕坐标。这样同一套推开逻辑在扁盘和立环上都是对的，
   而且悬停（没按播放、没拖拽）也要调用 —— 不然鼠标划过是一片没有反应的空场。
 - **手机端 logo 不再接音频分析器**：`h5/MarkNote.js` 只在挂载时把固定的彩虹印谱画进
-  canvas；`playing` 只负责切换 `.mark-playing`，让 CSS 以固定 `2s` 节奏把彩虹向右平移。
+  canvas；`playing` 只负责在 `.mark-playing` 上把 CSS 的 `animation-play-state` 切成
+  `running`（默认 `paused`），让固定 `2s` 节奏的彩虹向右平移。
   没有 `AudioContext`、`AnalyserNode`、频段拆分、合成节拍、后台 `resume` 或 `nudge`，
   所以切后台不会因为 logo 动画去碰播放链路。
 - **音符是静态的**：没有 `translate`、`scale`、呼吸，也没有浮动音符家族；logo 在播放时
@@ -1037,12 +1043,17 @@ components/Music/three/
   决定了 40px 盒子上的「横向五分之一」落在缓冲区哪个 px。不要把 `playing` 改回音频电平，
   也不要为这枚 logo 增加 Web Audio 监听。
 - **烟雾测试也跟着简化**：`scripts/drive-page.js` 检查固定 CSS 动画类是否在播放时开启、
-  音符没有 transform、第二首歌仍能在同一个 audio 元素上播放。挂载后那一秒用自己的一轮
-  50ms 轮询、挂在同一处 reload 上抓（`waitFor` 的 400ms 间隔对一秒的状态是掷硬币），
-  两条判据：**盒子从来没有比它自己更高**（也就是「没有宽条进场」——用所有样本里
-  `width - height` 的最大值判，**不把样式表里的 40px 抄一遍回给它**），以及音符的
-  `animation-name` / `animation-duration` 确实是那个一秒的淡入。音符 `opacity` 在这里
-  只当「样式表到了没有」的信号用（未上样式的按钮会读成 316×462、音符 opacity 1）。
+  音符没有 transform、第二首歌仍能在同一个 audio 元素上播放。另外两条要自己抓时机：
+  - **挂载后那一秒**用自己的一轮 50ms 轮询、挂在同一处 reload 上抓（`waitFor` 的 400ms
+    间隔对一秒的状态是掷硬币），两条判据：**盒子从来没有比它自己更高**（也就是「没有宽条
+    进场」——用所有样本里 `width - height` 的最大值判，**不把样式表里的 40px 抄一遍回给
+    它**），以及音符的 `animation-name` / `animation-duration` 确实是那个一秒的淡入。
+    音符 `opacity` 在这里只当「样式表到了没有」的信号用（未上样式的按钮会读成 316×462、
+    音符 opacity 1）。
+  - **暂停/继续那对**读 canvas 的 `animation-play-state` 和计算出的 `transform` 的 `m41`：
+    先等波浪走到周期前半段（`tx` 在 10~24 之间，一共 52px 一个周期）再暂停，因为靠近 0 时
+    「弹回起点」和「停住」看不出区别、靠近周期末尾时继续采样会绕回去读成重启。然后断言
+    暂停后两帧的 `tx` 一样（冻住了）、继续后 `tx` 还在原来的位置附近而不是回到 0。
   不再造 `__musicContexts` / `__musicAnalysers`，不再覆盖 `AnalyserNode`，
   不再测试 logo 的后台恢复。
 

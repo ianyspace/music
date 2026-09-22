@@ -38,13 +38,15 @@
     }
 }
 
-/* Playback only adds this class. The score flows to the right forever: one
-   cycle moves the canvas by exactly one wavelength — `50%` of its own width,
-   which is `WAVE_LAMBDA` in MarkNote.js — so the last frame is the first frame
-   and `infinite` loops without a seam. `linear`, because a score that eased
-   would visibly stop and start at every wavelength. */
+/* Playback only adds this class — and all it changes is the score's *play
+   state*, never whether the animation exists. An animation that is removed
+   snaps its element back to `translate(0)`, and because one cycle is exactly
+   one wavelength that snap is invisible only when it lands on the cycle
+   boundary — which is not when anyone actually pauses. Paused, the canvas
+   holds the frame it was on; running again carries on from there. Same trick
+   as the disc and the eq bars (`.disc-paused`, `.eq-paused i`). */
 .mark-playing .bg {
-    animation: rainbow-score-flow 2s linear infinite;
+    animation-play-state: running;
 }
 
 @keyframes rainbow-score-flow {
@@ -67,7 +69,15 @@
    These two numbers and `WAVE_LAMBDA` / `WAVE_ORIGIN` are one calculation
    split across two files: 40px × 260% is the buffer's 320 units wide, so one
    buffer px is 0.325 of a screen px, and half the buffer is the 52px the
-   animation travels. Change one and the crest lands somewhere else. */
+   animation travels. Change one and the crest lands somewhere else.
+
+   The score flows to the right forever: one cycle moves the canvas by exactly
+   one wavelength — `50%` of its own width, which is `WAVE_LAMBDA` — so the last
+   frame is the first frame and `infinite` loops without a seam. `linear`,
+   because a score that eased would visibly stop and start at every wavelength.
+   It is declared here rather than on `.mark-playing` so that it is *paused*
+   rather than absent when playback stops, and it starts paused so a page that
+   has never played sits on the first frame. */
 .bg {
     position: absolute;
     left: -140%;
@@ -77,6 +87,8 @@
     display: block;
     transform-origin: center;
     will-change: transform;
+    animation: rainbow-score-flow 2s linear infinite;
+    animation-play-state: paused;
 }
 
 /* The note is a static foreground; no transform is ever written to it. Its
@@ -126,7 +138,10 @@
         animation: none;
     }
 
-    .mark-playing .bg {
+    /* No score at all, rather than a paused one: `paused` still shows the wave,
+       and someone who asked for reduced motion did not ask for the drift
+       either. The canvas then sits on its first frame. */
+    .bg {
         animation: none;
     }
 }

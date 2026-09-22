@@ -356,7 +356,7 @@ ${headerRow}
         'worst channel delta: ' + worst,
         'blend widest / band: ' + blend.toFixed(2) + '  (designed 2 \\u00d7 BLEND = ' + (2 * BLEND).toFixed(2) + ')',
         'buffer: ' + DRAW_W + '\\u00d7' + DRAW_H + ', wavelength ' + WAVE_LAMBDA + ' (' + (DRAW_W / WAVE_LAMBDA) + ' cycles)',
-        'flow: translateX(50%) over 2s linear, infinite',
+        'flow: translateX(50%) over 2s linear, infinite; paused when not playing',
         'note: static path, one 1s opacity fade on mount',
     ].join('\\n');
 

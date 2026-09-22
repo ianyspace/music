@@ -1828,6 +1828,75 @@ const drive = async (target, index) => {
             motionState ? `transform=${motionState.noteTransform || '(none)'}` : '(no mark)',
         );
 
+        /* --- and pausing holds the score where it is ------------------------
+         *
+         * `playing` toggles the score's *play state* now, rather than adding and
+         * removing the animation. Removing an animation snaps its element back
+         * to `translate(0)`, and since one cycle is exactly one wavelength that
+         * snap is invisible only when it lands on the cycle boundary — which is
+         * not where a listener who just pressed pause happens to be. (The app
+         * already does it the right way for the spinning disc and the eq bars:
+         * `.disc-paused` / `.eq-paused i` are both `animation-play-state`.)
+         *
+         * Two halves, both read off the canvas's computed transform: it freezes
+         * where it is, and starting again carries on from there. The freeze
+         * point is waited for in the first half of a cycle — `tx` between 10 and
+         * 24 of the 52px a cycle travels — because near 0 a snap back would be
+         * indistinguishable from holding, and near the end the resume sample
+         * could wrap past the cycle and read like a restart.
+         */
+        const scoreState = `(() => {
+            const b = document.querySelector(${JSON.stringify(target.mark)});
+            const canvas = b && b.querySelector('canvas');
+            if (!canvas) return { found: false };
+            const cs = getComputedStyle(canvas);
+            const m = new DOMMatrixReadOnly(cs.transform === 'none' ? '' : cs.transform);
+            return {
+                found: true,
+                playState: cs.animationPlayState,
+                tx: m.m41,
+                playing: Boolean(b && [...b.classList].some((name) => /mark-playing/.test(name))),
+            };
+        })()`;
+        const midCycle = await waitFor(
+            scoreState,
+            (v) => Boolean(v) && v.found && v.playState === 'running' && v.tx > 10 && v.tx < 24,
+            8000,
+        );
+        const audioDo = (method) => evaluate(
+            `(() => { const a = document.querySelector('audio'); if (!a) return 'no audio'; a.${method}(); return '${method}'; })()`,
+        );
+        const wasAt = midCycle.value && midCycle.value.found ? midCycle.value.tx : null;
+        await audioDo('pause');
+        await sleep(150);
+        const frozen = await evaluate(scoreState);
+        await sleep(300);
+        const stillFrozen = await evaluate(scoreState);
+        check(
+            'pausing the music holds the score where it is (no snap back to the start)',
+            wasAt !== null
+                && Boolean(frozen) && frozen.found && frozen.playState === 'paused' && !frozen.playing
+                && Boolean(stillFrozen) && stillFrozen.playState === 'paused'
+                && Math.abs(stillFrozen.tx - frozen.tx) < 0.5
+                && Math.abs(frozen.tx - wasAt) < 6,
+            frozen && frozen.found
+                ? `froze at ${frozen.tx.toFixed(1)}px (was ${wasAt === null ? '?' : wasAt.toFixed(1)}px),`
+                    + ` ${stillFrozen.tx.toFixed(1)}px 300ms later, play-state=${frozen.playState}`
+                : '(no mark)',
+        );
+        await audioDo('play');
+        await sleep(300);
+        const resumed = await evaluate(scoreState);
+        check(
+            '...and starting again carries on from there instead of restarting',
+            Boolean(resumed) && resumed.found && resumed.playState === 'running'
+                && resumed.playing && resumed.tx > 8,
+            resumed && resumed.found
+                ? `resumed at ${resumed.tx.toFixed(1)}px, play-state=${resumed.playState}`
+                    + ` (a restart would read as ~0px)`
+                : '(no mark)',
+        );
+
         /* --- and playback still advances to a second song ------------------
          *
          * This check remains intentionally small. The mark no longer owns an

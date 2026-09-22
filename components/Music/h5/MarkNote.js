@@ -9,11 +9,12 @@ import styles from './MarkNote.module.scss';
  *
  * There is deliberately no audio analyser here. The rainbow is a fixed score:
  * its wave shape and its animation cadence are constants, not a frequency read
- * from the song. When `playing` is true, CSS flows the already-drawn canvas to
- * the right at that fixed cadence; when playback stops, the class disappears and
- * the canvas stops. This keeps backgrounding out of the animation's logic
- * entirely — no AudioContext, no analyser, no retry/resume path, no fallback
- * synth.
+ * from the song. `playing` only toggles the score's CSS *play state* — the
+ * animation is always applied, paused when playback stops — so the wave holds
+ * the frame it was on and carries on from there when playback resumes, instead
+ * of snapping back to the start. This keeps backgrounding out of the
+ * animation's logic entirely — no AudioContext, no analyser, no retry/resume
+ * path, no fallback synth.
  *
  * There is also no entry animation on the mark's *size* any more: it used to
  * enter as a bar the width of the row and shrink into the square. It is now the
