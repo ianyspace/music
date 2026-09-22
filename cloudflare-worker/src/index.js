@@ -284,6 +284,33 @@ const withinRefreshCooldown = async function (cache, url) {
     }
 };
 
+/**
+ * Newest first, by when the file was written to the bucket — "the order I added
+ * them in, the most recent at the top".
+ *
+ * `uploaded` is R2's own record of that, and the only one there is: the bucket
+ * has no sidecar index, and nothing else in this project knows when a song
+ * arrived. **Sorting here rather than in the client is the point.** The client
+ * can only sort by a field the *response* carries, and the edge keeps a
+ * response for up to CACHE_TTL_SECONDS past a deploy — so a client that sorted
+ * by `uploaded` would, for those five minutes, be sorting a whole page of songs
+ * whose field is missing, and the list would rearrange itself for no visible
+ * reason. Sorted here, a cached page is simply the old order until it expires.
+ *
+ * The name breaks ties instead of leaving them to the listing. A batch upload
+ * lands many files in the same millisecond, and `Array#sort` being stable only
+ * means the result is reproducible *from the input* — it does not mean the
+ * input was in an order anyone chose. This is the same collation the index used
+ * before, so nothing else about the list moves.
+ */
+const byNewestFirst = function (a, b) {
+    // `Number(undefined)` is NaN, and NaN is falsy: an object the listing gave
+    // no `uploaded` for falls through to the name rather than making the whole
+    // order arbitrary.
+    return Number(b.uploaded) - Number(a.uploaded)
+        || basenameOf(a.key).localeCompare(basenameOf(b.key), 'zh-Hans-CN');
+};
+
 const buildIndex = async function (env) {
     const objects = await listAllObjects(env.MUSIC_BUCKET, env.MUSIC_PREFIX || '');
     const base = String(env.R2_PUBLIC_BASE || '').replace(/\/+$/, '');
@@ -297,6 +324,11 @@ const buildIndex = async function (env) {
         else if (IMAGE_EXTENSIONS.includes(ext)) coversByKey.set(normalizeLyricKey(object.key), object);
         else if (AUDIO_EXTENSIONS.includes(ext)) audioObjects.push(object);
     });
+
+    // Newest first. Sorted before the map rather than after it, so `uploaded`
+    // stays a detail of the listing and never reaches the wire format — see
+    // `byNewestFirst`.
+    audioObjects.sort(byNewestFirst);
 
     const tracks = audioObjects
         .map((object) => {
@@ -317,8 +349,7 @@ const buildIndex = async function (env) {
                 coverUrl: cover ? `${base}/${encodeKey(cover.key)}` : null,
                 source: 'cloud',
             };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+        });
 
     return { tracks, generatedAt: Date.now() };
 };

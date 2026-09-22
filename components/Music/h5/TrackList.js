@@ -49,8 +49,12 @@ import styles from './TrackList.module.scss';
  * says which library the rows below belong to, and the smoke test watches it to
  * see a source switch.
  *
- * Rows cover every audio file, sorted by name; the folder chosen in the library
- * sheet (or in the Drive sheet) filters the whole list.
+ * Rows cover every audio file, in the order the source handed them over — the
+ * public library arrives newest-first (the Worker sorts it; see `byNewestFirst`
+ * in cloudflare-worker/src/index.js), a Drive folder in the name order the
+ * request asks for. Nothing here reorders: pinning lifts a song and leaves the
+ * rest alone. The folder chosen in the library sheet (or in the Drive sheet)
+ * filters the whole list.
  *
  * Two list-scoped behaviours are handed upward rather than implemented here:
  * the "jump to the playing track" button lives in `MiniPlayer` (it is anchored

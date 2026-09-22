@@ -126,6 +126,25 @@
     按 `id="ms-track-list"` 找它），所以消息挂在 `<ul>` 之后；桌面端则是直接把列表换掉。
     两端共用 `.list-empty` 这一个类名（以前手机端叫 `lib-loading` / `lib-empty`，还共用一条规则）。
   文案由 `node scripts/preview-empty-list.js` 出图核对。
+- **公共曲库的默认顺序 = 清单的顺序，由 Worker 按「加进来的时间」倒序排**（新的在最上）。
+  前端**没有**任何排序：`visibleTracks` 只有 `applyPinnedOrder`（只把置顶那几首挪上去）→
+  只看喜欢 → 搜索，没有一条会重排剩下的。所以这件事只在
+  `cloudflare-worker/src/index.js` 的 `byNewestFirst` 一处决定 ——
+  **改它要单独部署 Worker**（`cd cloudflare-worker && npx wrangler deploy`），
+  它**不随站点推送上线**（`cloudflare-worker/**` 在 `paths-ignore` 里）。
+  - **为什么不在前端排**：前端只能按**响应里带的字段**排，而边缘缓存会在部署后继续发
+    最多 `CACHE_TTL_SECONDS`（5 分钟）的旧响应 —— 那几分钟里整个清单都缺这个字段，
+    列表会毫无理由地自己重排一遍。排在 Worker 里，旧缓存只是「还是旧顺序」五分钟。
+  - **同一毫秒的（一次批量上传就是这样）按文件名排，别把这条兜底删掉**：桶的列举顺序
+    不是谁选的，`Array#sort` 稳定只保证「从输入可复现」，不保证输入本来有顺序。
+    排序放在 `map` **之前**，所以 `uploaded` 是列举的细节，不会跑进线上格式。
+  - Drive 那份不在这里排：它请求时就带了 `orderBy: 'name'`，顺序是 Drive 给的。
+  - 查证过的事实（2026-09-22）：R2 确实为每个对象记着写入时间 —— 公开域名上 `HEAD` 一个
+    对象能读到 `Last-Modified`，45 首里 44 首有值（剩下那首是早就删掉的 404），时间互不
+    相同，但**成批聚集在几秒之内**，这正是兜底那条要存在的理由。列举结果里的 `uploaded`
+    和它是同一个值（类型里不是可选的）。另外：**这台机器连不上 `*.workers.dev`**
+    （本地 DNS 把它解析到一个连不通的地址，DoH 也不通），所以「线上真的变了」这一步
+    只能由人刷新页面确认，别在这里反复试。
 - **列表偏好现在只剩一个在本机：置顶排名**（`shared.js` 的 `ORDER_KEY`）。它是
   `<source>:<id>` 的 JSON 数组，走 `readKeyList` / `writeKeyList`，在 `localStorage`。
   它和「只看喜欢」一起进 `visibleTracks`，顺序是：`applyPinnedOrder`（只排序）→ 只看喜欢 → 搜索。
