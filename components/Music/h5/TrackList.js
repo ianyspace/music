@@ -14,7 +14,7 @@ import { emptyListMessage, parseTrackName, trackGradient } from '../shared';
 import { DRIVE_SOURCE } from '../librarySource';
 import Cover from '../Cover';
 
-import MarkNote from './MarkNote';
+import MarkNote from '../core/MarkNote';
 import styles from './TrackList.module.scss';
 
 /**
@@ -36,13 +36,14 @@ import styles from './TrackList.module.scss';
  * that is where the library's brand name was, and a bar with its mark on the
  * left and its actions on the right is what a phone app looks like.
  *
- * The mark is not built here. It is `MarkNote`, which owns its artwork and the
+ * The mark is not built here. It is `MarkNote` — now in `core/`, because the
+ * wide screen's list column draws the same one — and it owns its artwork and the
  * one thing about it that moves — the fixed-frequency rainbow only while music
  * is playing. There is no audio analyser here: `playing` is just a class toggle,
  * so the mark has no backgrounding/audio-context lifecycle of its own.
- * Everything this component still decides about the mark is the `qqBound` label:
- * the button remains the way into 账号, and the state is available to assistive
- * technology / the tooltip without a visible dot.
+ * Everything this component still decides about the mark is `qqBound`: the
+ * button remains the way into 账号, and that boolean is what puts the state dot
+ * on the mark's corner (and what the button says in its label and title).
  *
  * The library's *name* did not leave with the title, though: it is still here as
  * the page's only `<h1>`, off screen (see `.sr-only`). It is the one thing that
@@ -156,8 +157,9 @@ const TrackList = function ({
                         static path. Playback only toggles the CSS drift class;
                         there is no analyser or per-frame audio work here.
 
-                        The QQ state remains in the button label/title, but its
-                        decorative bottom-right dot is intentionally hidden.
+                        The QQ state is the small dot on the mark's bottom-right
+                        corner (grey / green), and the same answer is in the
+                        button's label and title, so the dot is decorative.
                     */}
                     <MarkNote
                         playing={isPlaying}

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import {
     parseTrackName,
-    qqAvatarUrl,
     trackGradient,
 } from '../shared';
 import usePlayer from '../core/usePlayer';
@@ -132,6 +131,8 @@ const MusicApp = function () {
         toggleLikedOnly,
         qq,
         saveQq,
+        avatarUrl,
+        onAvatarError,
         tracks,
         visibleTracks,
         librarySource,
@@ -250,33 +251,15 @@ const MusicApp = function () {
     // outbox (`adoptGuestLikes`).
     const dataSync = useDataSync({ active: account.open, revision: qq });
 
-    // The QQ number behind the identity card. It lives in `usePlayer` now
-    // rather than here, because it is no longer only about the avatar: it is
-    // also the key every play count and every like is recorded under, and both
-    // are recorded by the player — which both layouts share. One storage
-    // read, one answer to "who is listening".
-    //
-    // What stays here is the *picture*: the URL and the "it failed to load"
-    // flag. The list's top bar draws the app's mark now, not a face, so 账号's
-    // identity card is the only caller — but the fallback stays here anyway,
-    // because that is where the number it depends on is turned into a URL, and
-    // a caller deciding for itself is a fallback that can disagree with the
-    // next one.
-    const [avatarBroken, setAvatarBroken] = useState(false);
-
-    // Cleared whenever the number changes, because "this picture failed" says
-    // nothing about the next one.
-    useEffect(() => {
-        setAvatarBroken(false);
-    }, [qq]);
-
-    // '' means "draw the note": either no number is bound, or its picture did
-    // not arrive. Both callers get the same answer.
-    const avatarUrl = qq && !avatarBroken ? qqAvatarUrl(qq) : '';
-
-    const onAvatarError = useCallback(function () {
-        setAvatarBroken(true);
-    }, []);
+    // The QQ number behind the identity card, and the picture that goes with
+    // it, both come from `usePlayer`. The number lives there because it is no
+    // longer only about the avatar: it is also the key every play count and
+    // every like is recorded under, and both are recorded by the player — which
+    // both layouts share. The *picture* moved there with it: it is a function
+    // of that number, the wide screen has an identity card of its own now, and
+    // a fallback each shell decides for itself is two fallbacks that can
+    // disagree. One storage read, one answer to "who is listening", one answer
+    // to "and what do they look like".
 
     /* --- now-playing transitions (mini bar ⇄ sheet) --- */
 

@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
-import { parseTrackName, trackGradient } from '../shared';
+import { normalizeQq, parseTrackName, trackGradient } from '../shared';
 import usePlayer from '../core/usePlayer';
 import PageHead from '../core/PageHead';
 import PlayerAudio from '../core/PlayerAudio';
 import Cover from '../Cover';
 import DesktopMusic from './DesktopMusic';
 import {
+    IconHeart,
     IconNote,
     IconPin,
 } from '../icons';
@@ -31,9 +32,17 @@ import styles from './DesktopApp.module.scss';
  *    apart. That palette is dark-only: this layout has no theme switch and no
  *    light values, so `usePlayer`'s `theme` is deliberately not read here — the
  *    phone's copy of that preference has no say on `/desktop`.
- *  - the **row drawer** (置顶). It is rendered here, not in the
+ *  - the **row drawer** (置顶 / 喜欢). It is rendered here, not in the
  *    list, so it can centre itself over the viewport instead of inside the
- *    scroller.
+ *    scroller. The phone's row drawer holds the same two rows in the same
+ *    order — the two layouts teach one behaviour, and that is also why the
+ *    state behind them lives in the hook rather than in either layout.
+ *  - the **账号 card**, raised by the app's mark at the top of the list column
+ *    and centred over the workspace for the same reason. It holds one thing on
+ *    this layout: the QQ number. The phone's 账号 sheet is the visitor's whole
+ *    panel — the number, 听歌排行 and 数据同步 — and this one deliberately is
+ *    not: neither of the other two screens exists here, and a card that carried
+ *    a row for a screen it cannot open would be a dead end.
  *
  * Two things the phone layout has and this one deliberately does not:
  *
@@ -74,6 +83,14 @@ const DesktopApp = function () {
         lyricsLoading,
         lyricsVisible,
         toggleLyrics,
+        isLiked,
+        toggleLike,
+        likedOnly,
+        toggleLikedOnly,
+        qq,
+        saveQq,
+        avatarUrl,
+        onAvatarError,
         rowMenu,
         rowMenuClosing,
         rowMenuId,
@@ -90,6 +107,65 @@ const DesktopApp = function () {
         onTimeUpdate,
         onMetadata,
     } = usePlayer({ lyricsAutoOpen: true, drive: false });
+
+    /* --- 账号, the one card this shell raises over the workspace ---------- */
+
+    const [accountOpen, setAccountOpen] = useState(false);
+    const [accountClosing, setAccountClosing] = useState(false);
+
+    const openAccount = useCallback(function () {
+        setAccountClosing(false);
+        setAccountOpen(true);
+    }, []);
+
+    // The same shape as the row drawer's own close, including the reduced-motion
+    // branch: with animations disabled no `animationend` ever arrives, so the
+    // card has to unmount here instead of waiting for one.
+    const closeAccount = useCallback(function () {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setAccountOpen(false);
+            setAccountClosing(false);
+            return;
+        }
+        setAccountClosing(true);
+    }, []);
+
+    // Escape closes it, exactly like the row drawer. It is the one card with no
+    // visible way out other than its scrim.
+    useEffect(() => {
+        if (!accountOpen) return undefined;
+        const onKeyDown = (event) => { if (event.key === 'Escape') closeAccount(); };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [accountOpen, closeAccount]);
+
+    // The field is a draft, not the setting: nothing is stored until 确认, so a
+    // half-typed number never becomes the avatar. It follows the stored value
+    // when that changes elsewhere (a clear, a second tab), which is why it is an
+    // effect rather than an initial value only. Same two rules as the phone's
+    // 账号 sheet, and the same `normalizeQq` — the number is one thing, and two
+    // entry points that disagreed about what a number *is* would be a bug.
+    const [qqDraft, setQqDraft] = useState(qq);
+    const [qqInvalid, setQqInvalid] = useState(false);
+
+    useEffect(() => { setQqDraft(qq); }, [qq]);
+
+    const submitQq = function (event) {
+        event.preventDefault();
+        const digits = normalizeQq(qqDraft);
+        if (!digits) {
+            setQqInvalid(true);
+            return;
+        }
+        setQqInvalid(false);
+        saveQq(digits);
+    };
+
+    const clearQq = function () {
+        setQqDraft('');
+        setQqInvalid(false);
+        saveQq('');
+    };
 
     return (
         <div className={styles.page}>
@@ -119,6 +195,11 @@ const DesktopApp = function () {
                 onToggleLyrics={toggleLyrics}
                 rowMenuId={rowMenuId}
                 onOpenRowMenu={openRowMenu}
+                likedOnly={likedOnly}
+                onToggleLikedOnly={toggleLikedOnly}
+                isLiked={isLiked}
+                qqBound={Boolean(qq)}
+                onOpenAccount={openAccount}
             />
 
             {/* The row drawer, opened by a row's own three-dots button. It is
@@ -197,6 +278,150 @@ const DesktopApp = function () {
                                 </span>
                             </span>
                         </button>
+                        {/* 喜欢 sits under 置顶 because that is the order of what
+                            it does to the song: arranges it, then keeps it. The
+                            label carries the current state rather than reading
+                            喜欢 either way — this card is where the visitor
+                            finds out whether a song is already liked, since no
+                            row shows a heart.
+
+                            The sub-line says where the like lands, which is the
+                            one thing the visitor cannot see: under a number it
+                            goes to the database, without one it stays in this
+                            browser. Same two sentences as the phone's drawer,
+                            because it is the same fact.
+
+                            No source check: the phone hides this row for a
+                            Drive track (a cloud file id means nothing outside
+                            that account), and this layout only ever plays the
+                            public library, so that test can never be false
+                            here. */}
+                        <button
+                            type="button"
+                            className={styles.item}
+                            role="menuitem"
+                            onClick={() => {
+                                toggleLike(rowMenu);
+                                closeRowMenu();
+                            }}
+                        >
+                            <span className={styles['item-icon']} aria-hidden="true">
+                                <IconHeart size={18} filled={isLiked(rowMenu)} />
+                            </span>
+                            <span className={styles['item-text']}>
+                                <span className={styles['item-title']}>
+                                    {isLiked(rowMenu) ? '取消喜欢' : '喜欢'}
+                                </span>
+                                <span className={styles['item-sub']}>
+                                    {isLiked(rowMenu)
+                                        ? '从「我喜欢」里移出'
+                                        : (qq
+                                            ? '加入「我喜欢」，按你的 QQ 号保存'
+                                            : '加入「我喜欢」，只保存在本机')}
+                                </span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 账号 — raised by the app's mark at the top of the list column.
+                The same centred card as the row drawer above, because on a wide
+                screen that *is* this layout's dialog: the phone's version rises
+                from the bottom edge, which here would be nowhere near the thing
+                that opened it.
+
+                One block, two states, exactly like the phone's card: with a
+                number it is the identity card (avatar, the number, what the
+                number is for) and a 清除 button on it; without one it is the
+                field, 确认 and the hint. They are never both on screen — the
+                same question ("is my number in?") used to have two
+                half-answers at once, which is why the phone's version was
+                rewritten this way and why this one starts out that way. */}
+            {accountOpen && (
+                <div
+                    className={accountClosing
+                        ? `${styles.scrim} ${styles['scrim-out']}`
+                        : styles.scrim}
+                    role="presentation"
+                    onClick={closeAccount}
+                    onAnimationEnd={(event) => {
+                        // Only the scrim's own fade ends the card; the card and
+                        // its children animate independently.
+                        if (accountClosing && event.target === event.currentTarget) {
+                            setAccountOpen(false);
+                            setAccountClosing(false);
+                        }
+                    }}
+                >
+                    <div
+                        className={accountClosing
+                            ? `${styles.card} ${styles['card-out']}`
+                            : styles.card}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="账号"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <h2 className={styles['card-title']}>账号</h2>
+                        {qq ? (
+                            <div className={styles.identity}>
+                                <span className={styles['identity-avatar']}>
+                                    {avatarUrl ? (
+                                        <img src={avatarUrl} alt="" onError={onAvatarError} />
+                                    ) : (
+                                        <IconNote filled />
+                                    )}
+                                </span>
+                                <span className={styles['identity-text']}>
+                                    <span className={styles['identity-name']}>{`QQ ${qq}`}</span>
+                                    {/* Two things, said plainly: where the
+                                        picture came from, and what the number
+                                        is *for*. A number whose picture did not
+                                        arrive admits it, otherwise the note
+                                        disc looks like the app ignored what was
+                                        just typed. */}
+                                    <span className={styles['identity-sub']}>
+                                        {avatarUrl
+                                            ? '头像来自 QQ 的公开头像接口；喜欢和听歌次数都记在这个号码下'
+                                            : 'QQ 头像暂时取不到，先用默认音符；喜欢和听歌次数仍记在这个号码下'}
+                                    </span>
+                                </span>
+                                <button
+                                    type="button"
+                                    className={styles['identity-clear']}
+                                    onClick={clearQq}
+                                >
+                                    清除
+                                </button>
+                            </div>
+                        ) : (
+                            <form className={styles['qq-form']} onSubmit={submitQq}>
+                                <label className={styles['qq-label']} htmlFor="desktop-qq">QQ 号</label>
+                                <div className={styles['qq-row']}>
+                                    <input
+                                        id="desktop-qq"
+                                        className={styles['qq-input']}
+                                        type="text"
+                                        inputMode="numeric"
+                                        autoComplete="off"
+                                        placeholder="输入 QQ 号"
+                                        aria-label="QQ 号"
+                                        value={qqDraft}
+                                        onChange={(event) => {
+                                            setQqDraft(event.target.value);
+                                            setQqInvalid(false);
+                                        }}
+                                    />
+                                    <button type="submit" className={styles['qq-save']}>确认</button>
+                                </div>
+                                <p className={`${styles.hint}${qqInvalid ? ` ${styles['hint-bad']}` : ''}`}>
+                                    {qqInvalid
+                                        ? 'QQ 号是 5–11 位数字，再看一眼？'
+                                        : '5–11 位数字，保存在这台设备的浏览器里。确认之后喜欢和听歌次数都按这个号码记录，换设备也能看到。'}
+                                </p>
+                            </form>
+                        )}
                     </div>
                 </div>
             )}

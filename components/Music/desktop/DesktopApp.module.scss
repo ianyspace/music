@@ -35,6 +35,12 @@
     --text-2: rgba(228, 232, 240, 0.6);
     --text-3: rgba(228, 232, 240, 0.4);
     --hairline: rgba(255, 255, 255, 0.09);
+    /* The ring around the app mark's QQ state dot. `core/MarkNote` asks for it,
+       and the phone declares it per theme — here there is one theme, so one
+       value, taken from the phone's dark set. An opaque ring is the whole point:
+       a translucent one over the rainbow reads as a smudge rather than as a
+       dot sitting on the mark. */
+    --badge-ring: #16161b;
     --track: rgba(255, 255, 255, 0.18);
     --hover: rgba(255, 255, 255, 0.06);
     --row-active: rgba(251, 92, 116, 0.18);
@@ -42,6 +48,13 @@
        ask for `--row-hover` (the phone's name for the same thing). */
     --row-hover: rgba(255, 255, 255, 0.06);
     --field: rgba(120, 120, 128, 0.26);
+    /* The default identity disc behind the avatar in the account card — the
+       same red ramp with the white note the phone draws, in its dark set. This
+       is *artwork*, not chrome: the page already paints gradients on the record
+       and on the row thumbnails, so a flat disc here would be the odd one out.
+       (The play button is flat for the opposite reason — see `.ctrl-play`.) */
+    --avatar-bg: linear-gradient(150deg, #f4475f 0%, #e01f3d 55%, #b8162c 100%);
+    --avatar-fg: #fff;
 
     /* --- the glass recipe ------------------------------------------------
        Every frosted surface in the desktop layout is these seven values and
@@ -86,7 +99,7 @@
 }
 
 /* ==========================================================================
-   the row drawer — 置顶
+   the row drawer — 置顶 / 喜欢
    ========================================================================== */
 
 /* A centred card rather than the phone's bottom sheet: on a wide screen the
@@ -290,6 +303,194 @@
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-2);
+}
+
+/* ==========================================================================
+   账号 — the QQ card
+   ========================================================================== */
+
+/* The card's heading. The row drawer above has none — its cover and its title
+   are the head — but this card is a *question* with a form under it, and a field
+   nobody explained is worse than a heading that says which one it is. */
+.card-title {
+    margin: 2px 6px 12px;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+/* --- the identity card, when a number is bound ------------------------- */
+
+.identity {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 6px;
+}
+
+/* The default disc, and the QQ picture over it when there is one. Same 60px and
+   same red ramp as the phone's identity card, because it is the same face. The
+   image inherits the radius instead of the wrapper clipping it. */
+.identity-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--avatar-bg);
+    color: var(--avatar-fg);
+    box-shadow: 0 10px 22px -10px rgba(0, 0, 0, 0.45);
+
+    svg {
+        display: block;
+        width: 30px;
+        height: 30px;
+    }
+
+    img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: inherit;
+        object-fit: cover;
+    }
+}
+
+.identity-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* The number on its own line. The phone's card shares this line with nothing
+   either — the card *is* the confirmation, so there is no badge to make room
+   for. The ellipsis stays: a stored value can always be longer than the card. */
+.identity-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.identity-sub {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-2);
+}
+
+/* 清除 — the card's own way out, at its trailing edge. Quiet: taking a number
+   back is not a decision to shout about, but it has to be *on the card*,
+   because while a number is bound the card is the only thing standing. */
+.identity-clear {
+    flex-shrink: 0;
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 15px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.18s, color 0.18s;
+
+    &:hover {
+        background: var(--hover);
+        color: var(--text);
+    }
+}
+
+/* --- the field, when there is no number yet ---------------------------- */
+
+/* Column rather than the phone's single row: this card is 460px wide and the
+   form is the only thing in it, so the label sits above the field the way a
+   form's label should, instead of being squeezed in beside the button. */
+.qq-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 6px;
+}
+
+.qq-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-2);
+}
+
+.qq-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qq-input {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    box-sizing: border-box;
+    padding: 0 13px;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: var(--field);
+    color: var(--text);
+    font-size: 16px;
+    font-family: inherit;
+
+    &::placeholder {
+        color: var(--text-2);
+    }
+
+    &:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+}
+
+/* Flat `--accent`, not the phone's `linear-gradient(135deg, accent-2, accent)`.
+   That gradient is the raised-plastic look this page dropped everywhere else —
+   the play button in the bar is flat for exactly this reason — and one button
+   is not worth reintroducing it for. */
+.qq-save {
+    flex-shrink: 0;
+    height: 40px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14.5px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.2s;
+
+    &:hover {
+        transform: scale(1.04);
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+}
+
+.hint {
+    margin: 2px 0 0;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--text-2);
+}
+
+/* The only state that needs colour: the visitor pressed 确认 and nothing
+   happened, so the line above has to say why. */
+.hint-bad {
+    color: #ff453a;
 }
 
 /* ==========================================================================

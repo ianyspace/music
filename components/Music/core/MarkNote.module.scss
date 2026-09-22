@@ -12,6 +12,11 @@
 /* The settled box — and the only box it ever has. The size lives here and only
    here: nothing measures it and nothing overrides it.
 
+   A caller *may* pass a `className` that resizes it, and the wide screen's list
+   column does (36px, flush with the column's edge — see `MarkNote.js`). That is
+   a change of box, not of artwork: every layer below is a percentage of this
+   one, so the score is the same drawing at either size.
+
    It deliberately does **not** clip. It used to, and that is the one thing the
    state dot cannot survive: a badge on the corner would be cut by the corner's
    own arc, which at 40px reads as a bite taken out of the dot rather than as a

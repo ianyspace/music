@@ -9,6 +9,25 @@ import styles from './MarkNote.module.scss';
  * without opening a page; the same answer is in the button's title / aria-label,
  * so the dot itself is decorative.
  *
+ * It lives in `core/` because **both layouts draw it**: the phone's top bar and
+ * the wide screen's list column, at the same 40px / 36px the two bars run their
+ * controls at. It was `h5/MarkNote.*` while the phone was the only layout with
+ * an account to open. Nothing about it is layout-specific — it is the app's
+ * logo, and a logo that two screens drew from two files would be two logos.
+ *
+ * The one token it asks for from outside is `--badge-ring`, the opaque colour
+ * the state dot is ringed with (a translucent ring on a rainbow square reads as
+ * a smudge). Both trees declare it: `h5/MusicApp.module.scss` per theme, and
+ * `desktop/DesktopApp.module.scss` once, because that page is dark-only.
+ *
+ * `className` is the caller's box, and the only thing a caller may change about
+ * the mark. The phone's bar runs it at its own 40px with the 6px leading inset
+ * that bar gives everything; the wide screen runs it at 36px, flush with the
+ * column's edge, because that row is a line of 36px tiles and the list under it
+ * starts at the same edge. Neither size moves the wave: every layer inside is a
+ * percentage of this box, so the crest sits a fifth of the way across the mark
+ * either way (see the note on `.bg`).
+ *
  * The note is a pane of frosted glass rather than a white silhouette: the
  * rainbow is blurred behind it (`.pane`) and the note itself is drawn as a
  * translucent white body over that blur (`.ink`). Neither layer does the other's
@@ -201,7 +220,7 @@ const drawBackdrop = function (ctx) {
     }
 };
 
-const MarkNote = function ({ playing, qqBound, onOpen }) {
+const MarkNote = function ({ playing, qqBound, onOpen, className = '' }) {
     const canvasRef = useRef(null);
 
     // One draw on mount, one fixed-size buffer. The CSS animation moves this
@@ -220,13 +239,15 @@ const MarkNote = function ({ playing, qqBound, onOpen }) {
         return undefined;
     }, []);
 
-    const className = [styles.mark, playing ? styles['mark-playing'] : ''].filter(Boolean).join(' ');
+    const rootClass = [styles.mark, playing ? styles['mark-playing'] : '', className]
+        .filter(Boolean)
+        .join(' ');
     const dotClass = qqBound ? `${styles.dot} ${styles['dot-on']}` : styles.dot;
 
     return (
         <button
             type="button"
-            className={className}
+            className={rootClass}
             title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
             aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
             onClick={onOpen}

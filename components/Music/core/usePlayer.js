@@ -27,6 +27,7 @@ import {
     isIOSLike,
     SILENT_WAV,
     normalizeQq,
+    qqAvatarUrl,
     parseTrackName,
     mediaArtwork,
     listAllFiles,
@@ -147,8 +148,10 @@ const usePlayer = function ({ lyricsAutoOpen = false, drive = true } = {}) {
     // A number read from storage by the shell and by the player separately
     // would be two answers to "who is listening".
     const [qq, setQq] = useState('');
-    // The row drawer (置顶 / 喜欢 on the phone; 置顶 alone on the wide screen,
-    // which has no like feature), opened from a row's own three-dots button.
+    // The row drawer (置顶 / 喜欢), opened from a row's own three-dots button —
+    // the same two rows on both layouts, which is why the state is here rather
+    // than in either shell. It used to be 置顶 alone on the wide screen, back
+    // when that layout had no like feature.
     // The *track* is held rather than an id so the drawer can render the cover
     // and both labels with no lookup — and so it keeps rendering them while it
     // plays its exit animation.
@@ -433,6 +436,25 @@ const usePlayer = function ({ lyricsAutoOpen = false, drive = true } = {}) {
         const digits = normalizeQq(next);
         storageSet(QQ_KEY, digits);
         setQq(digits);
+    }, []);
+
+    // The visitor's picture, derived here rather than in either shell. It is a
+    // function of the number, and a fallback each layout decides for itself is
+    // two fallbacks that can disagree — the same argument that put the number
+    // itself in this hook. It used to live in `h5/MusicApp`, which was right
+    // while the phone was the only layout with an identity card.
+    //
+    // `''` means "draw the note", and it covers both halves of that: no number
+    // bound, or its picture did not arrive.
+    const [avatarBroken, setAvatarBroken] = useState(false);
+    // Cleared whenever the number changes, because "this picture failed" says
+    // nothing about the next one.
+    useEffect(() => {
+        setAvatarBroken(false);
+    }, [qq]);
+    const avatarUrl = qq && !avatarBroken ? qqAvatarUrl(qq) : '';
+    const onAvatarError = useCallback(function () {
+        setAvatarBroken(true);
     }, []);
 
     /* --- 我喜欢 (a local mirror of the database, per visitor) --- */
@@ -1669,6 +1691,8 @@ const usePlayer = function ({ lyricsAutoOpen = false, drive = true } = {}) {
         /* the visitor */
         qq,
         saveQq,
+        avatarUrl,
+        onAvatarError,
 
         /* library */
         tracks,

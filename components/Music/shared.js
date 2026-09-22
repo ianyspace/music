@@ -308,6 +308,10 @@ export const emptyListMessage = function ({ listLoading, keyword, folderHint, li
             : `没有匹配「${keyword}」的歌曲`;
     }
     if (likedOnly) return '还没有喜欢的歌曲，在歌曲右侧的「更多」里可以喜欢';
+    // No `folderHint` = a layout with no folder picker to send them to. The
+    // desktop plays the public library and nothing else, so there is no second
+    // library to suggest — the sentence stops at the fact.
+    if (!folderHint) return '公共曲库里还没有歌曲';
     return `没有找到音频文件，去「${folderHint}」换个文件夹试试？`;
 };
 

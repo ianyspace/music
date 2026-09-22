@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+    IconHeart,
     IconLocate,
     IconMoreVertical,
     IconMusicSpace,
@@ -29,6 +30,7 @@ import {
 } from '../shared';
 import Cover from '../Cover';
 import Marquee from '../Marquee';
+import MarkNote from '../core/MarkNote';
 import { coverUrlOf } from '../librarySource';
 
 import styles from './DesktopMusic.module.scss';
@@ -109,9 +111,18 @@ const Tonearm = function ({ playing }) {
  * by a pixel: folding the list away, searching it, or swapping in the lyrics
  * all happen in boxes the stage never sees.
  *
- * There is no settings surface left on this layout at all — no gear button, no
- * dialog. Everything one used to hold was either about the Drive library or
- * about the record's ripples, and this layout has neither.
+ * There is no settings surface on this layout at all — no gear button, no
+ * settings dialog. Everything one used to hold was either about the Drive
+ * library or about the record's ripples, and this layout has neither. The one
+ * dialog it does raise is 账号, and that belongs to the shell: the app's mark
+ * at the leading end of the list column opens it, exactly as the phone's mark
+ * does in the phone's bar. `core/MarkNote` is the same component in both.
+ *
+ * The list's top row is where the list is *about* itself: the mark (who is
+ * listening), the fold toggle (is the list out), 只看喜欢 and the search (what
+ * it is showing). The two filters sit after the toggle and the field is last,
+ * so opening the search grows it into the empty half of the row and moves
+ * nothing under the pointer.
  *
  * The stage holds the record, the lyrics when they are shown, and is where any
  * future audio-visual surface goes — it is the one block with room for it.
@@ -150,9 +161,21 @@ const DesktopMusic = function ({
     // Id of the row whose actions are open. The drawer itself belongs to the
     // shell (the same one the phone layout opens, in its own desktop dress), so
     // all this needs is the id to report which row's button is expanded — the
-    // 置顶 callback lives there, not here.
+    // 置顶 / 喜欢 callbacks live there, not here.
     rowMenuId,
     onOpenRowMenu,
+    // 只看喜欢, and whether one song is liked — the same two halves of the
+    // feature the phone's list bar carries. Neither is gated on the track's
+    // source the way the phone's are: that check exists to keep a Drive track
+    // out of 我喜欢, and this layout only ever plays the public library.
+    likedOnly,
+    onToggleLikedOnly,
+    isLiked,
+    // The visitor's number, for the mark's state dot, and the way into the
+    // account card — which the shell raises, because it is a dialog centred on
+    // the viewport rather than something inside this column.
+    qqBound,
+    onOpenAccount,
 }) {
     const searchInputRef = useRef(null);
     const activeLyricRef = useRef(null);
@@ -182,6 +205,11 @@ const DesktopMusic = function ({
         : 0;
     const keyword = search.trim();
     const currentId = current ? current.track.id : '';
+    // Whether the song in the bar is liked. The bar is the one place this
+    // layout shows the like state of what is playing: the list marks a liked
+    // row with nothing (a heart on every liked row would turn the list into a
+    // column of hearts), and the row drawer only says it while it is open.
+    const liked = current ? isLiked(current.track) : false;
     const eqClass = `${styles.eq}${isPlaying ? '' : ` ${styles['eq-paused']}`}`;
 
     // The phone layout folds shuffle and repeat into one cycling button; so
@@ -511,22 +539,43 @@ const DesktopMusic = function ({
 
             {/* --- left: the song list, floating over the stage -------------- */}
 
-            {/* The column is a hover region and a home for two controls, not a
-                surface — hence `pointer-events: none` on it and `auto` on the
-                two things inside. Without that the empty half of the column
+            {/* The column is a hover region and a home for a few controls, not
+                a surface — hence `pointer-events: none` on it and `auto` on
+                the things inside. Without that the empty half of the column
                 would swallow clicks meant for the record behind it. */}
             <div className={`${styles.side}${listVisible ? '' : ` ${styles['side-folded']}`}`}>
-                {/* One row, two controls: fold the list away, and search it.
-                    They used to be stacked — the toggle alone at the top of the
-                    column, the search button on the panel's own tool row below
-                    it — which spent two rows on two 36px squares and pushed the
-                    first song down by a full row.
+                {/* One row, four controls: the mark, the fold toggle, 只看喜欢
+                    and the search. The toggle and the search used to be stacked
+                    — the toggle alone at the top of the column, the search
+                    button on the panel's own tool row below it — which spent two
+                    rows on two 36px squares and pushed the first song down by a
+                    full row.
 
                     `pointer-events: none` on the row and `auto` on each control,
                     exactly like the column itself: the empty half of the row
                     sits over the record, and a dead strip that swallows clicks
                     is the one thing this page must not have. */}
                 <div className={styles['side-head']}>
+                    {/* The app's mark, at the top-left corner of the column and
+                        at the leading end of this row — the same
+                        `core/MarkNote` the phone's bar draws, so the two
+                        layouts cannot end up with two different logos. Its
+                        corner dot is the QQ state, readable from the list; the
+                        button opens 账号, which the shell centres over this
+                        workspace (a `position: fixed` child in here would be
+                        sized to the column).
+
+                        `side-mark` is the one thing a caller may change about
+                        the mark: this row is a line of 36px tiles, so the mark
+                        is 36px and flush with the column's edge instead of the
+                        40px box with a 6px inset that the phone's bar gives it. */}
+                    <MarkNote
+                        className={styles['side-mark']}
+                        playing={isPlaying}
+                        qqBound={qqBound}
+                        onOpen={onOpenAccount}
+                    />
+
                     <button
                         type="button"
                         className={styles['side-toggle']}
@@ -540,6 +589,33 @@ const DesktopMusic = function ({
                         {/* The chevron follows the state, not the label: it
                             points the way the list will move. */}
                         {listVisible ? <IconPanelFold /> : <IconPanel />}
+                    </button>
+
+                    {/* 只看喜欢 — a filter, not a destination: it narrows the
+                        list below and stays lit while it does. The phone's bar
+                        carries the same button with the same paint, and it is
+                        *not* gated on a QQ number there or here: a guest's
+                        likes are real likes, they simply live in this browser.
+
+                        It sits between the toggle and the search because the
+                        search is the only tile that has to be able to grow (it
+                        becomes the field) and so has to be last. */}
+                    <button
+                        type="button"
+                        className={likedOnly
+                            ? `${styles['side-heart']} ${styles['side-heart-on']}`
+                            : styles['side-heart']}
+                        title={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
+                        aria-label={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
+                        aria-pressed={likedOnly}
+                        onClick={onToggleLikedOnly}
+                    >
+                        {/* `size={18}`: the heart's own default is 22, which in
+                            a row of an 18px panel glyph and a 16px search glyph
+                            would read as a bigger control than its neighbours.
+                            The tile normalises the size, the same way the phone
+                            bar's `.nav-btn` does. */}
+                        <IconHeart size={18} filled={likedOnly} />
                     </button>
 
                     {/* The closed state is a *button*, not an empty search
@@ -596,11 +672,13 @@ const DesktopMusic = function ({
                     <div className={styles['list-wrap']}>
                         {visibleCount === 0 ? (
                             <p className={styles['list-empty']}>
-                                {emptyListMessage({
-                                    listLoading,
-                                    keyword,
-                                    folderHint: '设置',
-                                })}
+                                {/* No `folderHint`, and `likedOnly` passed in:
+                                    the hint sentence ends in "go pick another
+                                    folder", and this layout has neither a
+                                    folder picker nor a second library to pick
+                                    one from. An empty list here is a fact, not
+                                    a step — see `emptyListMessage`. */}
+                                {emptyListMessage({ listLoading, keyword, likedOnly })}
                             </p>
                         ) : (
                             <ul
@@ -803,10 +881,41 @@ const DesktopMusic = function ({
                         </button>
                     </div>
 
-                    <span className={styles.times}>
-                        <span className={styles.time}>{formatTime(progress.time)}</span>
-                        <span className={styles['time-sep']}>/</span>
-                        <span className={styles.time}>{formatTime(progress.duration)}</span>
+                    <span className={styles['bar-end']}>
+                        {/* The bar's heart, for the song that is playing. The
+                            phone's player carries the same control beside its
+                            title; here it is at the bar's trailing end, because
+                            the title cell is hidden below 1180px and a like
+                            button that disappears on a small laptop is worse
+                            than one next to the clock.
+
+                            It borrows the transport button's own class rather
+                            than getting one of its own: same 36px ring, same
+                            hover, same "on" — a bright glyph on a soft chip.
+                            Deliberately *not* `--accent`, which is what the
+                            phone's player paints a liked heart: the bar has a
+                            written rule that its only accent is the play button
+                            and the rail's fill, and the filled glyph plus the
+                            chip say "liked" without a second red thing in the
+                            capsule. */}
+                        <button
+                            type="button"
+                            className={liked
+                                ? `${styles['ctrl-btn']} ${styles['ctrl-on']}`
+                                : styles['ctrl-btn']}
+                            onClick={() => { if (current) onToggleLike(current.track); }}
+                            disabled={!current}
+                            title={liked ? '取消喜欢' : '喜欢'}
+                            aria-label={liked ? '取消喜欢' : '喜欢'}
+                            aria-pressed={liked}
+                        >
+                            <IconHeart filled={liked} />
+                        </button>
+                        <span className={styles.times}>
+                            <span className={styles.time}>{formatTime(progress.time)}</span>
+                            <span className={styles['time-sep']}>/</span>
+                            <span className={styles.time}>{formatTime(progress.duration)}</span>
+                        </span>
                     </span>
                 </div>
             </div>
