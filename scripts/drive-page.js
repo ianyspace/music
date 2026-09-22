@@ -61,6 +61,14 @@
  *      are invisible in a screenshot and obvious on a phone, so this measures
  *      the ink-to-ink gap on each side of the hyphen with a Range per glyph.
  *      Pages with no such label (the 3D room) say so instead of passing.
+ *  10. **The four lyric styles are four different things.** Not four skins: 普通
+ *      scales the active line, 逐行上浮 animates it in, 沉浸单行 hides all but
+ *      three lines, 卡拉OK 扫光 clips a moving gradient to the words. Each is
+ *      read by the mechanism that makes it that style — the animation name, a
+ *      count of computed opacities, and (for the wipe) the fill *advancing*
+ *      between two reads. A still frame cannot tell a moving edge from a stuck
+ *      one, which is the whole reason the last check samples twice. See `the
+ *      phone's lyric styles`.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -221,6 +229,17 @@ const PAGES = [
         shell: {
             more: 'header button[aria-label="更多功能"]',
             rowDrawer: ROW_DRAWER,
+        },
+        // The four lyric styles. The phone is the only tree that draws them, so
+        // the stage lives here rather than in a shared one. See `the phone's
+        // lyric styles` below for what each of the four has to be.
+        lyricStyles: {
+            player: '[aria-label="打开播放页"]',
+            disc: 'button[aria-label="查看歌词"]',
+            more: 'button[aria-label="播放设置"]',
+            group: '[role="radiogroup"][aria-labelledby="np-lyric-style"]',
+            box: '[aria-label="歌词，点击返回唱片"]',
+            collapse: 'button[aria-label="收起"]',
         },
     },
 ];
@@ -724,6 +743,178 @@ const drive = async (target, index) => {
         check(`${label} flips back`, Boolean(off && off.found && off.state === before.state), trace);
     };
 
+    /**
+     * The four lyric styles, driven through the drawer and read off the DOM.
+     *
+     * The drawer is left open for the measurements. Nothing here reads a pixel:
+     * every claim is about computed style or about a value the component writes
+     * itself, and a bottom sheet lying over the words changes neither — so the
+     * stage never has to pay the drawer's open/close animation, twice per style.
+     *
+     * `--wipe` is read from `getComputedStyle` rather than from the inline
+     * style, because the inline value is only what the component last wrote
+     * while the computed one is what is actually painted — including the 0% the
+     * stylesheet declares before the first frame.
+     */
+    const exerciseLyricStyles = async (spec) => {
+        const click = (selector) => evaluate(
+            `(document.querySelector(${JSON.stringify(selector)}) || { click() {} }).click()`,
+        );
+
+        const rowAt = (title) => `(() => {
+            const rows = Array.from(document.querySelectorAll(
+                ${JSON.stringify(spec.group)} + ' [role="radio"]',
+            ));
+            const row = rows.find((r) => (r.innerText || '').trim().indexOf(${JSON.stringify(title)}) === 0);
+            return { count: rows.length, found: Boolean(row), checked: row ? row.getAttribute('aria-checked') : null };
+        })()`;
+
+        const read = `(() => {
+            const box = document.querySelector(${JSON.stringify(spec.box)});
+            if (!box) return { error: 'no lyrics box on the page' };
+            const lines = Array.from(box.querySelectorAll('p'));
+            const active = box.querySelector('[class*="lyric-active"]');
+            if (!active) return { error: 'no active line', lines: lines.length };
+            const style = getComputedStyle(active);
+            return {
+                lines: lines.length,
+                visible: lines.filter((p) => Number(getComputedStyle(p).opacity) > 0.01).length,
+                fontSize: style.fontSize,
+                animation: style.animationName,
+                gradient: style.backgroundImage.indexOf('gradient') >= 0,
+                wipe: style.getPropertyValue('--wipe').trim(),
+                width: Math.round(active.getBoundingClientRect().width),
+                boxWidth: Math.round(box.getBoundingClientRect().width),
+                text: (active.innerText || '').trim(),
+            };
+        })()`;
+
+        // The player sheet, the lyrics, then the drawer — the three taps a
+        // visitor makes to get here.
+        await click(spec.player);
+        await sleep(700);
+        const disc = await evaluate(
+            `(() => {
+                const button = document.querySelector(${JSON.stringify(spec.disc)});
+                return { found: Boolean(button), disabled: button ? button.disabled : false };
+            })()`,
+        );
+        if (!disc.found || disc.disabled) {
+            // A track with no lyrics has no lyrics to style. Nothing to assert,
+            // and not a failure — the same call `exerciseToggle` makes.
+            note('this track has no lyrics — the lyric styles were not exercised');
+            await click(spec.collapse);
+            return;
+        }
+        await click(spec.disc);
+        await sleep(600);
+        await click(spec.more);
+        await sleep(500);
+
+        const group = await evaluate(
+            `document.querySelectorAll(${JSON.stringify(spec.group)} + ' [role="radio"]').length`,
+        );
+        check('the drawer offers four lyric styles', group === 4, `${group} rows in the radiogroup`);
+        const chosen = await evaluate(
+            `Array.from(document.querySelectorAll(${JSON.stringify(spec.group)} + ' [role="radio"]'))
+                .filter((r) => r.getAttribute('aria-checked') === 'true').length`,
+        );
+        check('exactly one of them is the current choice', chosen === 1, `${chosen} rows report checked`);
+        await shot('lyric-styles');
+
+        const choose = async (title) => {
+            const row = await evaluate(rowAt(title));
+            if (!row.found) {
+                check(`the ${title} row is there`, false, `${row.count} rows in the group`);
+                return false;
+            }
+            // Clicked by the label the visitor reads, not by index: the rows are
+            // in a fixed order, and a reorder that silently moved the check onto
+            // a different style is exactly the kind of thing this file is for.
+            await evaluate(`(() => {
+                const rows = Array.from(document.querySelectorAll(
+                    ${JSON.stringify(spec.group)} + ' [role="radio"]',
+                ));
+                const row = rows.find((r) => (r.innerText || '').trim().indexOf(${JSON.stringify(title)}) === 0);
+                if (row) row.click();
+            })()`);
+            await sleep(450);
+            return true;
+        };
+
+        if (!(await choose('普通'))) return;
+        const plain = await evaluate(read);
+        if (plain.error) {
+            check('the lyrics are on screen to style', false, plain.error);
+            return;
+        }
+        check(
+            '普通 draws every line and leaves the active one alone',
+            plain.animation === 'none' && !plain.gradient && plain.visible === plain.lines,
+            `animation=${plain.animation} gradient=${plain.gradient} ${plain.visible}/${plain.lines} lines visible, ${plain.fontSize}`,
+        );
+
+        await choose('逐行上浮');
+        const rise = await evaluate(read);
+        check(
+            '逐行上浮 animates the active line in',
+            !rise.error && rise.animation !== 'none',
+            rise.error || `animation-name=${rise.animation}`,
+        );
+
+        await choose('沉浸单行');
+        const solo = await evaluate(read);
+        if (solo.error) {
+            check('沉浸单行 has lyrics to hide', false, solo.error);
+        } else if (solo.lines <= 3) {
+            note(`this track has only ${solo.lines} lyric lines — 沉浸单行 needs four to mean anything`);
+        } else {
+            // Two or three rather than exactly three: the window is the active
+            // line plus one either side, and at the top of a song there is no
+            // line before it. The claim that matters is the one the stylesheet
+            // makes — that the rest are gone.
+            check(
+                '沉浸单行 shows the active line and one either side',
+                solo.visible >= 2 && solo.visible <= 3 && solo.visible < solo.lines,
+                `${solo.visible} of ${solo.lines} lines visible`,
+            );
+        }
+
+        await choose('卡拉OK 扫光');
+        const wipeA = await evaluate(read);
+        if (wipeA.error) {
+            check('卡拉OK 扫光 has a line to fill', false, wipeA.error);
+        } else {
+            check(
+                '卡拉OK 扫光 clips its fill to the words',
+                wipeA.gradient && wipeA.width < wipeA.boxWidth,
+                `gradient=${wipeA.gradient} line ${wipeA.width}px in a ${wipeA.boxWidth}px box`,
+            );
+            // Three samples, because a line change resets the fill to zero and
+            // a two-sample check can land either side of one and read it as
+            // "stuck". Any consecutive pair moving forward is the claim.
+            const samples = [wipeA.wipe];
+            await sleep(700);
+            samples.push((await evaluate(read)).wipe);
+            await sleep(700);
+            samples.push((await evaluate(read)).wipe);
+            const numbers = samples.map((value) => parseFloat(value) || 0);
+            const advanced = numbers[1] > numbers[0] || numbers[2] > numbers[1];
+            check(
+                '卡拉OK 扫光 fills left to right as the line is sung',
+                advanced,
+                `--wipe ${samples.join(' -> ')}`,
+            );
+        }
+        await shot('lyric-wipe');
+
+        // Back to the default, so the rest of the run — and every screenshot
+        // after this one — is not looking at whichever style was last clicked.
+        await choose('普通');
+        await click(spec.collapse);
+        await sleep(600);
+    };
+
     await send('Page.enable');
     await send('Runtime.enable');
     await send('Network.enable');
@@ -852,6 +1043,8 @@ const drive = async (target, index) => {
         );
     }
     await shot('keys');
+
+    if (target.lyricStyles) await exerciseLyricStyles(target.lyricStyles);
 
     if (target.lyrics) await exerciseToggle('the lyrics toggle', target.lyrics, 'lyrics');
     if (target.list) await exerciseToggle('the list toggle', target.list, 'list');

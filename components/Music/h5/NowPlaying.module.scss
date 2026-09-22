@@ -527,6 +527,85 @@
     transform: scale(1.04);
 }
 
+/* --- the three alternate lyric styles ---------------------------------- */
+
+/* 逐行上浮 — the line being sung rises into place instead of appearing at full
+   size. The animation hangs off `.lyric-active`, so it runs exactly once per
+   line change for free: the class moves to a different element each time, and
+   a CSS animation starts the moment its property first applies to an element.
+   No timer, and nothing to restart by hand.
+
+   `both` fill mode, so the line holds the end state — which is deliberately the
+   same scale the plain style uses, and means switching styles mid-song does not
+   make the line jump. */
+.lyrics-rise .lyric-active {
+    animation: lyric-rise 0.3s cubic-bezier(0.32, 0.72, 0.2, 1) both;
+}
+
+@keyframes lyric-rise {
+    from {
+        opacity: 0;
+        transform: translateY(7px) scale(1);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1.04);
+    }
+}
+
+/* 沉浸单行 — the line being sung, plus one either side of it, and nothing else.
+   The other lines keep their place in the flow and are simply invisible: their
+   height is what keeps the active line centred by the same scroll the other
+   styles use, so hiding them with `display: none` would collapse the list and
+   take the centring with it. `.lyric-far` is written by the component in every
+   style and only means anything here, which is why it has to come last — it
+   ties on specificity with `.lyric` below and wins on source order. */
+.lyrics-solo .lyric {
+    opacity: 0.3;
+}
+
+.lyrics-solo .lyric-active {
+    font-size: 21px;
+    transform: none;
+}
+
+.lyrics-solo .lyric-far {
+    opacity: 0;
+}
+
+/* 卡拉OK 扫光 — the line fills with light from left to right as it is sung.
+   `--wipe` is the boundary and the component writes it every frame; the element
+   hugs its own text (`fit-content` + auto margins) so the gradient spans the
+   words rather than the whole column, which is what puts the edge on the glyphs
+   instead of in the empty space beside a short line. */
+.lyrics-wipe .lyric-active {
+    --wipe: 0%;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+    transform: none;
+}
+
+/* The fill is a gradient clipped to the glyphs, which is the entire effect — so
+   it sits behind a support check. Without `background-clip: text` the gradient
+   would paint as a solid bar straight over the words, and the line would be
+   unreadable rather than merely unstyled; a browser that fails the check keeps
+   the plain bright line. */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+    .lyrics-wipe .lyric-active {
+        background-image: linear-gradient(
+            90deg,
+            var(--np-text) 0 var(--wipe),
+            var(--np-text-2) var(--wipe) 100%
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+    }
+}
+
 .lyrics-empty {
     margin: 38% 0 0;
     color: var(--np-text-2);
@@ -1051,12 +1130,81 @@
     transform: translateX(18px);
 }
 
+/* --- the lyric style radio group ---------------------------------------- */
+
+/* A second heading in the same drawer. Same type as the sheet's own title, but
+   it opens a section rather than naming the sheet, so it needs the space above
+   it that the title gets from the grab handle. */
+.sheet-group {
+    margin-top: 16px;
+}
+
+/* The four style rows have no icon, so they are indented to where the ripple
+   row's *text* starts (10px row padding + 38px icon + 12px gap) and the two
+   lists line up down the left edge. The control goes on the right, where the
+   switch above it sits. */
+.sheet-row-choice {
+    padding-left: 60px;
+}
+
+/* The row that is currently chosen. Faint, because the dot already says which
+   one it is — this only has to make the choice findable at a glance in a drawer
+   that gets opened for a second. */
+.sheet-row-on {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+/* Drawn rather than an <input type="radio">, for the reason the switch is:
+   the state lives on the row's `aria-checked`, and lighting the dot from that
+   attribute (below) is what stops the visual and the announced state from
+   drifting apart. */
+.radio-dot {
+    position: relative;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    box-sizing: border-box;
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    border-radius: 50%;
+    transition: border-color 0.2s ease;
+}
+
+.radio-dot::after {
+    content: '';
+    position: absolute;
+    inset: 3.5px;
+    border-radius: 50%;
+    background: var(--np-text);
+    opacity: 0;
+    transform: scale(0.4);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.sheet-row[aria-checked='true'] .radio-dot {
+    border-color: var(--np-text);
+}
+
+.sheet-row[aria-checked='true'] .radio-dot::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
 @media (prefers-reduced-motion: reduce) {
     .page,
     .lyrics,
     .mode-toast,
     .sheet-scrim,
     .sheet {
+        animation: none;
+    }
+
+    /* The rise animation of 逐行上浮. Written with the variant's own selector
+       rather than as a bare `.lyric-active`, because the rule that switches it
+       on is `.lyrics-rise .lyric-active` — two classes — and a one-class
+       override would lose to it however late it appeared in the file. The
+       other two styles are left alone: neither moves anything the visitor did
+       not ask to be told about. */
+    .lyrics-rise .lyric-active {
         animation: none;
     }
 

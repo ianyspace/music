@@ -11,6 +11,8 @@ import {
     LAST_TRACK_KEY,
     LAST_PROGRESS_KEY,
     RIPPLES_KEY,
+    LYRIC_STYLE_KEY,
+    LYRIC_STYLES,
     SHUFFLE_KEY,
     REPEAT_KEY,
     REPEAT_MODES,
@@ -107,6 +109,13 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // effect that has to be switched *on* would be an odd default. Restored
     // and persisted below, next to the theme, since both are display settings.
     const [ripples, setRipples] = useState(true);
+    // How the phone draws the lyrics: one of `LYRIC_STYLES`. A display
+    // preference of the now-playing page like the ripples, and stored next to
+    // them for the same reason — a setting that silently reverted on reload
+    // would read as a broken choice rather than as a default. 'plain' is the
+    // long-standing look, so it is what a visitor who never opens the drawer
+    // keeps seeing.
+    const [lyricStyle, setLyricStyle] = useState('plain');
     // The pinned order, as a list of `<source>:<id>` keys.
     //
     // `order` records only the songs the visitor pinned, in the order they were
@@ -335,6 +344,22 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
             storageSet(RIPPLES_KEY, on ? 'off' : 'on');
             return !on;
         });
+    }, []);
+
+    // The lyric style is a *name*, so unlike the ripples switch there is no
+    // "anything else means the default" to encode: an unrecognised value is
+    // simply not one of the four and leaves the default in place. Written on
+    // the way in rather than from an effect, because the value is already
+    // validated by the time it gets here.
+    useEffect(() => {
+        const saved = storageGet(LYRIC_STYLE_KEY);
+        if (LYRIC_STYLES.includes(saved)) setLyricStyle(saved);
+    }, []);
+
+    const chooseLyricStyle = useCallback(function (next) {
+        if (!LYRIC_STYLES.includes(next)) return;
+        setLyricStyle(next);
+        storageSet(LYRIC_STYLE_KEY, next);
     }, []);
 
     /* --- playback mode: shuffle + repeat --------------------------------- */
@@ -1586,6 +1611,8 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         toggleTheme,
         ripples,
         toggleRipples,
+        lyricStyle,
+        chooseLyricStyle,
 
         /* list preferences */
         isPinned,
