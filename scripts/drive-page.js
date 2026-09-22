@@ -1886,65 +1886,76 @@ const drive = async (target, index) => {
         cloudDelayMs = 4000;
         await send('Page.navigate', { url: target.url });
 
-        /* --- the mark's entry, caught across the reload above --------------
+        /* --- the mark's arrival, caught across the reload above -------------
          *
-         * The entry exists for about a second after a load — a 460ms hold at
-         * full width and a 0.62s shrink — so it can only be seen on a
-         * navigation, and this stage was already doing one. Sampling it needs
-         * its own loop: `waitFor` polls every 400ms, which is a coin toss
-         * against a 460ms state, and a coin-toss check is worse than none.
+         * The mark has no size animation any more. It used to enter as a bar
+         * the width of the row and shrink into the square, and the check here
+         * used to watch that: a wide box, then a square. What it has to prove
+         * now is the opposite — that the box is the square from the first
+         * paint — plus the one thing that does still arrive, the note's
+         * one-second fade.
          *
-         * What the entry promises: at first the mark is the whole run of the
-         * bar up to the actions group with no note on it, then it shrinks into
-         * its square and the note fades in. Both halves are read off the mark's
-         * own box — "wider than it is tall" then "as wide as it is tall" — so
-         * the check does not repeat the stylesheet's 40px back at it and cannot
-         * rot when that number changes.
+         * Sampling needs its own loop: `waitFor` polls every 400ms, which is
+         * no use against a state that lasts a second. The box is measured
+         * against itself (width vs height), so the stylesheet's 40px is never
+         * repeated back at it.
+         *
+         * The note's opacity doubles as "has the stylesheet landed": a mark
+         * sampled before its CSS arrives is an unstyled button, and that one
+         * reads as a 316x462 box with the note already at 1.
          */
-        const entryProbe = `(() => {
+        const markProbe = `(() => {
             const b = document.querySelector(${JSON.stringify(target.mark)});
             if (!b) return { found: false };
             const note = b.querySelector('svg');
             const r = b.getBoundingClientRect();
+            const noteStyle = note ? getComputedStyle(note) : null;
             return {
                 found: true,
-                intro: [...b.classList].some((name) => /mark-intro/.test(name)),
                 width: r.width,
                 height: r.height,
-                noteOpacity: note ? Number(getComputedStyle(note).opacity) : -1,
+                noteOpacity: noteStyle ? Number(noteStyle.opacity) : -1,
+                noteAnimation: noteStyle ? noteStyle.animationName : '',
+                noteDuration: noteStyle ? noteStyle.animationDuration : '',
             };
         })()`;
-        // The old page stays on screen for the first samples, and the new one
-        // renders its class before its stylesheet lands — an unstyled button
-        // that happens to carry the intro class reads as 316x462 with the note
-        // already at 1. The note's opacity is what says the stylesheet is on
-        // (the intro rule is the only thing that takes it to 0), so only a
-        // sample with it at 0 is the entry.
-        let entry = null;
-        for (let i = 0; i < 40 && !entry; i += 1) {
-            const sample = await evaluate(entryProbe);
-            if (sample && sample.found && sample.intro && sample.noteOpacity === 0) entry = sample;
+        // The old page stays on screen for the first samples; its mark is the
+        // same square, so it is indistinguishable from the new one and simply
+        // contributes to "it was never wide".
+        const samples = [];
+        for (let i = 0; i < 40; i += 1) {
+            const sample = await evaluate(markProbe);
+            if (sample && sample.found) samples.push(sample);
             await sleep(50);
         }
+        // Only samples whose stylesheet has landed: the note starts its fade
+        // from 0, so anything under 1 means the CSS is on.
+        const styled = samples.filter((s) => s.noteOpacity < 1);
+        const widest = styled.reduce((acc, s) => Math.max(acc, s.width - s.height), 0);
         check(
-            'the mark enters as a wide bar with no note on it yet',
-            Boolean(entry) && entry.width > entry.height * 2.5 && entry.noteOpacity === 0,
-            entry
-                ? `width=${entry.width.toFixed(0)} height=${entry.height.toFixed(0)}`
-                    + ` note opacity=${entry.noteOpacity}`
-                : '(the intro class was never on a styled mark — it only ever showed its square)',
+            'the mark is its square from the first paint (no wide entry)',
+            styled.length > 0 && widest < 1,
+            styled.length
+                ? `${styled.length} styled sample(s), widest ${widest.toFixed(1)}px wider than tall`
+                : '(the stylesheet never landed during the samples)',
+        );
+        const last = samples[samples.length - 1];
+        check(
+            '...and the note fades in over one second rather than snapping on',
+            Boolean(last) && last.noteAnimation !== 'none' && last.noteDuration === '1s',
+            last ? `animation=${last.noteAnimation || '(none)'} ${last.noteDuration}` : '(no mark)',
         );
 
-        await sleep(2500);
-        const settled = await evaluate(entryProbe);
+        await sleep(2000);
+        const settled = await evaluate(markProbe);
         check(
-            '...and settles into its square with the note on it',
-            Boolean(settled) && settled.found && !settled.intro
+            '...and the note is fully on once that second is up',
+            Boolean(settled) && settled.found
                 && Math.abs(settled.width - settled.height) < 1
                 && settled.noteOpacity === 1,
             settled && settled.found
                 ? `width=${settled.width.toFixed(0)} height=${settled.height.toFixed(0)}`
-                    + ` intro=${settled.intro} note opacity=${settled.noteOpacity}`
+                    + ` note opacity=${settled.noteOpacity}`
                 : '(no mark)',
         );
 

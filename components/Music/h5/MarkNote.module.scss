@@ -1,12 +1,11 @@
 // The app's mark — the way into 账号, at the leading end of the list's bar.
-// It enters as a wide bar that runs up to the search button and settles into a
-// 40px rounded square; while music plays, the fixed rainbow score inside it
-// flows steadily to the right. No analyser, no breathing, no growth on play.
+// It is its 40px rounded square from the first paint; the note fades in over a
+// second, and while music plays the fixed rainbow score inside it flows
+// steadily to the right. No analyser, no breathing, no growth on play, and no
+// size animation on entry.
 
-/* The settled box — and the box the entry animation shrinks into. The size
-   lives here and only here: the entry overrides `width` and then drops the
-   override, so the transition's end state *is* this rule and cannot drift
-   away from it. */
+/* The settled box — and the only box it ever has. The size lives here and only
+   here: nothing measures it and nothing overrides it. */
 .mark {
     position: relative;
     display: inline-flex;
@@ -23,11 +22,10 @@
     background-color: transparent;
     font-family: inherit;
     cursor: pointer;
-    /* `width` is what the entry animates, not `flex-grow`: the bar is pinned
-       to its measured pixel width as an inline style and then released, so the
-       shrink is one plain `width` change. `transform` stays for the press
-       states. */
-    transition: transform 0.15s ease, width 0.62s cubic-bezier(0.22, 0.72, 0.2, 1);
+    /* Only the press states animate. `width` used to be in here for the entry
+       — the mark no longer changes size, so it is gone rather than left to
+       look like something still uses it. */
+    transition: transform 0.15s ease;
 
     @media (hover: hover) {
         &:hover {
@@ -38,20 +36,6 @@
     &:active {
         transform: scale(0.96);
     }
-}
-
-/* The entry state: instead of a 40px square the mark takes every pixel the row
-   has left before the actions group, so the bar runs right up to the search
-   button. `flex-basis` is pinned to the settled 40px on purpose — that is
-   where the shrink stops, so the flex layout and the transition agree about
-   the end state. The note is hidden here; it fades in as the bar lands. */
-.mark-intro {
-    flex-grow: 1;
-    flex-basis: 40px;
-}
-
-.mark-intro .art {
-    opacity: 0;
 }
 
 /* Playback only adds this class. The score flows to the right forever: one
@@ -95,10 +79,13 @@
     will-change: transform;
 }
 
-/* The note is a static foreground; no transform is ever written to it. The
-   delay is why it reads as arriving *with* the square rather than being
-   uncovered by it: the shrink runs 0.62s and the note starts 0.22s in, so it
-   is still fading as the box lands. `z-index` keeps it above the canvas. */
+/* The note is a static foreground; no transform is ever written to it. Its
+   arrival is the one thing the mark still animates: a plain CSS fade over a
+   second, starting the moment the mark is on screen. `both` is what makes the
+   first painted frame already transparent — without it the note would flash at
+   full opacity for one frame before the animation took over. No JS holds this
+   state, so nothing can leave the note stuck half-faded.
+   `z-index` keeps it above the canvas. */
 .art {
     position: relative;
     display: block;
@@ -106,7 +93,17 @@
     height: 100%;
     z-index: 1;
     opacity: 1;
-    transition: opacity 0.42s ease 0.22s;
+    animation: note-in 1s ease both;
+}
+
+@keyframes note-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 .ink {
@@ -118,9 +115,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .mark,
-    .art {
+    .mark {
         transition: none;
+    }
+
+    /* The note is simply there: the fade exists only to be watched, and the
+       note itself is what the mark is for. The base rule is already opacity 1,
+       so dropping the animation is the whole change. */
+    .art {
+        animation: none;
     }
 
     .mark-playing .bg {

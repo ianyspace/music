@@ -1,13 +1,11 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 import styles from './MarkNote.module.scss';
 
 /**
  * The app's mark: the way into 账号 — a rounded square of rainbow at the leading
- * end of the list's bar, with the traced note on top. On entry it is briefly the
- * whole run of the bar instead of a square (see the intro below). The QQ state
- * dot is intentionally gone; the state remains in the button's title /
- * aria-label.
+ * end of the list's bar, with the traced note on top. The QQ state dot is
+ * intentionally gone; the state remains in the button's title / aria-label.
  *
  * There is deliberately no audio analyser here. The rainbow is a fixed score:
  * its wave shape and its animation cadence are constants, not a frequency read
@@ -17,8 +15,14 @@ import styles from './MarkNote.module.scss';
  * entirely — no AudioContext, no analyser, no retry/resume path, no fallback
  * synth.
  *
- * The note is static. It never scales, translates or breathes, and playback does
- * not touch the mark's size — the only size change it has is the entry.
+ * There is also no entry animation on the mark's *size* any more: it used to
+ * enter as a bar the width of the row and shrink into the square. It is now the
+ * square from the first paint, and the only thing that arrives is the note,
+ * fading in over a second (`.art` in the stylesheet — a plain CSS animation, so
+ * this component holds no state for it and nothing measures the layout).
+ *
+ * The note is otherwise static. It never scales, translates or breathes, and
+ * playback does not touch the mark's size.
  */
 
 /**
@@ -107,10 +111,6 @@ const WAVE_ORIGIN = 197;
  *  is what keeps the flat red top and violet bottom out of sight. */
 const VISIBLE_FRACTION = 1 / 1.2;
 
-/** How long the bar is held, in ms, before it starts shrinking. Enough to be
- *  read as a state rather than as a glitch, short enough not to be a wait. */
-const INTRO_HOLD_MS = 460;
-
 /** Blend two hex colours. The two bands either side of a boundary are painted
  *  from the same gradient, so the colour each of them reaches *at* the boundary
  *  is this half-way mix — that is what keeps the rainbow continuous across it
@@ -177,26 +177,8 @@ const drawBackdrop = function (ctx) {
     }
 };
 
-/** `useLayoutEffect` is the right hook for the entry measurement — it runs
- *  after the DOM is in place and before the browser paints, so the bar is
- *  never seen as a 40px square that then jumps wider. It is aliased only so
- *  the static prerender of this page does not warn about it. */
-const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
-
 const MarkNote = function ({ playing, qqBound, onOpen }) {
     const canvasRef = useRef(null);
-    const markRef = useRef(null);
-
-    /* The entry. On the first frames the mark is not a 40px square but the
-       whole run of the bar up to the search button, with no note on it; then
-       it shrinks into the square and the note fades in. `intro` is only ever
-       true before that shrink has been scheduled, and `barWidth` is the width
-       the bar measured at — pinning it as a pixel value is what makes the
-       shrink a plain `width` transition (which every engine interpolates)
-       instead of a flex computation, and dropping the inline style at the end
-       hands the mark back to `.mark`'s own 40px. */
-    const [intro, setIntro] = useState(true);
-    const [barWidth, setBarWidth] = useState(0);
 
     // One draw on mount, one fixed-size buffer. The CSS animation moves this
     // finished image; it does not redraw or resize it per frame. Keeping the
@@ -214,33 +196,12 @@ const MarkNote = function ({ playing, qqBound, onOpen }) {
         return undefined;
     }, []);
 
-    useIsoLayoutEffect(() => {
-        const mark = markRef.current;
-        if (!mark) return undefined;
-        // Reduced motion skips the entry outright rather than shortening it:
-        // the wide bar exists only to be watched, and the settled square is
-        // the state the mark is actually for.
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            setIntro(false);
-            return undefined;
-        }
-        setBarWidth(mark.getBoundingClientRect().width);
-        const timer = window.setTimeout(() => setIntro(false), INTRO_HOLD_MS);
-        return () => window.clearTimeout(timer);
-    }, []);
-
-    const className = [
-        styles.mark,
-        intro ? styles['mark-intro'] : '',
-        playing ? styles['mark-playing'] : '',
-    ].filter(Boolean).join(' ');
+    const className = [styles.mark, playing ? styles['mark-playing'] : ''].filter(Boolean).join(' ');
 
     return (
         <button
-            ref={markRef}
             type="button"
             className={className}
-            style={intro && barWidth > 0 ? { width: `${barWidth}px` } : undefined}
             title={qqBound ? '账号 · 已确认 QQ' : '账号 · 未确认 QQ'}
             aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
             onClick={onOpen}

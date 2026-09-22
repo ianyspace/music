@@ -3,9 +3,15 @@
  * Renders the mark's states side by side, using the *built* CSS and the same
  * drawing constants as the component:
  *
- *   - the entry bar (wide, running up to the actions group, no note),
- *   - the settled square, stopped,
- *   - the settled square playing, frozen at three points of the flow.
+ *   - the mark in its header row, stopped,
+ *   - the same square playing, frozen at three points of the flow,
+ *   - the note's arrival, frozen at four points of its one-second fade.
+ *
+ * The mark has no size animation any more: it used to enter as a bar the width
+ * of the row and shrink into the square. It is the square from the first paint
+ * now, and the note is the only thing that arrives — so the fade is the state
+ * worth staging here, and it is staged the same way the flow is: by freezing
+ * the real animation at a set of negative delays.
  *
  * It also checks the two things a screenshot cannot: that the drawing really is
  * periodic at exactly one wavelength (which is what makes the CSS loop
@@ -38,7 +44,6 @@ const idOf = function (prefix) {
 };
 const cls = {
     mark: idOf('MarkNote_mark'),
-    intro: idOf('MarkNote_mark-intro'),
     playing: idOf('MarkNote_mark-playing'),
     bg: idOf('MarkNote_bg'),
     art: idOf('MarkNote_art'),
@@ -120,33 +125,32 @@ L153 371 L147 355 L147 338 L149 330 L155 317 L161 309 L171 299 L179 293 L190 288
 L192 286 L208 281 L220 280 L221 279 L241 280 L247 282 L252 282 L254 280 L271 126
 L275 118 L281 112 L287 110 Z`;
 
-const art = `<svg class="${cls.art}" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
+const art = (style) => `<svg class="${cls.art}" viewBox="0 0 512 512" aria-hidden="true" focusable="false"${style ? ` style="${style}"` : ''}>
     <path class="${cls.ink}" d="${NOTE_PATH}"></path>
 </svg>`;
 
-const markButton = function (classes, canvasStyle) {
+const markButton = function (classes, canvasStyle, artStyle) {
     return `<button type="button" class="${classes}" aria-label="账号，未确认 QQ">
         <canvas class="${cls.bg}" data-draw="1"${canvasStyle ? ` style="${canvasStyle}"` : ''}></canvas>
-        ${art}
+        ${art(artStyle)}
     </button>`;
 };
 
-const mark = function (classes, label, canvasStyle) {
+const mark = function (classes, label, canvasStyle, artStyle) {
     return `
-        <figure class="cell">
-            ${markButton(classes, canvasStyle)}
+        <figure class="cell${artStyle ? ' freeze-note' : ''}">
+            ${markButton(classes, canvasStyle, artStyle)}
             <figcaption>${label}</figcaption>
         </figure>
     `;
 };
 
-/* The entry bar is the one state the page has to stage: `.mark-intro` grows to
-   fill whatever row it is in, so it needs a row with an actions group to fill
-   up to — and it must be the row's *direct* child, not wrapped in a figure,
-   or there is no free space for it to grow into. */
-const entryRow = `
+/* The mark sits at the leading end of a row whose actions group is what it
+   stops short of, so it is worth one row of real context rather than a lone
+   square — the 6px `margin-left` and the box's own size only read against it. */
+const headerRow = `
     <div class="row">
-        ${markButton(`${cls.mark} ${cls.intro}`)}
+        ${markButton(cls.mark)}
         <div class="actions">
             <button class="nav" type="button" aria-label="搜索">⌕</button>
             <button class="nav" type="button" aria-label="我喜欢">♡</button>
@@ -154,6 +158,11 @@ const entryRow = `
         </div>
     </div>
 `;
+
+/* Frozen points of the note's fade. The delay is negative, so the animation is
+   already that far in — and paused, so the screenshot is reproducible. The
+   label is the point in the fade, not the negative delay that gets you there. */
+const fade = (delay, label) => mark(cls.mark, label, '', `animation-delay: ${delay}s`);
 
 const flow = (delay) => mark(
     `${cls.mark} ${cls.playing}`,
@@ -187,6 +196,7 @@ const html = `<!doctype html>
     /* The frozen cells still run the real animation — the delay only picks the
        frame. Pausing it keeps the screenshot reproducible. */
     .cell .${cls.playing} .${cls.bg} { animation-play-state: paused; }
+    .cell.freeze-note .${cls.art} { animation-play-state: paused; }
     .note { margin: 0 0 20px; font-size: 13px; color: #555; max-width: 560px; line-height: 1.6; }
     /* The #zoom hash blows one playing mark up 5× so the wave shape can
        actually be judged — at 40px a ripple and a straight line look alike in a
@@ -197,14 +207,21 @@ const html = `<!doctype html>
 </head>
 <body>
 <div id="out"></div>
-<p class="note">进场是一条伸到操作组的宽条、上面没有音符；随后收成 40px 圆角方块、音符淡入。
-播放时彩虹按固定 2 秒周期一直向右流 —— 一个周期正好一个波长，所以首尾帧相同、循环无缝。</p>
-${entryRow}
+<p class="note">logo 一上来就是 40px 圆角方块，没有任何尺寸动画；音符是唯一进场的东西 —— 一秒淡入。
+播放时彩虹按固定 2 秒周期一直向右流，一个周期正好一个波长，所以首尾帧相同、循环无缝。</p>
+${headerRow}
 <div class="strip">
-    ${mark(cls.mark, '落定 / 停止')}
+    ${mark(cls.mark, '停止')}
     ${flow(-0.0)}
     ${flow(-0.5)}
     ${flow(-1.0)}
+</div>
+<p class="note">音符的一秒淡入，冻结在四个点上。</p>
+<div class="strip">
+    ${fade(-0.0, '0s')}
+    ${fade(-0.2, '0.2s')}
+    ${fade(-0.6, '0.6s')}
+    ${fade(-1.0, '1s')}
 </div>
 <script>
     const BANDS = ${JSON.stringify(BANDS)};
@@ -340,7 +357,7 @@ ${entryRow}
         'blend widest / band: ' + blend.toFixed(2) + '  (designed 2 \\u00d7 BLEND = ' + (2 * BLEND).toFixed(2) + ')',
         'buffer: ' + DRAW_W + '\\u00d7' + DRAW_H + ', wavelength ' + WAVE_LAMBDA + ' (' + (DRAW_W / WAVE_LAMBDA) + ' cycles)',
         'flow: translateX(50%) over 2s linear, infinite',
-        'note: static path, opacity only',
+        'note: static path, one 1s opacity fade on mount',
     ].join('\\n');
 
     if (location.hash === '#zoom') {

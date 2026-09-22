@@ -171,19 +171,18 @@
     （`border-radius: 11px`），底图跟着 `background-size: cover`，两者不会走散。
   - **QQ 状态点已移除**（原来右下角灰/绿一个点）：状态本身仍在按钮的 `title` /
     `aria-label`（「账号，已确认/未确认 QQ」）里，但视觉上不再画点。
-  - **尺寸只在进场时变一次，播放不改**：`.mark` 落定就是 40px 圆角方块
-    （`width`/`height` 都是 40、`flex: 0 0 auto`），header 里的搜索和操作按钮保持原本的
-    布局与点击区域。进页面时它先是一条**一直伸到搜索按钮前**的宽条（`.mark-intro`：
-    `flex-grow: 1` + `flex-basis: 40px`）、**上面没有音符**，然后过渡收成方块、音符再淡入
-    （`.art` 的 `opacity` 过渡带 `0.22s` 延迟，落在 `0.62s` 的收窄里）。
-    - **收窄动的是 `width`，不是 `flex-grow`**：宽条的真实像素宽在首次 layout 里
-      （`useLayoutEffect`，绘制前）量出来，作为内联 `width` 钉住，`INTRO_HOLD_MS`（460ms）
-      后连同 `.mark-intro` 一起撤掉 —— 于是它退化成一次普通的 `width` 过渡，终点就是
-      `.mark` 自己那条 `width: 40px`，不会和布局走散。**不要改成过渡 `flex-grow`**：
-      宽条那一刻的自由空间是负的，插值的起点会跑偏。
-    - **量必须在 layout effect 里做**，所以「先闪一个 40px 方块再变宽」在结构上不可能发生。
-      `prefers-reduced-motion` 直接跳过整个进场 —— 宽条只为被看而存在，落定态才是这枚
-      logo 的本体。
+  - **尺寸从不变化，播放也不变**：`.mark` 就是 40px 圆角方块（`width`/`height` 都是 40、
+    `flex: 0 0 auto`），从第一帧起就是这个尺寸，header 里的搜索和操作按钮保持原本的布局与
+    点击区域。`.mark` 的 `transition` 只剩 `transform`（按压态）——**不要再给它加 `width`
+    过渡**，那会让人以为还有什么在改它的尺寸。
+    - **它曾经有一条进场：先是一条伸到搜索按钮前的宽条，再收成方块**（`.mark-intro` +
+      `flex-grow: 1`，宽条的真实像素宽在 `useLayoutEffect` 里量出来用内联 `width` 钉住，
+      460ms 后撤掉）。**已按用户要求整条删掉**：一上来就是正常大小，别再恢复。
+  - **唯一进场的东西是音符：一秒淡入**（`.art` 的 `note-in` CSS animation，`1s ease both`）。
+    全在 CSS 里，组件不持这个状态 —— 所以没有任何路径能把音符卡在半透明。
+    `both` 是必需的：没有它，第一帧会先以全不透明闪一下，动画才接手。
+    `prefers-reduced-motion` 下直接 `animation: none`，音符就在那儿（基础规则本来就是
+    `opacity: 1`）。
   - **它是应用自己的图标，但拆成了两层**：底图是 `<canvas>` 现场画的固定彩虹印谱，
     音符是画在上面的一条静态 `<path>`。底图原本是 `public/mark-bg.jpg`，那张位图
     连同 `assetUrl('/mark-bg.jpg')` 规则一起拿掉了 —— **底图不再是一张图，也不再需要
@@ -1027,8 +1026,9 @@ components/Music/three/
   没有 `AudioContext`、`AnalyserNode`、频段拆分、合成节拍、后台 `resume` 或 `nudge`，
   所以切后台不会因为 logo 动画去碰播放链路。
 - **音符是静态的**：没有 `translate`、`scale`、呼吸，也没有浮动音符家族；logo 在播放时
-  不放大，落定后始终是 header 左侧的 40px 圆角方块（唯一的例外是刚进页面那次进场收窄，
-  见上面「手机端顶部栏」）。右下角 QQ 状态点继续隐藏，状态只保留在 `title` / `aria-label`。
+  不放大，任何时刻都是 header 左侧的 40px 圆角方块 —— 尺寸上没有任何动画，连进场也没有
+  （见上面「手机端顶部栏」）。音符唯一会动的是刚挂载那一秒的淡入。
+  右下角 QQ 状态点继续隐藏，状态只保留在 `title` / `aria-label`。
 - **固定印谱的设计边界**：`BANDS`、`BOUNDARIES`、`SWING`、`WAVE_LAMBDA`、`WAVE_ORIGIN`、
   `BLEND` 和 `VISIBLE_FRACTION` 都是 `MarkNote.js` 的常量，画布只在挂载时画一次；
   真正的运动只有 `.bg` 上的 `rainbow-score-flow` CSS keyframes，而它的 `50%` 平移量
@@ -1037,11 +1037,14 @@ components/Music/three/
   决定了 40px 盒子上的「横向五分之一」落在缓冲区哪个 px。不要把 `playing` 改回音频电平，
   也不要为这枚 logo 增加 Web Audio 监听。
 - **烟雾测试也跟着简化**：`scripts/drive-page.js` 检查固定 CSS 动画类是否在播放时开启、
-  音符没有 transform、第二首歌仍能在同一个 audio 元素上播放。进场那段只存在一秒，
-  所以它用自己的一轮 50ms 轮询、挂在同一处 reload 上抓（`waitFor` 的 400ms 间隔对 460ms
-  的状态是掷硬币），判据挂在盒子自己的宽高比上（进场时「宽大于高」、落定后「宽等于高」，
-  外加音符 `opacity` 0→1），**不把样式表里的 40px 抄一遍回给它**。不再造
-  `__musicContexts` / `__musicAnalysers`，不再覆盖 `AnalyserNode`，不再测试 logo 的后台恢复。
+  音符没有 transform、第二首歌仍能在同一个 audio 元素上播放。挂载后那一秒用自己的一轮
+  50ms 轮询、挂在同一处 reload 上抓（`waitFor` 的 400ms 间隔对一秒的状态是掷硬币），
+  两条判据：**盒子从来没有比它自己更高**（也就是「没有宽条进场」——用所有样本里
+  `width - height` 的最大值判，**不把样式表里的 40px 抄一遍回给它**），以及音符的
+  `animation-name` / `animation-duration` 确实是那个一秒的淡入。音符 `opacity` 在这里
+  只当「样式表到了没有」的信号用（未上样式的按钮会读成 316×462、音符 opacity 1）。
+  不再造 `__musicContexts` / `__musicAnalysers`，不再覆盖 `AnalyserNode`，
+  不再测试 logo 的后台恢复。
 
 - 从 `/desktop` 进 `/3d` 会**换一个 `<audio>` 元素**，歌会停一下；但 `usePlayer`
   会用 `LAST_TRACK_KEY` / `LAST_PROGRESS_KEY` 把同一首按原位置**重新载入**（不自动播放）。
@@ -1092,7 +1095,9 @@ chrome --headless=new --window-size=1440,810 --timeout=25000 \
 在只被截一次图的页面里可能停在 0% 关键帧上（`.wrap` 的 `translateY(18px)`、
 `.locate-btn` 的 `translateY(8px) scale(0.9)`），于是量出来的位置和尺寸都是错的 ——
 `scripts/preview-locate-btn.js` 为此在自己的样式里显式 `animation: none`。
-量之前先确认那两条读数是「布局的」还是「第一帧的」。
+**logo 的音符也是这一类了**（`note-in` 的 `1s both`，0% 那一帧是 `opacity: 0`），
+所以单独截 h5 页面有可能拍到一个「没有音符」的 logo —— `scripts/preview-mark.js` 里每个
+cell 都显式冻结了动画，正是为此。量之前先确认那两条读数是「布局的」还是「第一帧的」。
 
 三个坑，踩过就别再踩：
 
