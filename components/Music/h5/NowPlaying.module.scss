@@ -553,7 +553,7 @@
 
    The easing is a symmetric S-curve, and the first one was not: it was
    `cubic-bezier(0.2, 0.65, 0.25, 1)`, a hard decelerate, which put **72% of the
-   growth into the first 120ms** of a 440ms animation — measured, by pinning
+   growth into the first 120ms** of the same 0.42s — measured, by pinning
    `currentTime` and reading the drawn box (38 -> 46 -> 49 -> 50px tall). The
    last 320ms moved the line by less than a pixel, so what the eye got was a
    pop followed by nothing, which is the opposite of the intent. An ease-in-out
