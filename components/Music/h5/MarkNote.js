@@ -4,8 +4,10 @@ import styles from './MarkNote.module.scss';
 
 /**
  * The app's mark: the way into 账号 — a rounded square of rainbow at the leading
- * end of the list's bar, with the traced note on top. The QQ state dot is
- * intentionally gone; the state remains in the button's title / aria-label.
+ * end of the list's bar, with the traced note on top and the QQ state on its
+ * corner. The state dot answers "did my number actually take?" from the list,
+ * without opening a page; the same answer is in the button's title / aria-label,
+ * so the dot itself is decorative.
  *
  * There is deliberately no audio analyser here. The rainbow is a fixed score:
  * its wave shape and its animation cadence are constants, not a frequency read
@@ -198,6 +200,7 @@ const MarkNote = function ({ playing, qqBound, onOpen }) {
     }, []);
 
     const className = [styles.mark, playing ? styles['mark-playing'] : ''].filter(Boolean).join(' ');
+    const dotClass = qqBound ? `${styles.dot} ${styles['dot-on']}` : styles.dot;
 
     return (
         <button
@@ -207,13 +210,21 @@ const MarkNote = function ({ playing, qqBound, onOpen }) {
             aria-label={qqBound ? '账号，已确认 QQ' : '账号，未确认 QQ'}
             onClick={onOpen}
         >
-            {/* The canvas is oversized inside the clipped mark, never the mark
+            {/* The canvas is oversized inside a clipping layer, never the mark
                 itself: the extra width is the room the rightward flow travels
-                through. No scale is applied to the mark or the note. */}
-            <canvas ref={canvasRef} className={styles.bg} aria-hidden="true" />
+                through, and the clip is what keeps the rest of it out of sight.
+                It is a layer of its own because the button must not clip — the
+                state dot sits on the corner and would be cut by it. No scale is
+                applied to the mark or the note. */}
+            <span className={styles.clip}>
+                <canvas ref={canvasRef} className={styles.bg} aria-hidden="true" />
+            </span>
             <svg className={styles.art} viewBox="0 0 512 512" aria-hidden="true" focusable="false">
                 <path className={styles.ink} d={NOTE} />
             </svg>
+            {/* Decorative: the state is already in the label above, and a screen
+                reader does not need to be told about a coloured pixel. */}
+            <span className={dotClass} aria-hidden="true" />
         </button>
     );
 };

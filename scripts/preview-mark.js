@@ -4,7 +4,7 @@
  * drawing constants as the component:
  *
  *   - the mark in its header row, stopped,
- *   - the same square playing, frozen at three points of the flow,
+ *   - the same square stopped and playing, with the QQ state dot grey and green,
  *   - the note's arrival, frozen at four points of its one-second fade.
  *
  * The mark has no size animation any more: it used to enter as a bar the width
@@ -45,9 +45,12 @@ const idOf = function (prefix) {
 const cls = {
     mark: idOf('MarkNote_mark'),
     playing: idOf('MarkNote_mark-playing'),
+    clip: idOf('MarkNote_clip'),
     bg: idOf('MarkNote_bg'),
     art: idOf('MarkNote_art'),
     ink: idOf('MarkNote_ink'),
+    dot: idOf('MarkNote_dot'),
+    dotOn: idOf('MarkNote_dot-on'),
 };
 
 /* --- mirror of MarkNote.js ------------------------------------------------
@@ -129,18 +132,26 @@ const art = (style) => `<svg class="${cls.art}" viewBox="0 0 512 512" aria-hidde
     <path class="${cls.ink}" d="${NOTE_PATH}"></path>
 </svg>`;
 
-const markButton = function (classes, canvasStyle, artStyle) {
-    return `<button type="button" class="${classes}" aria-label="账号，未确认 QQ">
-        <canvas class="${cls.bg}" data-draw="1"${canvasStyle ? ` style="${canvasStyle}"` : ''}></canvas>
+/* The mark's own markup, in the order the component renders it: a clipping
+   layer holding the canvas, the note, and the state dot. The clip is a layer
+   and not the button because the dot has to sit on the corner — the button
+   clipping it cut the dot with the corner's arc (that comparison is what
+   `.workbuddy-ai/serve/dot-probe.html` was for). */
+const markButton = function ({ classes, canvasStyle, artStyle, confirmed }) {
+    return `<button type="button" class="${classes}" aria-label="账号，${confirmed ? '已' : '未'}确认 QQ">
+        <span class="${cls.clip}">
+            <canvas class="${cls.bg}" data-draw="1"${canvasStyle ? ` style="${canvasStyle}"` : ''}></canvas>
+        </span>
         ${art(artStyle)}
+        <span class="${cls.dot}${confirmed ? ` ${cls.dotOn}` : ''}" aria-hidden="true"></span>
     </button>`;
 };
 
-const mark = function (classes, label, canvasStyle, artStyle) {
+const mark = function (opts) {
     return `
-        <figure class="cell${artStyle ? ' freeze-note' : ''}">
-            ${markButton(classes, canvasStyle, artStyle)}
-            <figcaption>${label}</figcaption>
+        <figure class="cell${opts.artStyle ? ' freeze-note' : ''}">
+            ${markButton(opts)}
+            <figcaption>${opts.label}</figcaption>
         </figure>
     `;
 };
@@ -150,7 +161,7 @@ const mark = function (classes, label, canvasStyle, artStyle) {
    square — the 6px `margin-left` and the box's own size only read against it. */
 const headerRow = `
     <div class="row">
-        ${markButton(cls.mark)}
+        ${markButton({ classes: cls.mark })}
         <div class="actions">
             <button class="nav" type="button" aria-label="搜索">⌕</button>
             <button class="nav" type="button" aria-label="我喜欢">♡</button>
@@ -162,13 +173,13 @@ const headerRow = `
 /* Frozen points of the note's fade. The delay is negative, so the animation is
    already that far in — and paused, so the screenshot is reproducible. The
    label is the point in the fade, not the negative delay that gets you there. */
-const fade = (delay, label) => mark(cls.mark, label, '', `animation-delay: ${delay}s`);
+const fade = (delay, label) => mark({ classes: cls.mark, label, artStyle: `animation-delay: ${delay}s` });
 
-const flow = (delay) => mark(
-    `${cls.mark} ${cls.playing}`,
-    `播放 / 冻结在 ${delay}s`,
-    `animation-delay: ${delay}s`,
-);
+const flow = (delay) => mark({
+    classes: `${cls.mark} ${cls.playing}`,
+    label: `播放 / 冻结在 ${delay}s`,
+    canvasStyle: `animation-delay: ${delay}s`,
+});
 
 const html = `<!doctype html>
 <html lang="zh-CN">
@@ -208,10 +219,13 @@ const html = `<!doctype html>
 <body>
 <div id="out"></div>
 <p class="note">logo 一上来就是 40px 圆角方块，没有任何尺寸动画；音符是唯一进场的东西 —— 一秒淡入。
+右下角那个 9px 的小点是 QQ 状态：未确认灰、已确认绿。它在方块的角上，所以裁切在里层
+（MarkNote_clip）而不是按钮上 —— 按钮裁的话这个点会被圆角咬掉一块。
 播放时彩虹按固定 2 秒周期一直向右流，一个周期正好一个波长，所以首尾帧相同、循环无缝。</p>
 ${headerRow}
 <div class="strip">
-    ${mark(cls.mark, '停止')}
+    ${mark({ classes: cls.mark, label: '停止 / 未确认 QQ' })}
+    ${mark({ classes: cls.mark, label: '已确认 QQ', confirmed: true })}
     ${flow(-0.0)}
     ${flow(-0.5)}
     ${flow(-1.0)}
@@ -358,11 +372,16 @@ ${headerRow}
         'buffer: ' + DRAW_W + '\\u00d7' + DRAW_H + ', wavelength ' + WAVE_LAMBDA + ' (' + (DRAW_W / WAVE_LAMBDA) + ' cycles)',
         'flow: translateX(50%) over 2s linear, infinite; paused when not playing',
         'note: static path, one 1s opacity fade on mount',
+        'dot: 9px on the bottom-right corner, grey 未确认 / green 已确认',
     ].join('\\n');
 
     if (location.hash === '#zoom') {
         document.body.classList.add('zoom');
-        document.querySelectorAll('.cell')[1].classList.add('zoom-target');
+        /* Found by class, not by index: adding a cell to the strip must not
+           quietly change which one gets blown up. */
+        const target = [...document.querySelectorAll('.cell')]
+            .find((cell) => cell.querySelector(${JSON.stringify(`.${cls.playing}`)}));
+        if (target) target.classList.add('zoom-target');
     }
 </script>
 </body>

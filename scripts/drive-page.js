@@ -1330,6 +1330,54 @@ const drive = async (target, index) => {
             account ? `form=${account.form} card=${account.card} ${account.text.slice(0, 80)}` : '',
         );
 
+        /* The state dot on the mark's corner, read from the *mark* rather than
+           from the sheet: it is the list's own answer to "is my number in?",
+           which is the whole reason it exists. It is checked twice — grey here,
+           green once the number is confirmed below — because a dot that is
+           always one colour would pass either half on its own.
+           "Grey" and "green" are read as colour *families* (the channels agree
+           vs. green dominates) rather than as the two hex values, so a shade
+           tweak does not fail the run, and swapping the two states does.
+           The last two facts are about it being a badge: round, small next to
+           the mark, and sitting on the corner rather than floating inside it.
+           Whether that badge is *clipped* by the button's rounded corner is the
+           one thing the DOM cannot be asked — the rect is the same either way,
+           because clipping does not move a box. That was settled by eye at 6×:
+           with the button clipping, the corner's arc cuts a visible bite out of
+           the dot; that is why the artwork has a clipping layer of its own and
+           the button does not clip. */
+        const dotState = `(() => {
+            const b = document.querySelector(${JSON.stringify(target.mark)});
+            if (!b) return { found: false, why: 'no mark' };
+            const dot = [...b.children].find((el) => /MarkNote_dot/.test(el.className || ''));
+            if (!dot) return { found: false, why: 'no dot', children: b.children.length };
+            const r = dot.getBoundingClientRect();
+            const m = b.getBoundingClientRect();
+            const rgb = getComputedStyle(dot).backgroundColor.match(/\\d+/g).map(Number);
+            return {
+                found: true,
+                on: /MarkNote_dot-on/.test(dot.className),
+                rgb,
+                round: Math.abs(r.width - r.height) < 0.6,
+                small: r.width <= m.width / 3,
+                onCorner: r.right >= m.right - 3 && r.bottom >= m.bottom - 3,
+                size: r.width,
+                mark: m.width,
+            };
+        })()`;
+        const dotOff = await evaluate(dotState);
+        const grey = Boolean(dotOff) && dotOff.found
+            && Math.max(...dotOff.rgb) - Math.min(...dotOff.rgb) <= 12;
+        check(
+            'the mark shows the QQ state as a small grey dot on its corner',
+            Boolean(dotOff) && dotOff.found && !dotOff.on && grey
+                && dotOff.round && dotOff.small && dotOff.onCorner,
+            dotOff && dotOff.found
+                ? `${dotOff.size}px of ${dotOff.mark}px, rgb(${dotOff.rgb.join(',')})`
+                    + `, round=${dotOff.round} small=${dotOff.small} corner=${dotOff.onCorner}`
+                : `${dotOff && dotOff.why} (children=${dotOff && dotOff.children})`,
+        );
+
         const saved = await evaluate(`(() => {
             const s = document.querySelector(${JSON.stringify(sheetOf('账号'))});
             if (!s) return 'no sheet';
@@ -1351,6 +1399,16 @@ const drive = async (target, index) => {
             Boolean(confirmed) && confirmed.form === false && confirmed.card === true
                 && confirmed.text.includes('QQ 10001'),
             confirmed ? `form=${confirmed.form} card=${confirmed.card} ${confirmed.text.slice(0, 90)}` : '',
+        );
+        const dotOn = await evaluate(dotState);
+        const green = Boolean(dotOn) && dotOn.found
+            && dotOn.rgb[1] > dotOn.rgb[0] + 20 && dotOn.rgb[1] > dotOn.rgb[2] + 20;
+        check(
+            '...and that dot turns green now that the number is in',
+            Boolean(dotOn) && dotOn.found && dotOn.on && green,
+            dotOn && dotOn.found
+                ? `rgb(${dotOn.rgb.join(',')}) on=${dotOn.on}`
+                : `${dotOn && dotOn.why}`,
         );
         // The claim under test: the likes made as a guest went *with* the number,
         // and they are still waiting because the API was stopped. Read from the

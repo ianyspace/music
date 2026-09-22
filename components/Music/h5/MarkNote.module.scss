@@ -1,11 +1,17 @@
 // The app's mark — the way into 账号, at the leading end of the list's bar.
 // It is its 40px rounded square from the first paint; the note fades in over a
-// second, and while music plays the fixed rainbow score inside it flows
-// steadily to the right. No analyser, no breathing, no growth on play, and no
-// size animation on entry.
+// second, the QQ state sits on its corner as a small dot (grey / green), and
+// while music plays the fixed rainbow score inside it flows steadily to the
+// right. No analyser, no breathing, no growth on play, and no size animation on
+// entry.
 
 /* The settled box — and the only box it ever has. The size lives here and only
-   here: nothing measures it and nothing overrides it. */
+   here: nothing measures it and nothing overrides it.
+
+   It deliberately does **not** clip. It used to, and that is the one thing the
+   state dot cannot survive: a badge on the corner would be cut by the corner's
+   own arc, which at 40px reads as a bite taken out of the dot rather than as a
+   dot. The clipping the artwork needs lives on `.clip` below. */
 .mark {
     position: relative;
     display: inline-flex;
@@ -18,7 +24,6 @@
     padding: 0;
     border: 0;
     border-radius: 11px;
-    overflow: hidden;
     background-color: transparent;
     font-family: inherit;
     cursor: pointer;
@@ -36,6 +41,21 @@
     &:active {
         transform: scale(0.96);
     }
+}
+
+/* The clip the artwork needs, one layer in from the button. `inset: 0` and an
+   inherited radius make this the button's box exactly, so the canvas inside is
+   framed the same as it was when the button clipped it — only now the dot, a
+   sibling of this layer, is free to hang over the corner.
+
+   Nothing else needs the clip: the note is inside the box already, and its
+   drop shadow is clipped by the `<svg>` it is drawn in. */
+.clip {
+    position: absolute;
+    inset: 0;
+    display: block;
+    overflow: hidden;
+    border-radius: inherit;
 }
 
 /* Playback only adds this class — and all it changes is the score's *play
@@ -124,6 +144,36 @@
     stroke-width: 1;
     stroke-linejoin: round;
     filter: drop-shadow(0 13px 12px rgba(38, 44, 74, 0.3));
+}
+
+/* The QQ state as a dot on the bottom-right corner: grey = 未确认, green =
+   已确认. It answers "did my number actually take?" from the list, without
+   opening a page — which is why it hangs off the artwork's corner instead of
+   being hidden inside it, and why the button does not clip (see `.mark`).
+
+   9px, down from the 12px this was before it was removed: at 40px the old one
+   read as a second element sitting on the mark rather than as a badge on it.
+   The 1.5px ring keeps the old dot-to-ring proportion, so it is still a dot
+   with a ring rather than a dot with a halo.
+
+   The ring is `--badge-ring`, an opaque token for exactly this job: a
+   translucent ring over the artwork reads as a smudge, and this app's surfaces
+   (`--glass`, `--card`) are all translucent. The same answer is in the button's
+   `aria-label`, so the dot itself is decorative. */
+.dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #8e8e93;
+    box-shadow: 0 0 0 1.5px var(--badge-ring);
+    z-index: 2;
+}
+
+.dot-on {
+    background: #34c759;
 }
 
 @media (prefers-reduced-motion: reduce) {
