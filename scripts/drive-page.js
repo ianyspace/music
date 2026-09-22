@@ -53,6 +53,14 @@
  *      checked for the thing it used to be: 听歌排行's 收起 button puts the
  *      visitor back on the list with no sheet left standing, instead of the
  *      two-screen loop it used to be. See `target.shell`.
+ *   9. **The song line's join is even.** "title - artist" is the one label whose
+ *      spacing comes from its own whitespace, and the Marquee's wrapper used to
+ *      be a flex container — which blockified each child run and dropped the
+ *      collapsible space at the start of a line, so the gap in front of the
+ *      hyphen vanished while the one behind it stayed. Two pixels of asymmetry
+ *      are invisible in a screenshot and obvious on a phone, so this measures
+ *      the ink-to-ink gap on each side of the hyphen with a Range per glyph.
+ *      Pages with no such label (the 3D room) say so instead of passing.
  *
  * Run: node scripts/drive-page.js <url> [options]
  *      node scripts/drive-page.js --all [--insecure]
@@ -772,6 +780,64 @@ const drive = async (target, index) => {
         playing ? `t=${playing.time?.toFixed(1)}s in ${(started.ms / 1000).toFixed(1)}s` : '',
     );
     await shot('playing');
+
+    /* --- the song line's join ----------------------------------------------
+     *
+     * The label is `title` plus a span holding " - artist", and that separator
+     * is the only spacing in the app that comes from the markup's own
+     * whitespace rather than from a gap. Which is why it went wrong: the
+     * Marquee's inner wrapper was `inline-flex`, a flex container blockifies
+     * each child run, and CSS drops a collapsible space at the start of a line
+     * — so the space in front of the hyphen was thrown away and the label read
+     * "歌名- 歌手" with all the air on one side. Nothing about that shows up in
+     * a screenshot at 14px, so it is measured instead: one Range per glyph, and
+     * the ink-to-ink gap either side of the hyphen. Whitespace is skipped on
+     * the way — a collapsed space still has a Range box, a zero-width one, and
+     * counting it reports the gap as 0 whatever the rendering does.
+     */
+    const labelJoin = await evaluate(`(() => {
+        const label = document.querySelector(
+            '[class*="mini-label"],[class*="bar-label"],[class*="np-marquee"]',
+        );
+        if (!label) return { found: false };
+        const item = label.querySelector('[class*="Marquee_item__"]');
+        if (!item) return { found: true, error: 'no Marquee item inside the label' };
+        const nodes = [];
+        const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        const ink = [];
+        nodes.forEach((node) => {
+            for (let i = 0; i < node.data.length; i += 1) {
+                if (node.data[i].trim() === '') continue;
+                const range = document.createRange();
+                range.setStart(node, i);
+                range.setEnd(node, i + 1);
+                const r = range.getBoundingClientRect();
+                ink.push({ ch: node.data[i], left: r.left, right: r.right });
+            }
+        });
+        const at = ink.findIndex((c) => c.ch === '-');
+        if (at < 1 || at + 1 >= ink.length) {
+            return { found: true, error: 'no hyphen with a glyph on each side' };
+        }
+        return {
+            found: true,
+            text: item.innerText,
+            before: +(ink[at].left - ink[at - 1].right).toFixed(2),
+            after: +(ink[at + 1].left - ink[at].right).toFixed(2),
+        };
+    })()`);
+    if (!labelJoin || !labelJoin.found) {
+        note('no title/artist label on this page — the join was not measured');
+    } else if (labelJoin.error) {
+        check('the song line has a hyphen to measure', false, labelJoin.error);
+    } else {
+        check(
+            'the song line joins its two halves with an even gap',
+            Math.abs(labelJoin.before - labelJoin.after) < 0.6,
+            `${labelJoin.before}px before the hyphen, ${labelJoin.after}px after — ${JSON.stringify(labelJoin.text)}`,
+        );
+    }
 
     for (const step of target.keys || []) {
         await evaluate(

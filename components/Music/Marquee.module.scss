@@ -60,10 +60,23 @@
     }
 }
 
-/* Two copies of the text sit side by side; the gap is the wrap point. */
+/* Two copies of the text sit side by side; the gap is the wrap point.
+ *
+ * A line of text, not a flex row. It was `inline-flex; align-items: center`,
+ * and that quietly cost every host the space in front of its separator: a flex
+ * container blockifies each child run, and CSS drops a collapsible space at the
+ * start of a line — so the ` - ` in `title - artist` came out as `- artist`,
+ * with a gap after the hyphen and none before it. Inline content has no such
+ * edge, and the markup's own spaces are what the visitor sees.
+ *
+ * `text-align: left` because the centred variant (the player sheet's top line)
+ * sets `text-align: center` on this box's ancestor, which a flex container
+ * ignored; a label that overflows its slot has to keep overflowing to the right
+ * the way it did, not spill out of both ends.
+ */
 .item {
-    display: inline-flex;
-    align-items: center;
+    display: block;
+    text-align: left;
     padding-right: 40px;
 }
 
