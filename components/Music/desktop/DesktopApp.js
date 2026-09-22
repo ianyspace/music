@@ -29,7 +29,9 @@ import styles from './DesktopApp.module.scss';
  *  - the **token root**. `DesktopApp.module.scss` declares the desktop palette
  *    and the `--glass-*` recipe, and `DesktopMusic` plus the panels below
  *    consume them. One declaration is what keeps the workspace and its chrome
- *    from drifting apart.
+ *    from drifting apart. That palette is dark-only: this layout has no theme
+ *    switch and no light values, so `usePlayer`'s `theme` is deliberately not
+ *    read here — the phone's copy of that preference has no say on `/desktop`.
  *  - the **row drawer** (置顶). It is rendered here, not in the
  *    list, so it can centre itself over the viewport instead of inside the
  *    scroller.
@@ -42,8 +44,6 @@ import styles from './DesktopApp.module.scss';
  */
 const DesktopApp = function () {
     const {
-        theme,
-        toggleTheme,
         ripples,
         toggleRipples,
         isPinned,
@@ -114,15 +114,13 @@ const DesktopApp = function () {
     } = usePlayer({ lyricsAutoOpen: true });
 
     return (
-        <div className={`${styles.page}${theme === 'dark' ? ` ${styles['theme-dark']}` : ''}`}>
+        <div className={styles.page}>
             <PageHead
                 onReady={() => setGsiReady(true)}
                 onError={() => setError('Google 登录组件加载失败，请检查网络')}
             />
 
             <DesktopMusic
-                theme={theme}
-                onToggleTheme={toggleTheme}
                 connected={!!token}
                 sourceName={sourceName}
                 gsiReady={gsiReady}

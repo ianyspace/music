@@ -8,7 +8,6 @@ import {
     IconGear,
     IconLocate,
     IconLogout,
-    IconMoon,
     IconMoreVertical,
     IconMusicSpace,
     IconNext,
@@ -25,7 +24,6 @@ import {
     IconRipple,
     IconSearch,
     IconShuffle,
-    IconSun,
 } from '../icons';
 import {
     DESKTOP_LIST_KEY,
@@ -133,8 +131,6 @@ const Tonearm = function ({ playing }) {
  * nothing to initialise — which also means nothing can fail to initialise.
  */
 const DesktopMusic = function ({
-    theme,
-    onToggleTheme,
     connected,
     sourceName,
     gsiReady,
@@ -992,15 +988,9 @@ const DesktopMusic = function ({
 
                         <section className={styles.group}>
                             <div className={styles['group-label']}>外观</div>
-                            <button type="button" className={`${styles.row} ${styles['row-btn']}`} onClick={onToggleTheme}>
-                                <span className={styles['row-icon']}>
-                                    {theme === 'dark' ? <IconSun /> : <IconMoon />}
-                                </span>
-                                <span className={styles['row-label']}>
-                                    {theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-                                </span>
-                                <span className={styles['row-value']}>{theme === 'dark' ? '深色' : '浅色'}</span>
-                            </button>
+                            {/* No theme row. `/desktop` is dark-only — see the
+                                palette note in `DesktopApp.module.scss` — so
+                                the switch had nothing left to switch. */}
                             <button
                                 type="button"
                                 className={`${styles.row} ${styles['row-btn']}`}

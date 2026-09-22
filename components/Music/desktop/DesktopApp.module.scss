@@ -23,18 +23,25 @@
 .page {
     --accent: #fa233b;
     --accent-2: #fb5c74;
-    --surface: #eef0f7;
-    --text: #14161c;
-    --text-2: rgba(60, 66, 82, 0.6);
-    --text-3: rgba(60, 66, 82, 0.42);
-    --hairline: rgba(18, 24, 40, 0.08);
-    --track: rgba(18, 24, 40, 0.14);
-    --hover: rgba(18, 24, 40, 0.05);
-    --row-active: rgba(250, 35, 59, 0.1);
+
+    /* One palette, and it is the dark one. `/desktop` used to declare a light
+       set here plus a `.theme-dark` modifier that replaced most of it, and the
+       settings sheet had a row that switched between the two. The row is gone
+       and the light values went with it, so there is no modifier class left to
+       add and nothing to keep in step with the phone layout's own switch — the
+       phone still has one, and it has no say over this page any more. */
+    --surface: #080a0f;
+    --text: #f2f4f8;
+    --text-2: rgba(228, 232, 240, 0.6);
+    --text-3: rgba(228, 232, 240, 0.4);
+    --hairline: rgba(255, 255, 255, 0.09);
+    --track: rgba(255, 255, 255, 0.18);
+    --hover: rgba(255, 255, 255, 0.06);
+    --row-active: rgba(251, 92, 116, 0.18);
     /* The panels' content components are shared with the phone layout, so they
        ask for `--row-hover` (the phone's name for the same thing). */
-    --row-hover: rgba(18, 24, 40, 0.05);
-    --field: rgba(120, 120, 128, 0.13);
+    --row-hover: rgba(255, 255, 255, 0.06);
+    --field: rgba(120, 120, 128, 0.26);
 
     /* --- the glass recipe ------------------------------------------------
        Every frosted surface in the desktop layout is these seven values and
@@ -48,11 +55,11 @@
        raised-plastic look this is avoiding. */
     --glass-blur: 26px;
     --glass-sat: 1.8;
-    --glass-bg: rgba(255, 255, 255, 0.46);
-    --glass-bg-soft: rgba(255, 255, 255, 0.34);
-    --glass-bg-strong: rgba(255, 255, 255, 0.66);
-    --glass-border: rgba(255, 255, 255, 0.6);
-    --glass-shadow: 0 18px 46px -30px rgba(24, 30, 62, 0.34);
+    --glass-bg: rgba(30, 34, 42, 0.5);
+    --glass-bg-soft: rgba(30, 34, 42, 0.38);
+    --glass-bg-strong: rgba(28, 31, 39, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 18px 46px -30px rgba(0, 0, 0, 0.6);
 
     --radius-lg: 26px;
     --radius-md: 18px;
@@ -65,38 +72,13 @@
     -webkit-font-smoothing: antialiased;
 }
 
-.page.theme-dark {
-    --surface: #080a0f;
-    --text: #f2f4f8;
-    --text-2: rgba(228, 232, 240, 0.6);
-    --text-3: rgba(228, 232, 240, 0.4);
-    --hairline: rgba(255, 255, 255, 0.09);
-    --track: rgba(255, 255, 255, 0.18);
-    --hover: rgba(255, 255, 255, 0.06);
-    --row-active: rgba(251, 92, 116, 0.18);
-    --row-hover: rgba(255, 255, 255, 0.06);
-    --field: rgba(120, 120, 128, 0.26);
-
-    --glass-bg: rgba(30, 34, 42, 0.5);
-    --glass-bg-soft: rgba(30, 34, 42, 0.38);
-    --glass-bg-strong: rgba(28, 31, 39, 0.72);
-    --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-shadow: 0 18px 46px -30px rgba(0, 0, 0, 0.6);
-}
-
 /* No `backdrop-filter`: the fills have to carry the surfaces on their own.
    Raising the alpha is the whole fallback — the layout, the borders and the
    shadows are unchanged, so nothing moves, it only stops being see-through.
-   `.page.theme-dark` is spelled out rather than left to `.theme-dark` alone
-   because the light rule above would otherwise win on source order. */
+   One block now instead of two: with a single palette there is no second set
+   of values for a `@supports` rule to have to beat on source order. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .page {
-        --glass-bg: rgba(255, 255, 255, 0.92);
-        --glass-bg-soft: rgba(255, 255, 255, 0.86);
-        --glass-bg-strong: rgba(255, 255, 255, 0.96);
-    }
-
-    .page.theme-dark {
         --glass-bg: rgba(20, 23, 30, 0.94);
         --glass-bg-soft: rgba(20, 23, 30, 0.88);
         --glass-bg-strong: rgba(20, 23, 30, 0.97);

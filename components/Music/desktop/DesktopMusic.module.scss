@@ -45,11 +45,12 @@
        empty glass above and below, and the seek rail then had to be squeezed
        into whatever was left at the bottom edge.
 
-       It is 72px now, and the arithmetic is the rail: 24px of strip at the top
-       for it to live in (see `.seek`), the 40px row, and 8px of breathing room
-       under the row. The rail used to ride the capsule's *lower* edge, where
-       its strip came out of the row's bottom padding and the two were always
-       fighting — see the notes on `.seek` and `.bar-row`. */
+       It is 72px now, and the arithmetic is symmetric: 16px of glass above the
+       40px row and 16px below it, so the row — and the play button in it —
+       sits on the capsule's centre line. The rail rides the upper edge and is
+       positioned rather than reserved; it used to be the row's top padding that
+       made room for it, which is what pushed the row low. See the notes on
+       `.seek` and `.bar-row`. */
     --side: 348px;
     --bar-h: 72px;
     --bar-bottom: 26px;
@@ -1347,7 +1348,11 @@
     box-sizing: border-box;
     border-radius: 999px;
     background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    /* No hairline. Every other glass surface on this page keeps one, and the
+       capsule deliberately does not: it is the only shape here whose edge is a
+       36px semicircle, where a 1px `--glass-border` reads as a wire outline
+       drawn round the pill rather than as the lip of a pane. The fill and the
+       ambient shadow carry the edge on their own. */
     box-shadow: var(--glass-shadow);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
@@ -1373,7 +1378,7 @@
     align-items: center;
     gap: 12px;
     height: 100%;
-    padding: 24px 30px 8px;
+    padding: 16px 30px;
     box-sizing: border-box;
 }
 
@@ -1382,14 +1387,15 @@
     -webkit-appearance: none;
     position: absolute;
     left: 30px;
-    /* The upper edge, inside the glass. 6px puts the 3px rail's centre at
-       ~12.5px from the top and its 12px thumb inside the strip the row's top
-       padding reserves — so the thumb cannot reach the content row even while
-       it is being dragged. */
-    top: 6px;
+    /* The upper edge, inside the glass. The 12px box ends at 16 — exactly where
+       the content row's own box starts — so the 12px thumb, which fills the box
+       (`margin-top: -4.5px` against the 3px track), cannot reach a control even
+       while it is being dragged. It clears the record's 34px disc too: that
+       starts at 19, three pixels below the rail's bottom edge. */
+    top: 4px;
     display: block;
     width: calc(100% - 60px);
-    height: 14px;
+    height: 12px;
     margin: 0;
     background: transparent;
     cursor: pointer;
@@ -1618,7 +1624,14 @@
     width: 40px;
     height: 40px;
     margin: 0 2px;
-    padding: 0 0 0 2px;
+    /* No optical nudge. It had `padding-left: 2px`, copied from the phone's
+       player, where the same trick is applied to a transparent button — but
+       this one is a solid disc, so the 1px the padding moved the glyph by was
+       measurable against the circle rather than invisible. The `IconPlay` path
+       already carries its own nudge (its ink sits 2.17 units right of the
+       viewBox centre, which is what makes a right-pointing triangle read as
+       centred), and `IconPause` is symmetric; centring the box centres both. */
+    padding: 0;
     border: 0;
     border-radius: 50%;
     background: var(--accent);
