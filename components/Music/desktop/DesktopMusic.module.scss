@@ -45,12 +45,11 @@
        empty glass above and below, and the seek rail then had to be squeezed
        into whatever was left at the bottom edge.
 
-       It is 72px now, and the arithmetic is symmetric: 16px of glass above the
-       40px row and 16px below it, so the row — and the play button in it —
-       sits on the capsule's centre line. The rail rides the upper edge and is
-       positioned rather than reserved; it used to be the row's top padding that
-       made room for it, which is what pushed the row low. See the notes on
-       `.seek` and `.bar-row`. */
+       It is 72px now, and the arithmetic is the rail: 24px of strip at the top
+       for it to live in (see `.seek`), the 40px row, and 8px of breathing room
+       under the row. The rail used to ride the capsule's *lower* edge, where
+       its strip came out of the row's bottom padding and the two were always
+       fighting — see the notes on `.seek` and `.bar-row`. */
     --side: 348px;
     --bar-h: 72px;
     --bar-bottom: 26px;
@@ -1378,7 +1377,7 @@
     align-items: center;
     gap: 12px;
     height: 100%;
-    padding: 16px 30px;
+    padding: 24px 30px 8px;
     box-sizing: border-box;
 }
 
@@ -1387,15 +1386,14 @@
     -webkit-appearance: none;
     position: absolute;
     left: 30px;
-    /* The upper edge, inside the glass. The 12px box ends at 16 — exactly where
-       the content row's own box starts — so the 12px thumb, which fills the box
-       (`margin-top: -4.5px` against the 3px track), cannot reach a control even
-       while it is being dragged. It clears the record's 34px disc too: that
-       starts at 19, three pixels below the rail's bottom edge. */
-    top: 4px;
+    /* The upper edge, inside the glass. 6px puts the 3px rail's centre at
+       ~12.5px from the top and its 12px thumb inside the strip the row's top
+       padding reserves — so the thumb cannot reach the content row even while
+       it is being dragged. */
+    top: 6px;
     display: block;
     width: calc(100% - 60px);
-    height: 12px;
+    height: 14px;
     margin: 0;
     background: transparent;
     cursor: pointer;
