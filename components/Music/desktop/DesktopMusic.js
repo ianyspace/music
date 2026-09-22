@@ -38,6 +38,7 @@ import {
 } from '../shared';
 import Cover from '../Cover';
 import Marquee from '../Marquee';
+import { coverUrlOf } from '../librarySource';
 import DesktopSheetChrome from './DesktopSheetChrome';
 
 import styles from './DesktopMusic.module.scss';
@@ -200,6 +201,13 @@ const DesktopMusic = function ({
     const title = meta ? meta.title : '还没有播放中的歌曲';
     const artist = meta ? meta.artist : `${sourceName} · 从左侧列表挑一首开始`;
     const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
+    // The playing song's artwork, for the layer behind everything. Empty for a
+    // song the library has no cover for — and that is not a special case to
+    // handle: an empty `background-image` simply leaves the colour field the
+    // page has always had, which is what the four gradients in `.backdrop` are
+    // for. `.glow` is dimmed when this is set, because it is a palette derived
+    // from the song's *name* and has nothing to do with the photo.
+    const coverUrl = current ? coverUrlOf(current.track) : '';
     const percent = progress.duration > 0
         ? Math.min(100, Math.max(0, (progress.time / progress.duration) * 100))
         : 0;
@@ -470,7 +478,7 @@ const DesktopMusic = function ({
     };
 
     return (
-        <div className={styles.root}>
+        <div className={`${styles.root}${coverUrl ? ` ${styles['has-cover']}` : ''}`}>
             {/* The colour field the frosted surfaces sample — the root's own
                 background is never blurred by its children, so the gradients
                 have to be painted by a layer *behind* them. */}
@@ -479,6 +487,23 @@ const DesktopMusic = function ({
             {/* The song's own colours, blooming behind the record. A radial
                 mask rather than a blur: the same soft edge, one paint. */}
             <div className={styles.glow} style={{ background: gradient }} aria-hidden="true" />
+
+            {/* --- the background: the playing song's own artwork -------------
+                Painted above the two colour layers rather than replacing them,
+                so a song with no cover keeps exactly the background it had
+                before this existed. `background-size: cover` is what makes it
+                fill the screen without stretching — `100% 100%` is the version
+                that distorts, and at a wide aspect ratio it is the one thing
+                that looks wrong on every cover. The layer is blurred and held
+                at a low opacity by `.cover-bg`, which is the whole "淡淡的、
+                虚化" part: it is the page's light source, not a picture on it. */}
+            {coverUrl && (
+                <div
+                    className={styles['cover-bg']}
+                    style={{ backgroundImage: `url("${coverUrl}")` }}
+                    aria-hidden="true"
+                />
+            )}
 
             {/* --- the theme: the record, the lyrics, and whatever comes
                 next (a visualiser, a spectrum) — the stage is the one block
@@ -767,9 +792,10 @@ const DesktopMusic = function ({
 
             {/* --- bottom: the capsule play bar ---------------------------- */}
             <div className={styles.bar}>
-                {/* The progress rides the capsule's own lower edge instead of
-                    taking a row of its own: the pill keeps one line of content
-                    and still has a real, draggable seek target. */}
+                {/* The progress rides the capsule's *upper* edge — inside the
+                    glass, one hairline above the content row, so the bar still
+                    reads as one line of content and the seek target spans the
+                    full width of the pill. */}
                 <input
                     className={styles.seek}
                     type="range"
@@ -784,8 +810,23 @@ const DesktopMusic = function ({
                 />
 
                 <div className={styles['bar-row']}>
-                    {/* the song, once more — the bar stays useful on its own */}
+                    {/* the record, then the song, once more — the bar stays
+                        useful on its own */}
                     <span className={styles['bar-track']}>
+                        {/* The same object the stage draws, at the size the
+                            phone's mini bar draws it. It is not decoration: it
+                            is the only part of the record that is on screen
+                            while the lyrics are up, and it is the one thing in
+                            the bar that says "playing" without being read. */}
+                        <span
+                            className={`${styles['bar-disc']}${isPlaying ? '' : ` ${styles['bar-disc-paused']}`}`}
+                            aria-hidden="true"
+                        >
+                            <span className={styles['bar-disc-cover']} style={{ background: gradient }}>
+                                <Cover track={current ? current.track : null} />
+                                <IconNote />
+                            </span>
+                        </span>
                         <Marquee
                             text={current ? `${title} - ${artist}` : '还没有播放中的歌曲'}
                             className={styles['bar-label']}

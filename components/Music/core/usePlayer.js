@@ -1106,9 +1106,12 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
         const track = current && current.track;
         const withLyrics = Boolean(track && hasLyrics(track));
         setLyrics(null);
-        // The wide-screen layout shows the lyrics next to the cover and has no
-        // toggle, so it opens on them; the phone player opens on the record and
-        // reveals the lyrics when that record is tapped.
+        // The wide-screen layout opens on the lyrics: its stage is the words
+        // when there are any and the record when there are not, and `withLyrics`
+        // is exactly that decision. The phone player opens on the record instead
+        // and reveals the lyrics when that record is tapped. Both have their own
+        // toggle (the bar's button, the drawer's row) — this only sets the
+        // default a newly loaded track starts from.
         setLyricsVisible(lyricsAutoOpen && withLyrics);
         if (!withLyrics) return undefined;
         let cancelled = false;

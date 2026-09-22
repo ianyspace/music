@@ -43,11 +43,15 @@
        `--bar-h` was 76px, which is the number that made the bar read as a slab:
        a 76px capsule whose tallest content is a 40px control leaves 18px of
        empty glass above and below, and the seek rail then had to be squeezed
-       into whatever was left at the bottom edge. 64px is the row plus the
-       rail's own strip (see `.bar-row`'s bottom padding), which is all the
-       height the bar ever had a use for. */
+       into whatever was left at the bottom edge.
+
+       It is 72px now, and the arithmetic is the rail: 24px of strip at the top
+       for it to live in (see `.seek`), the 40px row, and 8px of breathing room
+       under the row. The rail used to ride the capsule's *lower* edge, where
+       its strip came out of the row's bottom padding and the two were always
+       fighting — see the notes on `.seek` and `.bar-row`. */
     --side: 348px;
-    --bar-h: 64px;
+    --bar-h: 72px;
     --bar-bottom: 26px;
 
     position: relative;
@@ -109,6 +113,57 @@
     pointer-events: none;
     mask-image: radial-gradient(46% 46% at 50% 44%, #000 0%, rgba(0, 0, 0, 0.5) 46%, transparent 76%);
     -webkit-mask-image: radial-gradient(46% 46% at 50% 44%, #000 0%, rgba(0, 0, 0, 0.5) 46%, transparent 76%);
+}
+
+/* The playing song's own artwork, blown up behind everything.
+
+   Four decisions, and each of them is a thing that was wrong first:
+
+   - `background-size: cover`, not `100% 100%`. The brief was "占满屏幕 but
+     不拉伸", and those two only coexist with `cover`: it fills the viewport by
+     *cropping* the photo instead of distorting it, so the artwork keeps its
+     proportions at every aspect ratio. `background-position: center` is what
+     makes the crop symmetric (a face in the middle stays in the middle).
+   - `filter: blur()`, unlike `.glow`'s radial mask. The mask trick works
+     because a gradient can be made soft by construction; a bitmap cannot, so
+     the blur is the only thing that turns a photo into a colour field. It is a
+     static layer — the cost is one paint per song, not one per frame.
+   - `transform: scale(1.12)`, which is the fix for the soft edge a blur leaves
+     at the viewport border: the blur samples transparent black past the edges
+     and paints a dark rim around the whole screen. Scaling past the viewport
+     moves those samples off screen. (Safe here because the element has no
+     children — a transform creates a containing block for `position: fixed`
+     descendants, and there are none.)
+   - `opacity: 0.34`, one value for both themes. It is a light source, not a
+     surface: over the light theme's near-white it reads as a pastel wash and
+     over the dark theme's near-black as a dim one, and in both the lyrics keep
+     their contrast. */
+.cover-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    opacity: 0.34;
+    filter: blur(56px) saturate(1.2);
+    transform: scale(1.12);
+    pointer-events: none;
+}
+
+/* With a real photo behind everything, the other two colour layers step back.
+
+   `.backdrop`'s four gradients exist to give the frosted surfaces something
+   with structure to sample; over a cover they are a second colour scheme
+   arguing with the first, so they keep a tint and give up the field. `.glow` is
+   dimmer still, because it is `trackGradient(name)` — a palette derived from the
+   song's *name*, which has no relationship at all to the photo of the song. */
+.has-cover .backdrop {
+    opacity: 0.45;
+}
+
+.has-cover .glow {
+    opacity: 0.1;
 }
 
 /* ==========================================================================
@@ -1291,24 +1346,25 @@
 
 /* Three cells, so the transport is centred on the *bar* and not on whatever
    the title happens to measure. Both side cells are `1fr`, so they stay equal
-   even when the title is hidden on a narrow window. */
+   even when the title is hidden on a narrow window.
+
+   The padding is the rail's strip at the top and the row's own breathing room
+   at the bottom. It used to be the other way round — 11px at the bottom for a
+   rail that rode the lower edge — and the row's centre had to be pushed up to
+   clear it. With the rail on top the row simply starts below it, which is why
+   the top padding is the larger of the two.
+
+   24 + 40 + 8 = 72 = `--bar-h`, so the row is exactly the height that is
+   left. The 30px sides line the rail up with the first and last thing in the
+   row; at this height the capsule's ends are semicircles of radius 36, and the
+   content box is well inside the flat part of them. */
 .bar-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     gap: 12px;
     height: 100%;
-    /* 30px of padding, not 20: the capsule's ends are semicircles of radius
-       32, and at the top and bottom of the content box that curve eats ~13px
-       of the row. Below that the content would sit outside the fill.
-
-       The bottom padding is the rail's strip, and it is what keeps the two
-       from colliding: it lifts the row's centre to 37.5px off the capsule's
-       floor, so a 40px control clears the rail's track by the same 6.5px it
-       clears the capsule's ceiling. Without it the transport would sit on the
-       progress bar — the 76px capsule used to hide that behind 18px of empty
-       glass. */
-    padding: 0 30px 11px;
+    padding: 24px 30px 8px;
     box-sizing: border-box;
 }
 
@@ -1317,7 +1373,11 @@
     -webkit-appearance: none;
     position: absolute;
     left: 30px;
-    bottom: 4px;
+    /* The upper edge, inside the glass. 6px puts the 3px rail's centre at
+       ~12.5px from the top and its 12px thumb inside the strip the row's top
+       padding reserves — so the thumb cannot reach the content row even while
+       it is being dragged. */
+    top: 6px;
     display: block;
     width: calc(100% - 60px);
     height: 14px;
@@ -1379,14 +1439,79 @@
     }
 }
 
-/* the current song, repeated in the bar so the bar stands on its own.
-   It used to open with a 36px spinning black disc — a third copy of the record
-   (the stage has the real one, the row has the cover) and, at that size, a dark
-   dot with a smudge of artwork in it. The title is the thing the bar is for. */
+/* the record, then the current song, repeated in the bar so the bar stands on
+   its own.
+
+   The disc was removed once — "a third copy of the record (the stage has the
+   real one, the row has the cover) and, at that size, a dark dot with a smudge
+   of artwork in it". It is back, and the reason is the first half of that
+   sentence rather than the second: the stage's record is hidden the moment the
+   lyrics are up (which is now the default), and the row's cover scrolls away,
+   so this is the only copy that is on screen whenever something is playing.
+   The size is the phone mini bar's geometry scaled down, and the phone is where
+   it already looked right. */
 .bar-track {
     display: flex;
     align-items: center;
     min-width: 0;
+}
+
+.bar-disc {
+    position: relative;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    margin-right: 10px;
+    border-radius: 50%;
+    background:
+        repeating-radial-gradient(circle at 50% 50%,
+            rgba(255, 255, 255, 0.06) 0 1px,
+            rgba(0, 0, 0, 0) 1px 3.5px),
+        radial-gradient(circle at 50% 50%, #26272d 0%, #141519 45%, #0a0b0e 80%, #17181d 100%);
+    box-shadow:
+        0 4px 10px -5px rgba(0, 0, 0, 0.5),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    animation: bar-disc-spin 12s linear infinite;
+}
+
+/* Paused rather than stopped, exactly like the stage's rotor: the angle is the
+   same object's state, so resuming carries on from where it was instead of
+   snapping to the top. */
+.bar-disc-paused {
+    animation-play-state: paused;
+}
+
+@keyframes bar-disc-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.bar-disc-cover {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 62%;
+    height: 62%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255, 255, 255, 0.92);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+
+    /* The note glyph, and the photo on top of it when the song has one — the
+       order the phone's mini bar draws them in, and the order `Cover`'s own
+       contract describes ("the note glyph is deliberately swallowed by the
+       photo"). Deliberately *not* `position: relative` here: that would lift
+       the glyph above the photo and make the bar's record differ from the
+       phone's at exactly the size where the two are meant to be the same
+       object. */
+    svg {
+        width: 40%;
+        height: 40%;
+    }
 }
 
 .bar-label {
@@ -1452,8 +1577,14 @@
     }
 }
 
+/* The bar's only accent is the play button and the rail's fill. A toggle that
+   is *on* used to turn `--accent` as well, which put up to three red glyphs
+   among the grey ones and made the bar read as two palettes in one pill. "On"
+   is a bright glyph on a soft chip now — `:hover`'s own fill, held — so the
+   state is just as visible without spending a second colour on it. */
 .ctrl-on {
-    color: var(--accent);
+    color: var(--text);
+    background: var(--hover);
 }
 
 /* The bar's one solid-colour button. It has been getting smaller for three
@@ -1821,6 +1952,7 @@
     .rotor,
     .disc,
     .disc::after,
+    .bar-disc,
     .ripple,
     .spin,
     .panel,
