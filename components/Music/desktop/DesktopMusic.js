@@ -65,32 +65,6 @@ const SETTLE_MS = 700;
 const LIST_HIDE_MS = 3000;
 
 /**
- * The play bar's glass — one preset per theme, and these two keys are all the
- * library is told.
- *
- * Everything else it offers (refraction, chromatic aberration, the rim
- * highlight, the specular pass, the Fresnel term, the shadow, the bevel depth,
- * the saturation/brightness pair, the blue tint) is left at the library's own
- * defaults, deliberately: the fewer numbers we own, the fewer there are to keep
- * in step with the library. Both presets are the library's own documented
- * examples — "Frosted Panel" and "Dark Glass" — rather than values invented
- * here.
- *
- * `cornerRadius` is clamped by the shader to half the box's shorter side, so
- * the two do not look the same: the bar is 72px tall, half of it is 36, so the
- * light theme's 30 is a slightly squared pill and the dark theme's 50 is
- * clamped to a full one.
- *
- * These live in JSX (`data-config` on `.bar`) and not in the stylesheet, which
- * now holds nothing about how the pill looks. The library watches that
- * attribute, so toggling the theme re-renders the glass with no other wiring.
- */
-const GLASS_CONFIG = {
-    light: { blurAmount: 0.25, cornerRadius: 30 },
-    dark: { blurAmount: 0.25, cornerRadius: 50, brightness: -0.3 },
-};
-
-/**
  * Decorative tonearm, drawn in the record rig's own coordinate space
  * (100 × 122 — the phone player's rig) so it scales with the record instead of
  * drifting off it. `playing` swings the arm down to track the groove.
@@ -153,13 +127,10 @@ const Tonearm = function ({ playing }) {
  * share the playback state (`core/usePlayer`) and the pure helpers, and
  * nothing else.
  *
- * Glass is mostly CSS, not WebGL: the list column, the settings card and every
- * other surface is a `backdrop-filter` over the `.backdrop` colour field,
- * styled by `DesktopMusic.module.scss` from the `--glass-*` tokens. The play
- * bar is the one exception — its surface is a WebGL shader from
- * `@ybouane/liquidglass`, configured by `GLASS_CONFIG` above and by nothing
- * else, with the stylesheet giving it a box to draw into. See the effect that
- * initialises it.
+ * Glass is CSS, not WebGL: every surface is a `backdrop-filter` over the
+ * `.backdrop` colour field, styled by `DesktopMusic.module.scss` from the
+ * `--glass-*` tokens. There is no glass library, no `data-glass` attribute and
+ * nothing to initialise — which also means nothing can fail to initialise.
  */
 const DesktopMusic = function ({
     theme,
@@ -211,15 +182,6 @@ const DesktopMusic = function ({
     // not inside it — so the desktop layout only has to be able to ask for it.
     onOpenCache,
 }) {
-    // The LiquidGlass root and its one glass element — see the effect below.
-    const rootRef = useRef(null);
-    const barRef = useRef(null);
-    // The cover layer, so the shader's snapshot of it can be dropped when the
-    // song (and therefore the artwork) changes.
-    const coverRef = useRef(null);
-    // The live instance, in a ref because the render loop owns it: nothing on
-    // screen is derived from it.
-    const glassRef = useRef(null);
     const searchInputRef = useRef(null);
     const activeLyricRef = useRef(null);
     const pressYRef = useRef(0);
@@ -340,91 +302,6 @@ const DesktopMusic = function ({
         const input = searchInputRef.current;
         if (input) input.focus();
     }, [searchOpen]);
-
-    /* --- the play bar's glass ----------------------------------------------
-     *
-     * `@ybouane/liquidglass` renders the pill with a WebGL shader. The model is
-     * worth stating because it is not "style this element": the library
-     * rasterises every non-glass child of the root into a canvas (static ones
-     * once, cached), then for each glass element it crops that canvas at the
-     * element's own rectangle, blurs it, and runs the refraction shader over
-     * it. So the glass element must be a direct child of the root, and what the
-     * glass *shows* is whatever the root's other children painted there.
-     *
-     * Three things follow from that, and each is a decision:
-     *
-     *   - The root is `.root`, and `.bar` is already its direct child, so no
-     *     restructuring. `.backdrop` being an opaque full-viewport layer matters
-     *     more than it looks: the library starts each scene as solid white (the
-     *     root's own `background` is never captured — only its children are),
-     *     and an opaque child is the only thing that stops that white showing
-     *     through the glass.
-     *   - The import is dynamic. The library is ~100 kB of shader code that
-     *     reaches for `window` and a WebGL context the moment it is touched, and
-     *     a static export still evaluates this module on the server. Importing
-     *     inside the effect solves both, and keeps it out of the phone page's
-     *     bundle entirely — `/h5` never loads it.
-     *   - There is no CSS fallback behind the shader. The pill's surface is the
-     *     library's and only the library's — a `background` under a
-     *     semi-transparent shader would tint it and a CSS `border` would draw a
-     *     ring over the refraction, which is the opposite of the point. A
-     *     browser that cannot start the shader gets a bar with no surface,
-     *     which is the accepted cost of not owning the look in two places.
-     */
-    useEffect(() => {
-        const root = rootRef.current;
-        const bar = barRef.current;
-        if (!root || !bar) return undefined;
-
-        let cancelled = false;
-        let instance = null;
-
-        (async () => {
-            let LiquidGlass;
-            try {
-                ({ LiquidGlass } = await import('@ybouane/liquidglass'));
-            } catch (error) {
-                console.warn('DesktopMusic: liquid glass is unavailable', error);
-                return;
-            }
-            if (cancelled) return;
-
-            try {
-                instance = await LiquidGlass.init({ root, glassElements: [bar] });
-            } catch (error) {
-                console.warn('DesktopMusic: liquid glass did not start', error);
-                return;
-            }
-            if (cancelled) {
-                instance.destroy();
-                return;
-            }
-            glassRef.current = instance;
-        })();
-
-        return () => {
-            cancelled = true;
-            glassRef.current = null;
-            // Puts the canvas, the inline styles and the WebGL context back.
-            if (instance) instance.destroy();
-        };
-    }, []);
-
-    // The one thing the library cannot notice on its own: `.cover-bg` is a CSS
-    // `background-image` on a plain div, so nothing mutates when the artwork
-    // changes and the cached snapshot would keep showing the previous song.
-    // `markChanged` alone is not enough — it re-runs the shader over the *same*
-    // snapshot; the snapshot itself has to be dropped first.
-    useEffect(() => {
-        const instance = glassRef.current;
-        const layer = coverRef.current;
-        if (!instance || !layer) return;
-        instance.capture.invalidateCache(layer);
-        instance.markChanged(layer);
-        // Nothing is needed for the mount case: a song that arrives while
-        // `init()` is still running is already in the first snapshot, because
-        // the snapshot is taken after this effect's first run.
-    }, [coverUrl]);
 
     // Announce each mode change on the stage, but never the mode the page
     // happens to mount with (that is not a tap).
@@ -601,10 +478,7 @@ const DesktopMusic = function ({
     };
 
     return (
-        <div
-            ref={rootRef}
-            className={`${styles.root}${coverUrl ? ` ${styles['has-cover']}` : ''}`}
-        >
+        <div className={`${styles.root}${coverUrl ? ` ${styles['has-cover']}` : ''}`}>
             {/* The colour field the frosted surfaces sample — the root's own
                 background is never blurred by its children, so the gradients
                 have to be painted by a layer *behind* them. */}
@@ -625,7 +499,6 @@ const DesktopMusic = function ({
                 虚化" part: it is the page's light source, not a picture on it. */}
             {coverUrl && (
                 <div
-                    ref={coverRef}
                     className={styles['cover-bg']}
                     style={{ backgroundImage: `url("${coverUrl}")` }}
                     aria-hidden="true"
@@ -917,22 +790,8 @@ const DesktopMusic = function ({
                 <IconGear />
             </button>
 
-            {/* --- bottom: the capsule play bar ----------------------------
-                The pill is the one surface on this page whose look is not CSS.
-                `GLASS_CONFIG` owns every visual property; the stylesheet gives
-                it a box and nothing else. The injected shader canvas is the
-                element's first child at `z-index: -1`, which is why `.bar` must
-                keep its `z-index` (a stacking context is what puts the canvas
-                above the element's own background and below its content) and why
-                the element's real content — the seek rail, the record, the
-                title, the transport — stays live DOM rather than a snapshot. */}
-            <div
-                ref={barRef}
-                className={styles.bar}
-                data-config={JSON.stringify(
-                    theme === 'dark' ? GLASS_CONFIG.dark : GLASS_CONFIG.light,
-                )}
-            >
+            {/* --- bottom: the capsule play bar ---------------------------- */}
+            <div className={styles.bar}>
                 {/* The progress rides the capsule's *upper* edge — inside the
                     glass, one hairline above the content row, so the bar still
                     reads as one line of content and the seek target spans the

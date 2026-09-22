@@ -9,7 +9,6 @@
         "start": "next start"
     },
     "dependencies": {
-        "@ybouane/liquidglass": "^1.0.3",
         "next": "^15.5.4",
         "prop-types": "^15.8.1",
         "react": "^19.1.1",
