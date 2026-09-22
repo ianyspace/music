@@ -5,7 +5,7 @@
  * The other scripts in here render markup so it can be *looked at*. This one
  * exists for the questions a screenshot cannot answer and a build cannot
  * either: does the page survive a click, does a track actually start playing,
- * does anything throw. `/3d` shipped once with a bug that killed the whole page
+ * does anything throw. A page once shipped with a bug that killed the whole page
  * the moment a track was clicked — every screenshot of it looked fine, because
  * the failure only happened *after* the click, and the local dev copy could not
  * see it either (the library worker's CORS allows only the live origin, so a
@@ -53,14 +53,20 @@
  *      checked for the thing it used to be: 听歌排行's 收起 button puts the
  *      visitor back on the list with no sheet left standing, instead of the
  *      two-screen loop it used to be. See `target.shell`.
- *   9. **The song line's join is even.** "title - artist" is the one label whose
- *      spacing comes from its own whitespace, and the Marquee's wrapper used to
- *      be a flex container — which blockified each child run and dropped the
- *      collapsible space at the start of a line, so the gap in front of the
- *      hyphen vanished while the one behind it stayed. Two pixels of asymmetry
- *      are invisible in a screenshot and obvious on a phone, so this measures
- *      the ink-to-ink gap on each side of the hyphen with a Range per glyph.
- *      Pages with no such label (the 3D room) say so instead of passing.
+ *   9. **The song line's join is even, and it scrolls only when it has to.** The
+ *      first is because "title - artist" is the one label whose spacing comes
+ *      from its own whitespace, and the Marquee's wrapper used to be a flex
+ *      container — which blockified each child run and dropped the collapsible
+ *      space at the start of a line, so the gap in front of the hyphen vanished
+ *      while the one behind it stayed. Two pixels of asymmetry are invisible in
+ *      a screenshot and obvious on a phone, so this measures the ink-to-ink gap
+ *      on each side of the hyphen with a Range per glyph. The second is the same
+ *      Range trick on the same element, and it forces the slot to two widths
+ *      either side of the label: the overflow decision used to count the item's
+ *      own padding, which is the gap between the two copies at the wrap point,
+ *      so a label with 20px to spare scrolled and one overflowing by under 40px
+ *      was clipped without a scroll or a fade. Pages with no such label say so
+ *      instead of passing.
  *  10. **The two lyric styles are two different things.** Not two skins: 普通
  *      scales the active line and keeps its neighbours, 沉浸单行 hides all but
  *      three lines and grows the line being sung up from its neighbours' size.
@@ -149,33 +155,6 @@ const ROW_DRAWER = {
 
 const PAGES = [
     {
-        name: '3d',
-        path: '/3d/',
-        rows: 'aside ul li button',
-        lyrics: {
-            selector: 'header button[title="显示歌词"], header button[title="隐藏歌词"]',
-            cycle: true,
-        },
-        list: {
-            selector: 'header button[title="收起列表"], header button[title="展开列表"]',
-            cycle: true,
-        },
-        // Space is play/pause, so the pass says so out loud: pause, resume,
-        // then seek, which must not disturb playback. (Arrows seek here, not
-        // skip — the room has no next/previous binding.)
-        keys: [
-            { key: ' ', paused: true },
-            { key: ' ', paused: false },
-            { key: 'ArrowRight', paused: false },
-        ],
-        // The beat's own repair. The phone has the same two checks in its own
-        // stage, written against `useBeat`; this one is here because the 3D
-        // stage taps the element through `scene/analyzer.js` and would go quiet
-        // on its own — and because a page whose frame loop is the only clock is
-        // exactly the case that was wrong the first time.
-        nudge: true,
-    },
-    {
         name: 'desktop',
         path: '/desktop/',
         // The rows carry `title`; the row menu beside each one carries
@@ -261,7 +240,13 @@ const option = (name, fallback) => {
 };
 
 if (!url && !flag('all')) {
-    process.stderr.write('usage: node scripts/drive-page.js <url>|--all [--insecure] [--track=X] [--size=WxH] [--out=name]\n');
+    // `--base` is named here even though it has a default, because that default
+    // is the deployed site: `--all` with no `--base` tests production, and a
+    // local run that forgets it silently reports on code that has not been
+    // pushed yet. Cost a whole round of debugging a fix that was never deployed.
+    process.stderr.write(
+        'usage: node scripts/drive-page.js <url>|--all [--insecure] [--base=ORIGIN] [--track=X] [--size=WxH] [--out=name]\n',
+    );
     process.exit(2);
 }
 
@@ -496,9 +481,9 @@ const drive = async (target, index) => {
     const note = (text) => process.stdout.write(`  --   ${text}\n`);
 
     /**
-     * The one reading that means the same thing in all three layouts: the
+     * The one reading that means the same thing in both layouts: the
      * single `<audio>` that `core/PlayerAudio` renders. Reading the transport
-     * button instead would mean three different selectors and three different
+     * button instead would mean two different selectors and two different
      * opinions about what "playing" looks like.
      */
     const AUDIO = `(() => {
@@ -531,9 +516,9 @@ const drive = async (target, index) => {
      * Poll for a condition instead of sleeping a fixed number of seconds and
      * hoping.
      *
-     * The fixed wait is what made this file lie once: `/3d` pulls three.js
-     * before it renders anything, and on a cold live load that is slower than
-     * the phone or the desktop page, so 9s expired with the list still empty
+     * The fixed wait is what made this file lie once: one page pulled a heavy
+     * library before it rendered anything, and on a cold live load that is slower
+     * than the others, so 9s expired with the list still empty
      * and the run reported "the list arrived: 0 rows" against a page that was
      * merely slow. Waiting on the condition and reporting how long it took
      * turns "slow" and "broken" into different answers.
@@ -672,8 +657,8 @@ const drive = async (target, index) => {
 
     /**
      * The state a toggle reports to assistive tech. Both trees already publish
-     * it — `aria-pressed` on the lyric buttons and on the 3D list button,
-     * `aria-expanded` on the desktop list button — so this needs no per-page
+     * it — `aria-pressed` on the lyric buttons, `aria-expanded` on the desktop
+     * list button — so this needs no per-page
      * knowledge beyond the selector, and it survives the label changing.
      */
     const toggleState = (selector) => `(() => {
@@ -1227,6 +1212,152 @@ const drive = async (target, index) => {
         );
     }
 
+    /* --- and the label only scrolls when it really does not fit -------------
+     *
+     * The Marquee used to decide with `inner.offsetWidth`, which includes the
+     * item's own padding — the gap between the two copies at the wrap point. So
+     * the test was `ink + 40 > slot`, and both halves of that were on screen: a
+     * label with 20px to spare scrolled anyway (童年收（cover：F.Be.I音乐团队）,
+     * 281.7px of ink in a 302px slot), and, from the other side, a label that
+     * overflowed by under 40px was treated as fitting — clipped at the edge with
+     * no scroll and no fade, which is the worse one because nothing on screen
+     * says there is more text.
+     *
+     * The reading is the label's own ink, from a Range over the item's contents:
+     * the same technique as the join above, and the only way to get at the
+     * glyphs when the box around them carries padding. Note that the box's
+     * `scrollWidth` is not an answer here — while the marquee runs there are two
+     * copies of the label in it, so it always looks like a large overflow.
+     *
+     * The two decisions only differ in a band one gap wide just under the slot,
+     * and which label the visitor happens to be on decides whether an honest
+     * reading lands in it. So the slot is *forced* into that band instead — and
+     * forced to either side of it, because the two readings catch different
+     * halves: 10px narrower than the ink is a label that overflows by less than
+     * the gap, which the right answer can only give if the component re-measured
+     * after the slot changed (that is what covers the ResizeObserver — take it
+     * out and the decision stays where the old width left it); 10px wider is the
+     * one band where the old test and the right one disagree.
+     *
+     * The narrow side is asked *first*, and that order is the whole reason the
+     * pair proves anything. `false` is also what a component that never measures
+     * at all reports, so asking "does it stop scrolling once it fits" before
+     * anything has made it scroll is a reading that can come out right for the
+     * wrong reason — it is only a real answer if the component has already been
+     * made to scroll and then un-made. Narrow first, and each reading starts
+     * from the opposite answer, so neither can be reached without a real
+     * re-measure.
+     *
+     * Forced rather than found by playing a different song, because a song change
+     * brings a different label with it and the width would no longer be about the
+     * text on screen.
+     */
+    const marqueeFit = await evaluate(`(() => {
+        const label = document.querySelector(
+            '[class*="mini-label"],[class*="bar-label"],[class*="np-marquee"]',
+        );
+        if (!label) return { found: false };
+        const item = label.querySelector('[class*="Marquee_item__"]');
+        if (!item) return { found: true, error: 'no Marquee item inside the label' };
+        const range = document.createRange();
+        range.selectNodeContents(item);
+        const ink = +range.getBoundingClientRect().width.toFixed(1);
+        const gap = parseFloat(getComputedStyle(item).paddingRight) || 0;
+        if (!(gap > 0)) return { found: true, error: 'no wrap gap to force the slot against' };
+        return { found: true, ink, gap };
+    })()`);
+    if (!marqueeFit || !marqueeFit.found) {
+        note('no title/artist label on this page — the marquee fit was not measured');
+    } else if (marqueeFit.error) {
+        check('the marquee label has an item to measure', false, marqueeFit.error);
+    } else {
+        const readSlot = `(() => {
+            const label = document.querySelector(
+                '[class*="mini-label"],[class*="bar-label"],[class*="np-marquee"]',
+            );
+            if (!label) return { error: 'the label went away' };
+            const item = label.querySelector('[class*="Marquee_item__"]');
+            const range = document.createRange();
+            range.selectNodeContents(item);
+            return {
+                ink: +range.getBoundingClientRect().width.toFixed(1),
+                slot: label.clientWidth,
+                scrolling: /text-marquee/.test(label.className),
+            };
+        })()`;
+
+        // `expect` is the answer the component should settle on for this width,
+        // and this waits for the answer rather than sleeping a fixed 400ms and
+        // hoping the page got there. The width change reaches the component
+        // through a ResizeObserver, whose callback rides on a rendering
+        // opportunity, and a fixed sleep is a bet that the page got one in time.
+        // Same rule as the transition checks elsewhere in this file — never
+        // gamble on render timing with a sleep. The `seen` trace makes a
+        // timeout diagnosable: `[false]` means it never moved, `[true,false]`
+        // means it moved and was put back, and those are different bugs.
+        const forceSlot = async (width, expect) => {
+            await evaluate(`(() => {
+                const label = document.querySelector(
+                    '[class*="mini-label"],[class*="bar-label"],[class*="np-marquee"]',
+                );
+                if (!label) return;
+                // flex: none comes with the width, because the slot is a flex
+                // item with flex: 1 — a fixed basis of zero — and a flex item's
+                // width is ignored while the basis is not auto.
+                label.style.flex = 'none';
+                label.style.width = ${JSON.stringify(`${width}px`)};
+            })()`);
+            const waited = await waitFor(
+                readSlot,
+                (reading) => reading && !reading.error && reading.scrolling === expect,
+                4000,
+            );
+            return {
+                ...waited.value,
+                timedOut: waited.timedOut,
+                trace: trace(waited),
+            };
+        };
+
+        const tight = Math.ceil(marqueeFit.ink) - 10;
+        const cramped = await forceSlot(tight, true);
+        const tightHeld = !cramped.error && Math.abs(cramped.slot - tight) <= 2;
+        check(
+            'the song line scrolls once the label no longer fits',
+            tightHeld && cramped.scrolling === true,
+            cramped.error || `${cramped.ink}px of text in a ${cramped.slot}px slot, forced to ${tight}px `
+                + `— scrolling=${cramped.scrolling}`
+                + `${cramped.timedOut ? ` after 4s of asking (saw ${cramped.trace})` : ''}`
+                + `${tightHeld ? '' : ' — the slot did not take the forced width, so this proves nothing'}`,
+        );
+
+        const roomy = Math.ceil(marqueeFit.ink) + 10;
+        const fits = await forceSlot(roomy, false);
+        const roomyHeld = !fits.error && Math.abs(fits.slot - roomy) <= 2;
+        check(
+            '...and stops scrolling once it fits again',
+            roomyHeld && fits.scrolling === false,
+            fits.error || `${fits.ink}px of text in a ${fits.slot}px slot, wrap gap ${marqueeFit.gap}px `
+                + `— scrolling=${fits.scrolling}`
+                + `${fits.timedOut ? ` after 4s of asking (saw ${fits.trace})` : ''}`
+                + `${roomyHeld ? '' : ' — the slot did not take the forced width, so this proves nothing'}`,
+        );
+
+        await evaluate(`(() => {
+            const label = document.querySelector(
+                '[class*="mini-label"],[class*="bar-label"],[class*="np-marquee"]',
+            );
+            if (!label) return;
+            label.style.flex = '';
+            label.style.width = '';
+        })()`);
+        // The inline width is gone synchronously, but what the component decides
+        // about the wider slot arrives through the same observer — and the stages
+        // after this one read the same bar, so wait for the width to come back
+        // rather than sleeping.
+        await waitFor(readSlot, (reading) => reading && !reading.error && reading.slot !== roomy, 2000);
+    }
+
     for (const step of target.keys || []) {
         await evaluate(
             `window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(step.key)}, bubbles: true }))`,
@@ -1257,147 +1388,6 @@ const drive = async (target, index) => {
     // purpose: the persistence half of it reloads the page, which stops the
     // music they read.
     if (target.lyricStyles) await exerciseLyricStyles(target.lyricStyles);
-
-    /* --- and the repair the visitor had to do by hand ----------------------
-     *
-     * The same wire, the same silence, a different symptom. `createAnalyzer`
-     * taps the app's one `<audio>` element exactly as the phone's `useBeat`
-     * does, so a source node that comes back from an interruption without its
-     * audio goes just as quiet here — and on this page it reads as a frozen
-     * glow rather than as a missing beat, which is why it is worth its own
-     * stage rather than a sentence in the h5 one.
-     *
-     * The silence is forced rather than waited for: the analyser is overridden
-     * to report zeros, which is exactly what a dead source node reports, and
-     * within a few seconds the element must have been paused and started again.
-     * Nothing else in the app pauses it, so a pause event here is the nudge and
-     * cannot be anything else.
-     */
-    if (target.nudge) {
-        await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            if (!a) return 'no audio';
-            window.__nudgePauses = 0;
-            a.addEventListener('pause', () => { window.__nudgePauses += 1; });
-            if (a.paused) a.play();
-            return 'playing';
-        })()`);
-        // Long enough for playback to be under way and the loop to be reading
-        // the real analyser, so that what follows is the override's doing.
-        await sleep(6000);
-        // ...and long enough that the repair had every chance to misfire: a
-        // nudge that fires while the graph is reading music pauses a healthy
-        // player, which is worse than the silence it was written for. Same
-        // counter the next check waits on. This is the 3D copy's own check
-        // rather than the phone's: `analyzer.js` and `useBeat.js` are two
-        // implementations, so a misfire in one says nothing about the other.
-        const whileHealthy = await evaluate('(() => (window.__nudgePauses || 0))()');
-        check(
-            'a player that is reading music is never nudged',
-            Number(whileHealthy) === 0,
-            `${whileHealthy} pause(s) in 6.0s of healthy playback`,
-        );
-        const zeroed = await evaluate(`(() => {
-            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
-            if (!proto || !proto.getByteFrequencyData) return 'no analyser to override';
-            if (!window.__realGetByteFrequencyData) {
-                window.__realGetByteFrequencyData = proto.getByteFrequencyData;
-            }
-            proto.getByteFrequencyData = function (array) { array.fill(0); };
-            return 'zeroed';
-        })()`);
-        const nudged = await waitFor(
-            '(() => (window.__nudgePauses || 0))()',
-            (v) => Number(v) > 0,
-            12000,
-        );
-        check(
-            'a graph that reads nothing while the element plays gets a nudge',
-            Number(nudged.value) > 0,
-            `${zeroed}, ${nudged.value} pause(s) in ${(nudged.ms / 1000).toFixed(1)}s`,
-        );
-        const afterNudge = await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            return a ? (a.paused ? 'paused' : 'playing') : 'gone';
-        })()`);
-        check('...and the nudge leaves the music playing', afterNudge === 'playing', `${afterNudge}`);
-
-        /* --- and it still works with no frame loop at all ------------------
-         *
-         * The nudge above proves the repair, and it proves it in the one place
-         * the repair was *not* missing: `requestAnimationFrame` does not run
-         * for a hidden page, so a frame loop was never going to fix a phone in
-         * a pocket — and a phone in a pocket auto-advancing to a silent next
-         * song is the report this whole thing exists for. The repair therefore
-         * also rides on the element's own `timeupdate`, which keeps firing for
-         * as long as there is audio, on screen or off.
-         *
-         * Both halves are forced rather than waited for. The page is told it is
-         * hidden, and the frame loop is taken away — the next
-         * `requestAnimationFrame` hands back nothing, so the loop does not
-         * reschedule itself and `timeupdate` is the only clock left. The
-         * analyser is zeroed again, and the element must still be paused and
-         * started again, by a page that is drawing nothing at all.
-         *
-         * What this checks is the code path, not the platform: Chrome's own
-         * idea of whether this page is visible is untouched, so nothing here is
-         * throttled the way a real background page would be.
-         */
-        const hidden = await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            if (!a) return 'no audio';
-            window.__realRaf = window.requestAnimationFrame;
-            window.requestAnimationFrame = function () { return 0; };
-            Object.defineProperty(document, 'hidden', {
-                get: function () { return true; },
-                configurable: true,
-            });
-            window.__nudgePauses = 0;
-            // Which resource the element is on, so that a pause which is really
-            // the next track arriving can be told apart from the repair. See
-            // below.
-            window.__nudgeSrc = String(a.currentSrc);
-            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
-            if (proto) proto.getByteFrequencyData = function (array) { array.fill(0); };
-            return 'hidden, no frame loop';
-        })()`);
-        // The nudge above spent one of the three a track gets, and the next one
-        // is not allowed until the cooldown has passed — which is the point of
-        // the cooldown, so the wait is the feature working.
-        const hiddenNudged = await waitFor(
-            '(() => (window.__nudgePauses || 0))()',
-            (v) => Number(v) > 0,
-            25000,
-        );
-        // A pause on its own proves nothing here, and finding that out is what
-        // the mutation test for this check is: a track that ends while it is
-        // running pauses the element too, because the next one arrives as a new
-        // `src` — so with the `timeupdate` listener renamed away, this check
-        // still went green on a pause that had nothing to do with the repair.
-        // The repair leaves the element on the track it was already on, so the
-        // pause only counts if the resource did not change. Without that, this
-        // check passes for the wrong reason, which is the one failure mode a
-        // smoke test cannot afford.
-        const sameTrack = await evaluate(`(() => {
-            const a = document.querySelector('audio');
-            return a ? String(a.currentSrc) === window.__nudgeSrc : false;
-        })()`);
-        check(
-            '...and it still runs with no frame loop, off screen, where the report came from',
-            Number(hiddenNudged.value) > 0 && sameTrack === true,
-            `${hidden}, ${hiddenNudged.value} pause(s) in ${(hiddenNudged.ms / 1000).toFixed(1)}s`
-            + (sameTrack === true ? '' : ', but the element moved on to another track — that pause was not the repair'),
-        );
-        await evaluate(`(() => {
-            window.requestAnimationFrame = window.__realRaf;
-            delete document.hidden;
-            const proto = window.AnalyserNode && window.AnalyserNode.prototype;
-            if (proto && window.__realGetByteFrequencyData) {
-                proto.getByteFrequencyData = window.__realGetByteFrequencyData;
-            }
-            return 'restored';
-        })()`);
-    }
 
     /* --- the row drawer, shared by 置顶 and 我喜欢 -------------------------
      *
@@ -2631,8 +2621,8 @@ const drive = async (target, index) => {
 const targets = flag('all')
     ? PAGES.map((p) => ({ ...p, url: `${option('base', 'https://ianyspace.github.io/music')}${p.path}` }))
     // A single URL picks its own spec from the path, so pointing it at the
-    // phone page does not click the 3D page's selectors and call the result a
-    // pass. An unknown path gets the 3D spec, which is the strictest.
+    // phone page does not click the wide screen's selectors and call the result
+    // a pass. An unknown path gets the desktop spec.
     : [(() => {
         const spec = PAGES.find((p) => url.includes(p.path.replace(/\/$/, ''))) || PAGES[0];
         return { ...spec, url };

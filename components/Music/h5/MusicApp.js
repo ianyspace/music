@@ -253,7 +253,7 @@ const MusicApp = function () {
     // The QQ number behind the identity card. It lives in `usePlayer` now
     // rather than here, because it is no longer only about the avatar: it is
     // also the key every play count and every like is recorded under, and both
-    // are recorded by the player — which all three layouts share. One storage
+    // are recorded by the player — which both layouts share. One storage
     // read, one answer to "who is listening".
     //
     // What stays here is the *picture*: the URL and the "it failed to load"

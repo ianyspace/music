@@ -560,9 +560,9 @@
    spends the same 0.42s but spreads the change across it: you see the line
    grow, and it lands instead of stopping.
 
-   0.42s is also about as long as this can be. A short line can be over in 0.6s
-   (the floor the three.js lyrics clamp their line spans to), and an animation
-   longer than that would still be growing when the next line took over.
+   0.42s is also about as long as this can be. A short line can be over in
+   well under a second, and an animation longer than that would still be
+   growing when the next line took over.
 
    `both` fill mode, so the line holds the end state and nothing snaps when the
    next line takes over. */

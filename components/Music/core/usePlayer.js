@@ -143,7 +143,7 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // The visitor's QQ number, as typed on the phone's 账号 page. It lives here
     // rather than in `h5/MusicApp` because it is no longer only about the
     // avatar: it is also the key every play count is recorded under, and the
-    // play counts are recorded by *this* hook, which all three layouts share.
+    // play counts are recorded by *this* hook, which both layouts share.
     // A number read from storage by the shell and by the player separately
     // would be two answers to "who is listening".
     const [qq, setQq] = useState('');

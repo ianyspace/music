@@ -1,5 +1,4 @@
 import React from 'react';
-import { useRouter } from 'next/router';
 
 import { parseTrackName, trackGradient } from '../shared';
 import usePlayer from '../core/usePlayer';
@@ -114,15 +113,6 @@ const DesktopApp = function () {
         onMetadata,
     } = usePlayer({ lyricsAutoOpen: true });
 
-    // `router.push` rather than a `<Link>`: the entry lives three levels down
-    // in the settings sheet, and a link rendered inside a scrollable dialog
-    // would inherit its stacking and its closing animation. The route is
-    // pushed from the shell, which is the only part that knows about routes.
-    const router = useRouter();
-    const openThree = React.useCallback(() => {
-        router.push('/3d');
-    }, [router]);
-
     return (
         <div className={`${styles.page}${theme === 'dark' ? ` ${styles['theme-dark']}` : ''}`}>
             <PageHead
@@ -170,7 +160,6 @@ const DesktopApp = function () {
                 rowMenuId={rowMenuId}
                 onOpenRowMenu={openRowMenu}
                 onOpenCache={goCacheManager}
-                onOpen3D={openThree}
             />
 
             {/* The row drawer, opened by a row's own three-dots button. It is

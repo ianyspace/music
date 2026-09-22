@@ -7,9 +7,9 @@ import { fetchPlayStats } from '../playStats';
  *
  * It sits in `h5/` rather than in `core/` because it is the *only* thing in the
  * app that talks to the play-count API and exactly one screen ever shows it —
- * `core/` is the three layouts' shared half, and a ranking the wide screen and
- * the 3D tree cannot render does not belong there. (The data layer it wraps,
- * `../playStats`, *is* in the root, because the player — which all three trees
+ * `core/` is the layouts' shared half, and a ranking only the phone renders
+ * does not belong there. (The data layer it wraps,
+ * `../playStats`, *is* in the root, because the player — which both trees
  * share — records plays through it.)
  *
  * It is a hook of its own rather than more fields on `usePlayer` for the same

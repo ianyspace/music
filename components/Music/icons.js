@@ -356,17 +356,6 @@ export const IconClose = ({ size = 18 }) => (
     </SvgStroke>
 );
 
-// A wireframe box: the way into the 3D room from the settings sheet. Drawn as
-// the shared set draws everything — a 24-box at stroke 2 — so it sits with the
-// rows around it rather than looking imported from somewhere else.
-export const IconCube = ({ size = 18 }) => (
-    <SvgStroke size={size}>
-        <path d="M12 2.8 20.2 7.1v9.8L12 21.2 3.8 16.9V7.1z" />
-        <path d="M3.8 7.1 12 11.6l8.2-4.5" />
-        <path d="M12 11.6v9.6" />
-    </SvgStroke>
-);
-
 // Music Space wordmark badge: the app's red→pink gradient tile with a clean
 // beamed double note, so the header reads as a brand rather than a section
 // title. Stems sit on the noteheads' right edge and the beam joins their tops,

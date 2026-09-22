@@ -6,22 +6,20 @@
 代码从博客仓库 `space` 的 `components/Music/` + `pages/music/` 整体切出，
 播放逻辑一行没改，只替换了三个博客专有的依赖（见下方「迁移时替换了什么」）。
 
-**`/h5`、`/desktop`、`/3d` 是三棵完全独立的组件树**：彼此不 import 任何一个文件，
+**`/h5`、`/desktop` 是两棵完全独立的组件树**：彼此不 import 任何一个文件，
 只共用 `components/Music/core/`（状态机 + 数据层 + 面板内容）和它旁边的纯函数。
-桌面端的每一个面都是**纯 CSS 毛玻璃**（`backdrop-filter` + `--glass-*` token）；
-3D 版是唯一有 WebGL 的树（`three` + 自有的 `--t-*` token，只深色）。
-详见下方「三套布局」。
+桌面端的每一个面都是**纯 CSS 毛玻璃**（`backdrop-filter` + `--glass-*` token）。
+详见下方「两套布局」。
 
 ## 目录
 
 | 路径 | 作用 |
 | --- | --- |
 | `pages/index.js` | 入口路由，按屏宽决定跳 `/h5` 还是 `/desktop` |
-| `pages/h5.js` / `pages/desktop.js` / `pages/3d.js` | 三个薄路由，各自只渲染一棵树，互不相干 |
+| `pages/h5.js` / `pages/desktop.js` | 两个薄路由，各自只渲染一棵树，互不相干 |
 | `components/Music/h5/` | 手机端：`MusicApp` 外壳 + 一个页面（列表）+ 迷你条 + 播放页 + 五个 `SheetChrome` 面板（账号 / 听歌排行 / 音乐库 / 缓存 / 云盘）+ 两个底部抽屉（⋮ / 行抽屉） |
 | `components/Music/desktop/` | 宽屏端：`DesktopApp` 外壳 + 沉浸式舞台（`DesktopMusic`）+ 玻璃弹窗 + 行抽屉 |
-| `components/Music/three/` | 3D 版：`ThreeApp` 外壳 + `ThreeStage`（canvas/rAF/指针）+ `ThreeHud` + `scene/`（纯 three.js，不含 React） |
-| `components/Music/core/` | 三套布局共用的中性核心（见下方「三套布局」） |
+| `components/Music/core/` | 两套布局共用的中性核心（见下方「两套布局」） |
 | `components/Music/`（根） | 只放共享件：`Cover` / `Marquee` / `icons` / `shared` / `audioCache` / `librarySource` / `playStats` / `likes` |
 | `cloudflare-worker/schema.sql` | D1 的建表语句（`plays` + `likes`；Worker 自己也会跑一遍同样的 DDL） |
 | `lib/cache/indexedDb.js` | IndexedDB 薄封装（缓存存储层） |
@@ -42,9 +40,9 @@
   kebab-case 类名必须写 `styles['foo-bar']`。
   CSS Modules 生成的类名是 `[文件名]__[类名]__[hash]`，**目录不进名字** ——
   所以把文件挪进子目录不会改类名（这次拆分正是靠这一点）。
-- **三棵树不许互相 import**：`components/Music/h5/**` 里不许出现 `desktop` 或 `three`，
-  其余同理。共用的东西只能落在 `components/Music/core/` 或 `components/Music/` 根下
-  （根下的 `icons.js` 是共享图标集；`three/icons.js` 是 3D 版**自己的**一套，两边不通用）。
+- **两棵树不许互相 import**：`components/Music/h5/**` 里不许出现 `desktop`，其余同理。
+  共用的东西只能落在 `components/Music/core/` 或 `components/Music/` 根下
+  （根下的 `icons.js` 是共享图标集）。
   这条没有脚本兜底（见「检查脚本已删除」），改完请自己 `grep` 一遍。
 - **basePath**：`config/index.js` 的 `site.pathPrefix = '/music'` 是唯一来源（`next.config.js` 读它）。
   `next/link`、`next/image`、`_next/*` 会自动带上；**`public/` 里的文件不会**，所以手写
@@ -71,6 +69,19 @@
   `display: block`，子块保持 inline，`" - "` 原样出现。`text-align: left` 是配套的：
   居中变体（播放页顶栏那一行）的祖先设了 `text-align: center`，而 flex 容器根本不看这个值，
   一块窄于自己内容的文字必须还是往右溢，不能两头都冒出去。
+- **`Marquee` 里有两个宽度，问「放不放得下」只能用 `ink` 那个**（踩过坑）：
+  `inner.offsetWidth` 是 `advance` —— 一个循环走多远，也就是**标签 + 折返处那个间距**
+  （`.item` 自己的 padding）。它只该拿去算动画时长。而「放不放得下」只跟字形有关，
+  所以要用 `Range.selectNodeContents(inner).getBoundingClientRect().width` 量 `ink`。
+  拿 `advance` 去比，判断式就变成了 `ink + 40 > slot`，**两个方向都错**：
+  一个还空 20px 的标签照样滚动（`童年收（cover：F.Be.I音乐团队）` 实测 281.7px 的字
+  在 302px 的槽里，在滚），反过来**溢出不到 40px 的标签被判成放得下 —— 直接裁掉，
+  既没有滚动也没有渐隐**，后者更糟，因为屏幕上没有任何东西说后面还有字。
+  居中变体左边也带 padding，所以它算的是 80。
+- **槽宽变了要重新问一次，`ResizeObserver` 就是干这个的**：effect 只在标签换了的时候重跑，
+  所以旋转、改窗口大小、旁边那个邻居变长把这一行挤窄 —— 这些都不会触发重新测量，
+  于是「刚开始溢出」的那个标签会一直按旧宽度的结论被裁着。`measure()` 只写类名和动画时长，
+  两个都在它自己观测的那个盒子里，所以不会自激。
 - **歌词样式：挂在「换行」上就够了**（`h5/NowPlaying.js` 的 `LYRIC_OPTIONS`，
   两个样式：普通 / 沉浸单行）。沉浸单行 = 只留当前行和上下各一行，当前行从更小的尺寸长起来。
   它是**靠换行触发、纯 CSS** 的，而这是这个页面最省力的地方：换行时组件本来就会重渲一次，
@@ -427,7 +438,7 @@
     因为拒绝这种输入教不了任何人任何事。
   - **号码本身归 `usePlayer`，不是归这个面板**（`usePlayer` 的 `qq` / `saveQq`）。它以前是
     `h5/MusicApp` 的 state，那时它只服务于头像；现在它同时是播放上报和喜欢的 key，
-    而上报发生在 `usePlayer` 里（三套布局共用），一个值两处读就是「谁在听」有两个答案。
+    而上报发生在 `usePlayer` 里（两套布局共用），一个值两处读就是「谁在听」有两个答案。
     读取放在 effect 里而不是 `useState` 初值里（静态导出，SSR 会先跑一遍），`''` 是一个真值
     （清除写的），所有读者都把它读成「没绑定」而不是「还没读到」。
   - **确认号码会把本机的喜欢一起带过去**（`adoptGuestLikes`）：访客在没号码时喜欢的歌，
@@ -782,6 +793,13 @@ Worker 里没有任何速率限制，免费版 D1 的日写入量是**十万行�
   而漏写 `/m` 会让肯定断言以一个和样式无关的理由失败。两个都真踩过。
 - **锚定源码时用 `\r?\n`，不要用裸 `\n`**：工作区是 CRLF、CI 是 LF，裸 `\n` 会在其中
   一边静默匹配不到。
+- **`--all` 不加 `--base` 打的是线上站**（默认 `https://ianyspace.github.io/music`），
+  所以「本地跑一遍 `--all`」这句话里如果漏了 `--base`，你测的是**上一次部署**，
+  而失败信息看起来和本地代码一模一样。这个坑踩过一次：新写的断言在 `--all` 里红了、
+  单页跑绿的，于是花了很久去怀疑「`--all` 环境里 ResizeObserver 是不是不投递」——
+  其实红的那份是线上还没部署的旧代码，**断言报得完全正确**。
+  单页那条路要显式给 URL，所以它天然是对的，两边的差异就是这个。
+  用法提示行现在把 `--base` 写出来了，就是为了这个。
 - **模板字符串（preview 脚本里那整页 HTML）的注释里不要写反引号**：反引号会把模板提前闭合，
   报成 `SyntaxError: Unexpected identifier`，而且指到的行离真正的错误很远。这个坑踩过两次
   （`locate-in`、`pointer-events: none`），照常写 `pointer-events:none` 就行。
@@ -830,25 +848,40 @@ Worker 里没有任何速率限制，免费版 D1 的日写入量是**十万行�
   用完 `{ features: [] }` 复位。值得单独断言：覆盖 `.lyrics-solo .lyric-active` 必须写
   两个类，写成 `.lyric-active` 会静默失效 —— 这种「看起来完全正确但不生效」的规则
   只有真跑一次才知道（变异验证时它确实红了）。
+- **要断言「窄了才滚」，就把槽宽掐到标签两侧去，别指望某首歌刚好合适**：
+  靠曲库里的歌去凑，读数会随曲库变，而且两条断言里总有一条是白过的
+  （实测三条绿色读数里两条是 `159.9 <= 302`，什么都没证明）。做法是先量出 `ink`，
+  再把它分别掐到 `ink + 10` 和 `ink − 10`：前者「放得下」只有修好了才对，
+  后者「溢出」正好覆盖 `ResizeObserver` 那条路径。
+- **两条断言里如果有一条的期望值正好是「什么都没发生」的默认值，就先问另一条**：
+  「放得下时不要滚」的期望是 `false`，而 `false` 也正是「组件压根没测量过」的样子，
+  所以先问它的话，即使组件完全不工作也会绿。改成**先掐窄（期望 `true`）、再掐宽
+  （期望 `false`）**，两条就都从相反的答案出发，谁也白过不了。
+  **期望值是默认值的那条断言，等于没写** —— 这条比上面那条更常见。
+- **断言「等某个异步结果」要用 `waitFor` 轮询，不要睡固定时长**：`ResizeObserver`、
+  过渡、重渲染都骑在渲染时机上，睡 400ms 是在赌这一帧来了没有。
+  `waitFor` 的 `seen` 轨迹还顺便把「一直没变」和「变了又被改回去」分开 ——
+  这是两种不同的 bug，报出来不一样才查得动。
+- **`flex: 1` 的元素上写 `width` 是无效的**：basis 是固定的 0，所以掐槽宽必须同时写
+  `flex: none`。只写 `width` 的话测试会以一个和被测代码无关的理由通过 —— 所以
+  掐完要**回头断言槽宽真的变成了目标值**（`Math.abs(slot - forced) <= 2`）。
 
-## 三套布局
+## 两套布局
 
 ```
 pages/h5.js ───────▶ components/Music/h5/MusicApp.js ────────┐
-                                                              │
-pages/desktop.js ──▶ components/Music/desktop/DesktopApp.js ─┼─▶ components/Music/core/
-                                                              │   + Cover/Marquee/icons/
-pages/3d.js ───────▶ components/Music/three/ThreeApp.js ─────┘   shared/audioCache/librarySource
+                                                              ├─▶ components/Music/core/
+pages/desktop.js ──▶ components/Music/desktop/DesktopApp.js ─┘   + Cover/Marquee/icons/
+                                                                  shared/audioCache/librarySource
 ```
 
-三棵树之间**没有任何 import**。`/h5` 里没有一行代码知道桌面端存在，反之亦然；
-`/3d` 也不 import 另外两棵树里的任何一个文件。
+两棵树之间**没有任何 import**。`/h5` 里没有一行代码知道桌面端存在，反之亦然。
 共用部分按职责分三块：
 
 | `core/` 文件 | 是什么 | 为什么放这儿 |
 | --- | --- | --- |
-| `usePlayer.js` | 全部播放状态：曲库、缓存、歌词、Google、主题、抽屉开关 | 三套布局要共享**行为**，且必须逐字一致 |
-| `PageHead.js` | `<Head>` 标题 + GSI `<Script>` | 两个页面都要有同样的 title 和同一份 GSI 加载错误文案（3D 版**不用**它，见下） |
+| `usePlayer.js` | 全部播放状态：曲库、缓存、歌词、Google、主题、抽屉开关 | 两套布局要共享**行为**，且必须逐字一致 |
+| `PageHead.js` | `<Head>` 标题 + GSI `<Script>` | 两个页面都要有同样的 title 和同一份 GSI 加载错误文案 |
 | `PlayerAudio.js` | 那唯一一个 `<audio>` | 六种 handler 由 `usePlayer` 统一返回，少接一个就是「进度条永远不动」且不报错 |
 | `CacheContent.js` | 缓存管理的**内容** | 两个面板的**外壳**不同（底部抽屉 vs 玻璃卡片），内容相同 |
 | `sheetBase.module.scss` | `.body` / `.state` | 面板内容共用的滚动容器与加载文案 |
@@ -861,9 +894,8 @@ pages/3d.js ───────▶ components/Music/three/ThreeApp.js ──�
 `usePlayer` 返回一个扁平的 ~80 字段对象（而不是拆成几个小 hook），就是为了让这次拆分
 能**逐字搬迁**手机端的行为 —— 拆 hook 会顺手改掉依赖数组和执行顺序。
 
-`lyricsAutoOpen` 是各套布局**唯一**真正分歧的地方：桌面端的舞台就是歌词，
-有歌词就展开是对的；手机端则会平白盖住自己的列表；3D 版传 `false` 再自己接管，
-原因见「3D 版」一节。
+`lyricsAutoOpen` 是两套布局**唯一**真正分歧的地方：桌面端的舞台就是歌词，
+有歌词就展开是对的；手机端则会平白盖住自己的列表，所以传 `false` 再自己接管。
 
 桌面端列表还有一条手机端没有的规则：**有歌在放、鼠标又不在列表上，3 秒后列表自己收起**
 （`LIST_HIDE_MS`）。它折的是 `autoHidden`，不是 `listOpen` —— 后者是访客的选择、
@@ -875,8 +907,8 @@ pages/3d.js ───────▶ components/Music/three/ThreeApp.js ──�
 **`current` 不是一首歌，是 `{ track, url, startTime, shouldPlay }`。**
 歌在 `current.track` 里 —— 要写 `current.track.name`、`current.track.id`、
 `coverUrlOf(current.track)`。判断「有没有歌在放」用 `Boolean(current)` 就对了，
-一旦要**读字段**就必须往下走一层。这一条被踩过一次，而且一次踩出三个症状：
-3D 版整棵树写成了 `current.name` / `current.id` / `coverUrlOf(current)`，
+一旦要**读字段**就必须往下走一层。这一条被踩过一次：
+有一棵树写成了 `current.name` / `current.id` / `coverUrlOf(current)`，
 于是点列表里任何一首歌都会**把整页打崩**（`parseTrackName` 第一行就是
 `name.match(...)`，拿到 `undefined` 就抛；React 19 渲染期抛异常会卸掉整棵树，
 只剩错误边界那张卡片），同时唱片标签永远不上封面、正在播的那一行永远不高亮。
@@ -1042,194 +1074,6 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
   才开始生效，已经在 `pages/index.js` 把访客送去 `/h5` 的 900px 之下 ——
   所以桌面布局真正服务的每个宽度都还是正间距（900×1000 是 32px）。
 
-## 3D 版
-
-`/3d` 是第三棵树，入口只有一处：`/desktop` 右上角设置弹窗里的「进入 3D 沉浸模式」
-（`DesktopApp` 用 `router.push('/3d')`，`DesktopMusic` 只收一个 `onOpen3D` 回调 ——
-和缓存管理一样，路由的事留在外壳）。手机端**没有任何入口**：
-一个可拖拽机位的 WebGL 场景不是手机体验。
-
-```
-components/Music/three/
-  ThreeApp.js         外壳：usePlayer(只读子集) + 两个局部视图开关 + PlayerAudio
-  ThreeApp.module.scss 这一页唯一的 token 根（--t-*，只深色）+ 全部 chrome
-  ThreeStage.js       唯一有副作用的 React 文件：canvas、rAF、指针、ResizeObserver
-  ThreeHud.js         全部浮层 DOM（顶栏 / 列表 / 胶囊条 / 提示 / toast）
-  icons.js            自己的 13 个图标，stroke 1.7（共享集是 2）
-  scene/              纯 three.js，**不含任何 React**
-    index.js          装配：renderer / 雾 / PMREM 环境 / 四盏灯 / 机位 / 主循环 frame()
-    camera.js         四机位 rig + 拖拽 + 7 秒后自动漂移 + 节拍推进
-    record.js         唱盘 + 唱片 + 倒影 + 光池 + 光环
-    tonearm.js        真解算的唱臂（正弦定理，随播放进度内移）
-    particles.js      5000 粒尘埃：星系 / 环两种形态，同一对三角函数、同一个 attribute
-    lyrics.js         canvas 贴图歌词平面 —— 场景里最大的物体，另加一层加色发光
-    textures.js       六种程序化 canvas 贴图，**零资源文件**
-    analyzer.js       Web Audio 分析 + 合成节拍回退
-```
-
-几条不能随手改的：
-
-- **只复用 `core/`，不复用任何组件。** `three/` 里出现 `../h5/` 或 `../desktop/`
-  就是错的。`core/usePlayer` 只取播放 / 曲库 / 歌词 / toast 这一读子集：行抽屉、
-  缓存管理、Google 授权全都留在 `/desktop` —— 3D 版**没有能力改曲库**，这是故意的。
-- **`usePlayer({ lyricsAutoOpen: false })` 不等于「不显示歌词」。** 3D 版自己接管：
-  `lyricsWanted`（默认 true）+ 一个 effect，在有歌词的歌到达时补一次 `toggleLyrics()`。
-  之所以不能直接传 `true`：hook 在每次换歌时都会 `setLyricsVisible(lyricsAutoOpen && withLyrics)`，
-  传 `true` 会让访客的「关掉歌词」在下一首就失效。传 `false` 再自己补，关掉才关得住。
-- **3D 版不用 `core/PageHead`**，只写自己的 `<Head>`：那个组件会顺带加载 Google
-  Identity Services 脚本，而这一页没有任何地方能用上它。
-- **这一页绝对不许白屏，这是硬要求。** React 19 里 mount effect 抛异常会把整棵树卸掉，
-  剩下的是 `styles/index.scss` 里 `html, body` 的 `#f6f6f7` —— 一片白，加控制台一行字。
-  所以三层防护缺一不可：`scene/index.js` 的 `createRenderer` 三次重试后抛带原因的错、
-  `ThreeStage` 把建场和每一帧都包在 try/catch 里、`pages/3d.js` 外面套 `ThreeBoundary`。
-  **`ThreeBoundary` 必须在 `ThreeApp` 外面**（它是边界，得在被保护的东西之上），
-  它的 `.crash` 因此不能依赖 `.page` 上的 token —— `--t-*` 声明在 `.page, .crash` 这个
-  **并列选择器**上。
-- **canvas 由 `scene/index.js` 创建并 append 到宿主 div，不由 React 渲染。**
-  原因是失败重试：一个 `getContext` 失败的 canvas 不能再用（规范没写清，但实际如此），
-  每次重试必须换一张新的 canvas，而 React 渲染的 canvas 换不掉。
-  重试顺序是 `(antialias, high-performance)` → `(antialias, default)` → `(no antialias, default)`，
-  对应「双显卡笔记本拿不到独显」和「弱显卡不给多重采样缓冲」两个常见原因。
-  `dispose()` 要把 canvas 从宿主里摘掉，否则重试会叠第二张。
-- **`webglcontextlost` 要 `preventDefault()` 并告诉调用方**：不 preventDefault 上下文
-  永远恢复不了；告诉调用方是为了让 rAF 停下来、把话说在屏幕上，而不是留一块黑画布。
-- **rAF 里每帧都要 try/catch**：一帧抛异常就是每帧抛异常，会以 60 次/秒的速度刷控制台。
-- **粒子只有一对三角函数，两种形态是同一对值的两种读法。** 每颗粒子的角度是 `base + ωt`；
-  星系读成 `x = cos·r, z = sin·r`（水平圆盘），环读成 `x = cos·r, y = RING_Y + sin·r·flat`
-  （竖着的椭圆）。所以形态切换只是绕 x 轴转过去，多花两次乘法，不需要第二套坐标。
-  两件事不要随手改：
-  - **环要有自己的时钟**（`RING_SPIN`，而且和唱片反向）。环如果跟着星系的分壳自转，
-    内外差速会在一两分钟内把它剪成螺旋 —— 让星系活起来的那套物理，正好是毁掉环的那套。
-  - **角度要按椭圆弧长采样**（`pickAngle`），不能均匀取。扁椭圆的 `ds/dθ` 从侧面的 1
-    降到两端的 `flat`，均匀角度会把尘埃堆成左右两坨，环就不再是环。用拒绝采样做，
-    只在 mount 时跑一次，运行时零成本。
-- **粒子材质必须 `toneMapped: false`，而且不能靠提亮来塑形。** ACES 曲线会把加色点压成
-  灰点（第一版 1500 粒 / size 0.03 就是这么消失的）；反过来，形态切换时再给材质加增益
-  会得到一个实心光圈。**形状靠密度，不靠增益**：环的径向带很窄（有边），但很深（是环面
-  不是扁箍），近侧的投影大、远侧小，屏幕上的密度自然降一半。
-- **`material.opacity` 和 `size` 是全局的，逐粒子亮度只能每帧重写 color buffer。**
-  `PointsMaterial` 只有一个 `size`，所以「有的像星星、有的像雾」只能靠
-  `palette × bright × twinkle` 写进 `color` 属性。第二颗材质 = 第二次 draw call，更贵。
-  亮点尾巴要又短又稀：6% 的 3.4 倍亮会把空角落点成噪点，眼睛先看到噪点，形状就没了。
-- **歌词的卡拉 OK 走字靠 `onBeforeCompile`，不是每帧重画 canvas。** 2048×1024 的贴图
-  是 8MB，60fps 上传就是每秒 0.5GB 的总线流量。canvas 里画满亮度的那一行，片元着色器
-  用 `uWipe` 把行进线右侧的 alpha 乘到 `UNSUNG`；`band` 用 `abs(vMapUv.y - 0.5)` 把走字
-  限制在活动行（活动行永远画在画布垂直正中），邻行不受影响。每帧只改一个 uniform。
-  两个坑：片元里 uv 的 varying 名在 r152 之后是 `vMapUv`（不是 `vUv`），钩子要挂在
-  `#include <opaque_fragment>` 之前；着色器编译失败只会让这块平面变黑，所以验证脚本
-  必须收 `console.error`。
-- **歌词平面宽 5.6 单位，机位 `lyrics` 的 `radius` 和它是一对。** 再近就切掉长句两端，
-  再远字就小了。同理 `RING_Y` 是歌词平面的高度（`lyrics.js` 的 `BASE_Y`），
-  `index.js` 在歌词打开时把鼠标射线打的那张平面也抬到这个高度 —— 不然光标指着歌词，
-  洞却开在两米以下的地板上。`RING_Y` 从 `particles.js` 导出就是为这一处。
-- **token 前缀是 `--t-`，且不引入任何 `--glass-*`。** 这一页只有深色，没有 `theme-dark`。
-  `grep -n '\-\-glass' components/Music/three/` 必须是空的。
-- **毛玻璃面板只能有三个**（徽标 / 列表 / 胶囊条）。桌面端的毛玻璃糊的是画好的色彩场，
-  这里糊的是 **WebGL canvas** —— 每块都是对上一帧的回读，所以不能铺满全屏，也不能包住 canvas。
-- **canvas 必须是浮层的兄弟，不能是它们的父节点。** 任何带 `backdrop-filter` 的元素
-  包住 canvas，就会把 60fps 变成 20fps。
-- **`.page::after`（暗角）必须 `pointer-events: none`**，否则它会变成光标下最上面那个元素，
-  唱片就再也拖不动了。同理 `.top` 整条也是 `pointer-events: none` + 两个端点 `auto`。
-- **`frame()` 读的是 ref，不是 props。** `ThreeStage` 把 state 塞进 `stateRef`，
-  渲染循环每帧读它 —— 否则每 250ms 一次的 `timeupdate` 都会重建 renderer。
-  `delta` 上限 50ms：切标签页回来那一帧的 `delta` 是秒级的，不夹住会让相机瞬移。
-- **`row-active` 依旧只能叠加在 `row` 上**，不能二选一（同桌面端那条，布局全在 `.row` 上）。
-- **唱片是平躺的**（桌面端是竖立的），所以倒影靠 `scale.y = -1` 的镜像 clone +
-  一张 16×16 的光池遮住硬边，不用 `Reflector`：后者每帧为一张面重渲整个场景，
-  而这个场景只有一件东西值得反射。镜像会**反转三角形绕序**，材质必须 `DoubleSide`。
-- **倒影的 label 要单独上一次封面**：`mirror` 是在 `setCover` 之前 clone 的，
-  所以 `record.js` 里有 `applyLabel()` 同时喂 `label` 和 `mirrorLabel`。
-- **唱臂角度是解出来的，不是调的**：pivot `(0.9, -0.9)`、臂长 `0.78`，
-  `|stylus|² = 1.273² + 0.78² − 2·1.273·0.78·cos θ`；θ=55° 是静止（出唱片）、
-  42° 是导入槽、16° 是导出槽。改 `PIVOT` / `LENGTH` 就要重算这三个角。
-- **封面必须走 canvas + `crossOrigin='anonymous'`**，不能用 `TextureLoader`：
-  库里的封面是可能不存在的同名文件、Drive 缩略图会过期、R2 桶不一定带 CORS 头。
-  `coverTexture(url, { fallback })` 会**先试真封面、失败再试渐变**（`makeArtwork`），
-  两步都失败才返回 `null` —— 只试 fallback 不试原图，会让「有封面但加载失败」显示成黑标签。
-- **歌词材质 `fog: false` + `toneMapped: false`**：它是被**读**的东西，
-  雾会随距离压暗它、ACES 会把白色压成灰。别的材质都照常吃雾和色调映射。
-- **粒子是主角，不是背景。** 这一页的视觉重心是「粒子 + 歌词」，唱片只是场景里的一件家具。
-  粒子有**两种形态**，由 `formation`（0 星系 / 1 光环）在同一个 `position` attribute 上 damp 混合：
-  星系是 24 个壳层差速旋转的扁盘（每帧只算 `SHELLS` 次三角函数，
-  `cos(base+ωt)` 展开成 `cos·cos − sin·sin`），光环是立在歌词平面上的扁椭圆环。
-  改形态不用改结构，只改 `formation`。
-- **加色粒子必须 `toneMapped: false`。** 第一版是 1500 粒 0.03 单位 + ACES，
-  曲线把每一个加色点压成灰斑 —— 场在那儿，谁也看不见。这一条和歌词材质那条同源。
-- **粒子的颜色要够饱和。** 每个点都是加色画的，重叠处必然往白走，
-  起点用 `#ff7d92` / `#a9c4ff` 这种淡色，加完就是一屏灰噪点；
-  起手给到 `#ff4d6d` / `#5b8cff` 才留得住「近处暖、远处冷」。
-- **光环必须整圈都在画面里，才读得出是环。** 第一版半径 2.6–4.4、压扁 0.34，
-  椭圆 8.8×3.8，四边全部出框，看起来就是「满屏均匀的点」。
-  内环现在收在 1.8–2.35、压扁 0.52，正好框住 5.6×2.8 的歌词平面，
-  外面再放一圈更大更淡的外环（3–4.6）—— 内环负责「形状」，
-  外环负责「纵深」：只有一圈的话，词是浮在虚空里的，眼睛判断不出那圈光离你多远。
-  内环还是**有厚度**的（`RING_DEPTH` 1.2，是个环面不是平面圈），
-  近侧投影大、远侧投影小，眼睛能把形状看两遍，屏幕上的密度也就降了一半。
-- **`PointLight` 的距离是平方关系**（`decay: 2` ⇒ 照度 ∝ 1/d²）。
-  节拍灯原来吊在唱片上方 0.62 处、`intensity 2.6`，比主光还亮，整个碟面被红洗成塑料。
-  抬到 1.35、降到 0.7（运行时 `0.55 + level*2.6`）才对。红色轮廓光同理，
-  `DirectionalLight(0xfa233b)` 从 1.5 降到 0.85 —— 它是给唱片**边缘**上色的，不是给碟面打底的。
-- **`FRAMING.home` 的 `phi` 不能太小。** 尘埃盘躺在 y≈0 的地面上，
-  `phi: 0.5` 时相机几乎与盘面齐平，整个星系退化成唱片后面的一条线；
-  0.6 才既看得到盘面、又保得住唱片的构图。`FRAMING.lyrics` 则是 `5.4 / 0.34 / 1.82`——
-  贴纸有 5.6 单位宽，比这更近就会把长句两头切掉。
-- **只有歌词机位的距离跟着画面比例走**（`fitToAspect`）。`PerspectiveCamera`
-  固定的是**垂直**视场角，窗口越窄横向能看到的世界单位越少：唱片和尘埃紧凑，
-  窄窗口只是把房间裁掉一点；**歌词是 5.6 单位宽的平面，约束在横向上**。
-  16:9 时横向可视 7.76 单位很宽裕，5:4 只剩 5.45（两头各切 0.07），
-  **窗口吸到屏幕半边是 0.89，只有 3.88 单位 —— 长句每边丢一个字**，
-  而这算很正常的用法。所以距离乘 `max(1, 16/9 / aspect)`，宽窗口一律不动
-  （宽出来的地方本来就是「房间」）。改这块之前先用 `--size=WxH` 扫一遍窗口尺寸。
-- **光标推开粒子用的是射线与地面平面的交点**（`stage.aim(x, y)`，落在 `RING_Y` 高度），
-  不是屏幕坐标。这样同一套推开逻辑在扁盘和立环上都是对的，
-  而且悬停（没按播放、没拖拽）也要调用 —— 不然鼠标划过是一片没有反应的空场。
-- **手机端 logo 不再接音频分析器**：`h5/MarkNote.js` 只在挂载时把固定的彩虹印谱画进
-  canvas；`playing` 只负责在 `.mark-playing` 上把 CSS 的 `animation-play-state` 切成
-  `running`（默认 `paused`），让固定 `2s` 节奏的彩虹向右平移。
-  没有 `AudioContext`、`AnalyserNode`、频段拆分、合成节拍、后台 `resume` 或 `nudge`，
-  所以切后台不会因为 logo 动画去碰播放链路。
-- **音符是静态的**：没有 `translate`、`scale`、呼吸，也没有浮动音符家族；logo 在播放时
-  不放大，任何时刻都是 header 左侧的 40px 圆角方块 —— 尺寸上没有任何动画，连进场也没有
-  （见上面「手机端顶部栏」）。音符唯一会动的是刚挂载那一秒的淡入。
-  它是一块**毛玻璃**（`.pane` 的 `backdrop-filter` + `.ink` 的半透明白），材质也是静态的：
-  两层都没有 transform。右下角那个 9px 的 QQ 状态点是灰/绿两态，也不动。
-- **固定印谱的设计边界**：`BANDS`、`BOUNDARIES`、`SWING`、`WAVE_LAMBDA`、`WAVE_ORIGIN`、
-  `BLEND` 和 `VISIBLE_FRACTION` 都是 `MarkNote.js` 的常量，画布只在挂载时画一次；
-  真正的运动只有 `.bg` 上的 `rainbow-score-flow` CSS keyframes，而它的 `50%` 平移量
-  **必须**等于 `WAVE_LAMBDA / DRAW_W` —— 这两个数分居两个文件，改一个就要改另一个，
-  否则循环会出现一条接缝。`WAVE_ORIGIN` 的推导也跨文件：`.bg` 的 260% 宽 / -140% 左
-  决定了 40px 盒子上的「横向五分之一」落在缓冲区哪个 px。不要把 `playing` 改回音频电平，
-  也不要为这枚 logo 增加 Web Audio 监听。
-- **烟雾测试也跟着简化**：`scripts/drive-page.js` 检查固定 CSS 动画类是否在播放时开启、
-  音符没有 transform、第二首歌仍能在同一个 audio 元素上播放。另外两条要自己抓时机：
-  - **挂载后那一秒**用自己的一轮 50ms 轮询、挂在同一处 reload 上抓（`waitFor` 的 400ms
-    间隔对一秒的状态是掷硬币），两条判据：**盒子从来没有比它自己更高**（也就是「没有宽条
-    进场」——用所有样本里 `width - height` 的最大值判，**不把样式表里的 40px 抄一遍回给
-    它**），以及音符的 `animation-name` / `animation-duration` 确实是那个一秒的淡入。
-    音符 `opacity` 在这里只当「样式表到了没有」的信号用（未上样式的按钮会读成 316×462、
-    音符 opacity 1）。
-  - **暂停/继续那对**读 canvas 的 `animation-play-state` 和计算出的 `transform` 的 `m41`：
-    先等波浪走到周期前半段（`tx` 在 10~24 之间，一共 52px 一个周期）再暂停，因为靠近 0 时
-    「弹回起点」和「停住」看不出区别、靠近周期末尾时继续采样会绕回去读成重启。然后断言
-    暂停后两帧的 `tx` 一样（冻住了）、继续后 `tx` 还在原来的位置附近而不是回到 0。
-  - **QQ 状态点那对**是同一处的前后对照：确认号码之前它是灰的、之后是绿的 ——
-    只查一个颜色的话，「永远是同一个色」的实现能过。灰/绿按**色系**判（三个通道一致
-    vs 绿色通道明显占优），不写死那两个 hex，所以改深浅不会误报、把两态调换一定会报。
-    另外三条是「它是个徽标」：圆、比方块小得多、坐在角上。**「有没有被圆角裁掉」DOM
-    答不了**（裁切不改变 rect），那一条是 6× 用眼睛定的，也是 `.clip` 这一层存在的原因。
-  - **毛玻璃那对**读的是**浏览器算出来的值**，不是样式表里写的值 —— 写在样式表里但没生效的
-    属性在计算值里就是空的，所以这两条能抓到「选择器写错了」。一条查 `backdrop-filter`
-    里真有 `blur(Npx)` **且**音符的 `fill` 是带 alpha 的（两件事都要：只糊不透明看起来像
-    什么都没变，只半透明不糊就是普通的透视）；另一条把遮罩那条 data URI 解回 markup，
-    拿里面的 `d` 和音符自己的 `d` **逐字符**比（先归一化空白，因为路径是分多行写的）。
-    后者是「玻璃必须是音符这块玻璃」的唯一证据，而它坏掉是**看不出来的**。
-  不再造 `__musicContexts` / `__musicAnalysers`，不再覆盖 `AnalyserNode`，
-  不再测试 logo 的后台恢复。
-
-- 从 `/desktop` 进 `/3d` 会**换一个 `<audio>` 元素**，歌会停一下；但 `usePlayer`
-  会用 `LAST_TRACK_KEY` / `LAST_PROGRESS_KEY` 把同一首按原位置**重新载入**（不自动播放）。
-  这条链路依赖列表缓存，所以第一次访问、列表还没落盘时不要期待能续上。
-
 ## 迁移时替换了什么
 
 | 原（space 博客） | 现（本仓库） |
@@ -1249,26 +1093,24 @@ components/Music/three/
 - `node scripts/preview-desktop-list.js` — 生成列表面板的可量尺寸预览页（先 `npm run build`）
 - `node scripts/preview-covers.js` — 生成封面的可量尺寸预览页：列表/抽屉/缓存/唱片四种形状，每种都放了「有封面」和「没封面」两个对照
 - `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
-- `node scripts/drive-page.js <url>|--all [--insecure] [--track=X] [--size=WxH] [--out=前缀]` — 用真 Chrome 打开页面、点一遍、按断言判成败，并报告失败请求和全部异常；有异常或断言不过就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）。`--all` 跑三棵树（`/3d/`、`/desktop/`、`/h5/`）
+- `node scripts/drive-page.js <url>|--all [--insecure] [--track=X] [--size=WxH] [--out=前缀]` — 用真 Chrome 打开页面、点一遍、按断言判成败，并报告失败请求和全部异常；有异常或断言不过就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）。`--all` 跑两棵树（`/desktop/`、`/h5/`）
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 ### 要看「画出来是什么样」的时候
 
-改 3D 场景、玻璃、布局这类**视觉**的东西，`npm run build` 只证明语法没坏。
+改玻璃、布局这类**视觉**的东西，`npm run build` 只证明语法没坏。
 要真的看一眼，别去量无头浏览器的 DOM —— 用 Junction 搭一个带真 basePath 的
 本地 HTTP 根，再截图：
 
 ```bash
-# .workbuddy-ai/serve/ 里三个 Windows Junction（New-Item -ItemType Junction）
-#   music        -> out          于是 http://127.0.0.1:8899/music/3d/ 是真应用
-#   node_modules -> 真实目录       importmap 能取到 three.module.js
-#   components   -> 真实目录       能直接 import 未构建的 scene/*.js
+# .workbuddy-ai/serve/ 里的 Windows Junction（New-Item -ItemType Junction）
+#   music -> out          于是 http://127.0.0.1:8899/music/h5/ 是真应用
 python3 -m http.server 8899 --bind 127.0.0.1 --directory .workbuddy-ai/serve
 # 这台机器上的 python3 是个装了一半的 3.13（`Failed to import encodings`），
 # 所以还有一个零依赖的替身：`node .workbuddy-ai/static-server.mjs .workbuddy-ai/serve 8899`
 # （它多做两件事：目录请求回 `index.html`，目录里只有一个 html 时回那一个）
 chrome --headless=new --window-size=1440,810 --timeout=25000 \
-       --screenshot=shot.png "http://127.0.0.1:8899/music/3d/"
+       --screenshot=shot.png "http://127.0.0.1:8899/music/h5/"
 ```
 
 **截图时进场动画可能停在第一帧。** `MiniPlayer` 那类带 `animation: … both` 的元素，
@@ -1319,14 +1161,14 @@ chrome --headless=new --window-size=1440,810 --timeout=25000 \
 关掉同源策略：
 
 ```bash
-# 线上：直接跑，什么都别加。三棵树全跑，跑完看 summary
+# 线上：直接跑，什么都别加。两棵树全跑，跑完看 summary
 node scripts/drive-page.js --all --track=夜曲
 
 # 本地：必须 --insecure，否则列表是空的（见上）
 node scripts/drive-page.js --all --insecure --base=http://127.0.0.1:8899/music --track=夜曲
 
 # 单个页面 / 换窗口尺寸（歌词平面的机位跟比例走，窄窗口要单独扫）
-node scripts/drive-page.js http://127.0.0.1:8899/music/3d/ --insecure --track=夜曲 --size=960x1080
+node scripts/drive-page.js http://127.0.0.1:8899/music/h5/ --insecure --track=夜曲 --size=390x844
 ```
 
 `--insecure` 加的是 `--disable-web-security`，只在那个一次性 profile 里生效。
@@ -1337,8 +1179,7 @@ node scripts/drive-page.js http://127.0.0.1:8899/music/3d/ --insecure --track=�
 快捷键真的做了它说的事、两个开关真的翻转了、行抽屉里的动作真的生效、没有任何异常。
 列表和播放都是**轮询**等而不是睡固定秒数，并把等到用了多久打出来 ——
 于是「慢」和「坏」是两个答案。
-**只有 3D 版绑了全局快捷键**（空格播放暂停、左右方向键是 seek 不是切歌、`L`、`Escape`）；
-desktop 和 h5 只有 `Escape`。
+**两棵树都只绑了 `Escape`**（关抽屉）；没有全局播放快捷键。
 
 `pin`（置顶 / 取消置顶）**两套布局都跑**，因为「只接一套布局」这个缝漏过三次；
 它按**整个列表的顺序**判断取消置顶，不是看第一行 —— 见上面那一段。
@@ -1412,48 +1253,6 @@ Drive 曲库的办法 —— 列表来自一次真实 API 调用，而每来源�
 两个坑：**URL 要放在 Chrome 命令行上，不要用 `Page.navigate`**（驱动空白页有竞态，
 第一次探测会打在 `about:blank` 上，看到 `title: ""` 和空 DOM，然后误判成「页面是坏的」）；
 **别用 `--screenshot` 代替它**，截图看不出「点了会不会崩」。
-
-### 只想看一个 scene 模块，或者想量像素的时候
-
-整页截图看不到细节，而且 `scene/*.js` 是纯 three.js、不依赖 React，所以
-`.workbuddy-ai/lyrics-harness.html` 用 importmap 把 `three` 指到 `node_modules`，
-直接 `import` 未构建的 `scene/lyrics.js` + `scene/particles.js`，自己摆机位、
-自己喂一帧，**完全不需要 build**。参数走 query：
-
-```bash
-./probe.sh "t=7.4&form=1&probe=1"   # t=歌里的秒数 form=0星系/1环 cam=机位距离
-```
-
-`probe=1` 会把画好的帧读回来，按 64×28 的格子打印一张**每格亮起来的像素数**图。
-这一步不是装饰：肉眼看一张小截图，分不清「一圈尘埃」和「均匀的噪点」，
-而纯几何的投影模型又不知道雾、加色混合和点尺寸 —— 只有像素能仲裁。两个实现细节：
-
-- 统计的是**每格超过背景色的像素个数**，不是每格最亮值。最亮值那张图永远是满的
-  （5000 颗里总有一颗落在这一格），什么问题都答不了。
-- 亮度台阶是**绝对**的（一级 = 该格 2% 的像素），不是按最亮格归一化 —— 归一化之后
-  白字永远占满量程，尘埃全部落到 0，等于没测。
-
-截图仍然要看，但它是最后一步：先用像素图确认形状成立，再用截图判断好不好看。
-
-### 整场景也能免构建跑起来
-
-`scene/index.js` 是框架无关的（接一个宿主元素、还回 `frame()` / `resize()` / `setCover()`），
-所以 `.workbuddy-ai/scene-harness.html` 可以把它整个挂起来、用一段脚本化的 state 驱动：
-渲染器、雾、PMREM 环境、四盏灯、唱片、唱臂、尘埃、歌词平面、机位全是**真的**，
-只有外面那层 DOM chrome 是缺的。`?state=home|playing|lyrics`、`?t=`、`?cursor=x,y`（NDC）。
-
-- **舞台尺寸要钉死成 16:9。** 无头 Chrome 的 `--window-size` 不等于视口高度
-  （给 720 实际只有 566），`inset: 0` 于是得到一个 2.2:1 的帧 —— 那个比例下尘埃环
-  看起来比真实屏幕上稀得多，会把人骗去改本来没错的几何。
-- **`analyzer` 有合成节拍兜底**（两个慢正弦），所以没有 `<audio>` 也能跑，
-  节拍驱动的光、尘埃、FOV 呼吸都照常动。这正好也是浏览器给不出 Web Audio 时线上的样子。
-- 软件渲染下每帧都很贵：`?step=0.05`（默认 1/30）配 `t<10` 才够快，
-  跑 `t=40` 会直接超时。`MathUtils.damp` 是帧率无关的，粗步长不影响最终状态。
-- **相机方位角要留活口**：`state=lyrics` 时不要调 `hold()`，否则那个「转向歌词」
-  的阻尼被空闲计时器挡住，测不出东西来。
-- **`?cursor=` 要给够帧数**：`stage.aim()` 打的射线落在 `aimY` 那张平面上，而 `aimY`
-  是从地板阻尼升到歌词高度的（lambda 2）。只跑四五帧，射线还在地板上，洞开在两米以下，
-  看起来就像「斥力没生效」。
 
 > 本仓库的工作区是 **CRLF**、CI 是 **LF**，且 `core.autocrlf=true`（仓库内一律 LF）。
 > 用脚本批量改源码时注意别把文件写成混合行尾（Node 里 `split('\n')` 会留下 `\r`）。
