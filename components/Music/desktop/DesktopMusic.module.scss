@@ -598,12 +598,22 @@
 
 /* The column is a hover region and a home for two controls, not a surface:
    `pointer-events: none` here and `auto` on the toggle and the panel, so the
-   empty half of the column cannot swallow a click meant for the record. */
+   empty half of the column cannot swallow a click meant for the record.
+
+   The bottom offset is 32px and not 16px, and the extra 16px is for the glass
+   bar rather than for looks: the shader samples a band around the pill (its own
+   box plus 20px for the shadow), and the library draws every `<img>` in that
+   band into the scene canvas with `ctx.drawImage`. Our covers are cross-origin,
+   so drawing one taints the canvas and every texture upload after it throws —
+   which kills the bar's surface silently. The list is a scroller, so its rows
+   keep real layout boxes below its own bottom edge; ending the column 32px
+   above the bar keeps all of them out of that band. 16px of list is worth less
+   than a working bar. */
 .side {
     position: absolute;
     top: 0;
     left: 0;
-    bottom: calc(var(--bar-h) + var(--bar-bottom) + 16px);
+    bottom: calc(var(--bar-h) + var(--bar-bottom) + 32px);
     z-index: 6;
     display: flex;
     flex-direction: column;
@@ -1333,9 +1343,29 @@
    ========================================================================== */
 
 /* One row of content inside a full capsule, with the progress riding its own
-   lower edge (see `.seek`). A two-row pill was the obvious alternative and
+   upper edge (see `.seek`). A two-row pill was the obvious alternative and
    reads as a card with rounded corners; a capsule with a rail inside it still
-   reads as a capsule. */
+   reads as a capsule.
+   ------------------------------------------------------------------------
+   The box is layout; the *surface* is not here. The pill is drawn by a WebGL
+   shader (`@ybouane/liquidglass`, configured by `GLASS_CONFIG` in
+   DesktopMusic.js), so nothing that paints is left — no `background`, no
+   `border`, no `border-radius`, no `box-shadow`, no `backdrop-filter`. Their
+   equivalents are the shader's config fields, deliberately not duplicated here:
+   a CSS background under a semi-transparent shader tints it, and a CSS border
+   draws a ring on top of the refraction.
+
+   `z-index` has to stay: the library injects its canvas as the element's first
+   child at `z-index: -1`, and a negative-z child only paints above the
+   element's own background (and below its content) if the element is itself a
+   stacking context. Take the `z-index` away and the canvas falls behind
+   `.backdrop` instead.
+
+   `.bar-no-glass` is the same pill the way it used to be, and it is the state
+   the bar is in until the shader has drawn a frame — so a browser without WebGL,
+   or a library that fails to load, gets the old frosted bar rather than a
+   transparent one. It is a fallback, not a second style: it never applies while
+   the shader is live. */
 .bar {
     position: absolute;
     left: 50%;
@@ -1345,6 +1375,9 @@
     width: min(780px, calc(100vw - 96px));
     height: var(--bar-h);
     box-sizing: border-box;
+}
+
+.bar-no-glass {
     border-radius: 999px;
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);

@@ -8,7 +8,8 @@
 
 **`/h5`、`/desktop` 是两棵完全独立的组件树**：彼此不 import 任何一个文件，
 只共用 `components/Music/core/`（状态机 + 数据层 + 面板内容）和它旁边的纯函数。
-桌面端的每一个面都是**纯 CSS 毛玻璃**（`backdrop-filter` + `--glass-*` token）。
+桌面端的每一个面几乎都是**纯 CSS 毛玻璃**（`backdrop-filter` + `--glass-*` token），
+**只有底部播放条例外**：它的面是 WebGL 着色器（`@ybouane/liquidglass`，见下方「播放条的液态玻璃」）。
 详见下方「两套布局」。
 
 ## 目录
@@ -927,8 +928,9 @@ pages/desktop.js ──▶ components/Music/desktop/DesktopApp.js ─┘   + Cov
 
 ### 桌面端的毛玻璃
 
-**纯 CSS，没有 WebGL，没有玻璃库**（原来的 `@ybouane/liquidglass` 已卸载）。
-一个「玻璃面」就是三件事：半透明填充 + 发丝描边 + `backdrop-filter`。
+**除底部播放条外全是纯 CSS，没有 WebGL**。一个「玻璃面」就是三件事：半透明填充 +
+发丝描边 + `backdrop-filter`。播放条是唯一的例外，它的面是 WebGL 着色器
+（`@ybouane/liquidglass`），见下一节。
 
 **它是平的，不是立体的**。这里曾经有第四件事 `--glass-inset`
 （`inset 0 1px 0 rgba(255,255,255,…)`，每个面的上沿一条亮线）和 `--glass-shadow`
@@ -944,7 +946,7 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 | token | 用途 |
 | --- | --- |
 | `--glass-blur` / `--glass-sat` | `backdrop-filter: blur() saturate()` 的两个参数 |
-| `--glass-bg` | 常规面：胶囊播放条、设置按钮、折叠后的列表开关 |
+| `--glass-bg` | 常规面：设置按钮、折叠后的列表开关；播放条的 `.bar-no-glass` 兜底也用这一个值 |
 | `--glass-bg-soft` | 玻璃**之上**的凹陷（搜索框、输入框、设置里的曲库卡片） |
 | `--glass-bg-strong` | 要压住繁忙内容的面：设置弹窗、面板卡片、toast、定位按钮 |
 | `--glass-border` / `--glass-shadow` | 描边、环境投影 |
@@ -959,6 +961,44 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 布局、描边、投影一律不动 —— 所以没有任何东西会移位，只是不再透。
 那段必须和 token 声明在同一个文件里，否则会被 `.page` 的浅色值按源码顺序盖掉
 （所以里面写的是 `.page.theme-dark` 而不是 `.theme-dark`）。
+
+### 播放条的液态玻璃（`@ybouane/liquidglass`）
+
+**这是全仓库唯一的 WebGL。** 播放条的面由着色器画，`GLASS_CONFIG`
+（`desktop/DesktopMusic.js`）是它**唯一**的样式来源 —— `.bar` 里只剩布局
+（位置、宽、高），`background` / `border` / `border-radius` / `box-shadow` /
+`backdrop-filter` 全部删掉，等价物是配置里的 `cornerRadius` / `shadowOpacity` /
+`blurAmount`。**不要再往 `.bar` 上加任何「画」的属性**：着色器输出是半透明的，
+底下的 CSS 背景会给玻璃上色，CSS 描边会在折射上面画一圈线。
+
+> 历史：`d2cd9fa` 那次大重构把库**卸掉**、桌面全改纯 CSS。现在只把播放条这一个面
+> 换回着色器，其余仍按上一节。要恢复「纯 CSS」就在 `DesktopMusic.js` 里删掉那个
+> effect 和 `GLASS_CONFIG`，`.bar-no-glass` 的值搬回 `.bar` 即可。
+
+库的模型（决定了下面每一条）：它把 root 的**每个非玻璃直接子元素**用 html-to-image
+栅格化进一张 canvas（静态的只做一次并缓存），然后对每个玻璃元素在它自己的矩形处裁剪
+那张 canvas、模糊、跑折射着色器。所以：
+
+- **玻璃元素必须是 root 的直接子元素**。`.root` 和 `.bar` 本来就是这个关系，没有改动结构。
+- **root 自己的 `background` 不会被采样**，而且每张场景 canvas 初始填**纯白**。
+  `.backdrop` 是**不透明**的满屏层，这就是白色不会透出来的唯一原因 ——
+  把它的最后一层 `var(--surface)` 删掉，玻璃就会泛白。
+- **不能有跨域 `<img>` 落在采样带里**。库用 `ctx.drawImage` 直接画 `img`/`video`/`canvas`，
+  而曲库封面在 R2 和 Google Drive 上、都没有 CORS 头：画一张就把场景 canvas 污染，
+  之后每次 `texImage2D` 都抛异常，**玻璃静默失效**（库自己的 render loop 把异常吃掉了）。
+  采样带是「胶囊外扩 20px」（`SHADOW_PAD`，用于投影），所以 `.side` 的底边从
+  `+ 16px` 改成了 `+ 32px` —— 列表是滚动容器，滚出可视区的行**仍然有真实矩形**，
+  16px 那个值会让最下面几行的封面落进采样带。**以后往播放条附近加 `<img>` 前先看这条。**
+- 动态内容要么挂 `data-dynamic`（每帧重新栅格化，很贵），要么用 `markChanged()`。
+  我们一个都没用：条后面的东西（唱片、歌词）不在采样带里，`.cover-bg` 换歌时由
+  那个 effect 显式处理 —— **`markChanged()` 不够**，它只重跑着色器、不重新抓快照，
+  必须同时 `instance.capture.invalidateCache(el)`。
+- **降级是设计的一部分**：`glassLive` 为假时挂 `.bar-no-glass`（就是老的那颗胶囊）。
+  三条路径会走到它 —— 动态 import 失败、`init()` 抛错、以及一次**画布回读**：
+  着色器从没画出任何像素时（上面那条污染是最现实的成因）读回来是空的，
+  于是销毁实例、保留 CSS 胶囊，而不是留一条透明的栏。回读只做一次，不是看门狗。
+- 包是动态 import 的，所以它落在自己的 chunk（~51 kB）里，**`/h5` 完全不会加载**。
+  也因为没有顶层 import，静态导出在服务端求值这个模块时不会碰到 `window`。
 
 ### 桌面端：舞台占满全屏，别的东西都浮在上面
 
@@ -1089,7 +1129,7 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`（�
 | 挂在 `pages/music/` 下 | 改成根路径 `/`、`/h5`、`/desktop` |
 | `utils/basePath.js` | **已删除** —— 唯一调用者是 SW 注册，SW 移除后无人使用 |
 | 一个 `MusicApp` + `variant` 分支渲染两套布局 | 拆成 `h5/MusicApp` 与 `desktop/DesktopApp` 两棵独立的树，共用 `core/` |
-| `@ybouane/liquidglass`（WebGL 玻璃） | **已卸载** —— 桌面端全部改成纯 CSS `backdrop-filter` |
+| `@ybouane/liquidglass`（WebGL 玻璃） | `d2cd9fa` 时**已卸载**，桌面端全部改成纯 CSS `backdrop-filter`；后来只给底部播放条装回来（见「播放条的液态玻璃」） |
 
 ## 常用命令
 
