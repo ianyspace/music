@@ -32,7 +32,7 @@ import {
     listAllFiles,
     parseLyrics,
 } from '../shared';
-import { recordPlay } from '../playStats';
+import { PLAY_COUNT_AFTER_SECONDS, recordPlay } from '../playStats';
 import {
     adoptGuestLikes,
     applyLikeChange,
@@ -220,11 +220,19 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // { id, promise } of the in-flight/finished next-track prefetch.
     const prefetchRef = useRef(null);
     const restoredTrackRef = useRef(false);
-    // Id of the track whose play has already been counted for the ranking. The
-    // `play` event fires again on every resume and once per loop in 单曲循环, so
-    // "one play" has to be defined by something other than the event itself —
-    // see `onAudioPlay` and the `repeat === 'one'` branch of `handleEnded`.
-    const countedTrackRef = useRef('');
+    // The play counter for the track currently loaded: `{ id, seconds, counted }`.
+    //
+    // A play is counted once the track has been *listened to* for
+    // `PLAY_COUNT_AFTER_SECONDS`, not when playback starts — so the guard is no
+    // longer "have we seen this id before" but "has enough of it gone by".
+    // `onAudioTimeUpdate` accumulates the seconds; the `repeat === 'one'` branch
+    // of `handleEnded` clears `counted` so a genuine loop counts again.
+    const playCountRef = useRef({ id: '', seconds: 0, counted: false });
+    // The `currentTime` the previous `timeupdate` reported, so the next one can
+    // measure how much of the song actually went by. Deliberately *not* cleared
+    // when the track changes: a stale value makes the new track's first delta
+    // look like a seek, which is exactly how it should be treated.
+    const lastTickRef = useRef(0);
     // `loadTracks` writes the folder list into the cache; reading it through a
     // ref keeps `folders` out of the callback deps (which would re-trigger the
     // load effect every time the folder list arrives).
@@ -1391,10 +1399,12 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
             const audio = audioRef.current;
             if (audio) {
                 audio.currentTime = 0;
-                // A loop is a second listen, so the play-count guard is
-                // cleared before it restarts — otherwise 单曲循环 would count
-                // once and then keep going all night uncounted.
-                countedTrackRef.current = '';
+                // A loop is a second listen, so the counter starts over before
+                // it restarts — otherwise 单曲循环 would count once and then
+                // keep going all night uncounted. Same track id, so the id
+                // check in `onAudioTimeUpdate` would not reset it on its own.
+                playCountRef.current = { id: current.track.id, seconds: 0, counted: false };
+                lastTickRef.current = 0;
                 safePlay(audio);
             }
             return;
@@ -1554,33 +1564,54 @@ const usePlayer = function ({ lyricsAutoOpen = false } = {}) {
     // cannot end up wiring a different set of six.
     const onAudioPlay = useCallback(function () {
         setIsPlaying(true);
-        // The play count is recorded here — on the element's own `play` event —
-        // and not where the track is loaded, because loading is not listening:
-        // a restored last track, an autoplay the browser blocked, or a blob
-        // that arrived and was never started would all count as a play.
-        //
-        // Once per track, not once per event: pause/resume fires `play` again,
-        // and counting those would make the number a measure of how often the
-        // visitor tapped the screen. 单曲循环 resets the guard in `handleEnded`
-        // so a genuine repeat still counts.
-        //
-        // Non-blocking by construction: `recordPlay` writes a few bytes to
-        // localStorage and starts a request nobody awaits (see playStats.js),
-        // so a slow or dead network cannot delay a note of the song.
-        const track = current && current.track;
-        if (track && countedTrackRef.current !== track.id) {
-            countedTrackRef.current = track.id;
-            recordPlay(qq, track);
-        }
-    }, [current, qq]);
+        // Nothing is counted here. Starting a track is not listening to it —
+        // the count is decided in `onAudioTimeUpdate`, once enough of the song
+        // has actually gone by. (This used to record on `play`, which made
+        // "tap play, skip on" a play, and made the ranking a measure of how
+        // often the visitor touched the screen.)
+    }, []);
 
     const onAudioPause = useCallback(function () {
         setIsPlaying(false);
     }, []);
 
     const onAudioTimeUpdate = useCallback(function (event) {
-        setProgress((state) => ({ ...state, time: event.target.currentTime }));
-    }, []);
+        const audio = event.target;
+        setProgress((state) => ({ ...state, time: audio.currentTime }));
+
+        // The play count is decided here, on the element's own clock.
+        const track = current && current.track;
+        const previous = lastTickRef.current;
+        lastTickRef.current = audio.currentTime;
+        if (!track) return;
+
+        const counter = playCountRef.current;
+        if (counter.id !== track.id) {
+            // A different track starts its own clock. The old one is dropped
+            // *uncounted* when the visitor skipped away before the threshold,
+            // which is the whole point of measuring.
+            playCountRef.current = { id: track.id, seconds: 0, counted: false };
+            return;
+        }
+        if (counter.counted || audio.paused) return;
+
+        // `timeupdate` fires roughly four times a second, so a healthy delta is
+        // a fraction of a second. A forward jump is the visitor dragging the
+        // progress bar and a negative one is a seek back; neither is time spent
+        // listening, so neither is added. The ceiling is loose enough (2.5s)
+        // that a stalled main thread cannot silently stop the count.
+        const delta = audio.currentTime - previous;
+        if (!(delta > 0) || delta > 2.5) return;
+
+        counter.seconds += delta;
+        if (counter.seconds > PLAY_COUNT_AFTER_SECONDS) {
+            counter.counted = true;
+            // Non-blocking by construction: `recordPlay` writes a few bytes to
+            // localStorage and starts a request nobody awaits (see playStats.js),
+            // so a slow or dead network cannot delay a note of the song.
+            recordPlay(qq, track);
+        }
+    }, [current, qq]);
 
     // `loadedmetadata` and `durationchange` report the same thing and both are
     // needed: the first for a normal load, the second for a stream whose

@@ -70,6 +70,25 @@ const workerBase = function () {
 };
 
 /**
+ * How long a track has to actually play before it counts as a play.
+ *
+ * The *number* lives here, with the rest of the counting rules, but the
+ * enforcement cannot: `recordPlay` is deliberately a pure write with no notion
+ * of time, and the only clock that knows whether music is coming out is the
+ * player's `<audio>` element. So the player accumulates **listened** seconds —
+ * the deltas between `timeupdate` ticks while the element is not paused — and
+ * calls `recordPlay` once this many have gone by. See `onAudioTimeUpdate` in
+ * `core/usePlayer.js`.
+ *
+ * What that buys, and what it deliberately excludes: tapping play and skipping
+ * on two seconds later is not a play, an autoplay the browser blocked is not a
+ * play, and dragging the progress bar to the end of a song is not a play —
+ * none of those are listening. A track the visitor genuinely sits through
+ * counts once, no matter how many times they pause and resume it.
+ */
+export const PLAY_COUNT_AFTER_SECONDS = 10;
+
+/**
  * A unique id for one play event.
  *
  * Time-prefixed so the log sorts by when it happened even if two ids collide in
@@ -198,8 +217,9 @@ export const flushPending = async function () {
 /**
  * Records one play of one track.
  *
- * Called from the player's `play` event — i.e. from inside the listener's
- * browser, on the way to them hearing a song. Nothing here awaits anything: the
+ * Called by the player once a track has been listened to for
+ * `PLAY_COUNT_AFTER_SECONDS` — not when playback starts. Nothing here awaits
+ * anything: the
  * localStorage write is a few hundred bytes, and the network call is started
  * and dropped. A failure leaves the entry in the log (that is what the log is
  * for) and is otherwise invisible; there is deliberately no toast, because a
