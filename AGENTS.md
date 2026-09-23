@@ -1261,15 +1261,22 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
 本地 HTTP 根，再截图：
 
 ```bash
-# .workbuddy-ai/serve/ 里的 Windows Junction（New-Item -ItemType Junction）
-#   music -> out          于是 http://127.0.0.1:8899/music/h5/ 是真应用
-python3 -m http.server 8899 --bind 127.0.0.1 --directory .workbuddy-ai/serve
-# 这台机器上的 python3 是个装了一半的 3.13（`Failed to import encodings`），
-# 所以还有一个零依赖的替身：`node .workbuddy-ai/static-server.mjs .workbuddy-ai/serve 8899`
-# （它多做两件事：目录请求回 `index.html`，目录里只有一个 html 时回那一个）
+# 1. 搭一个只放 Junction 的根目录（在仓库外，用完直接删）
+#    别搭在仓库里：`rm -rf` 一个含 Junction 的目录会顺着链接删进源码
+mkdir -p /d/tmp/serve && cd /d/tmp/serve
+cmd //c mklink /J music "D:\code\music\out"   # music -> out
+                                              # 于是 http://127.0.0.1:8899/music/h5/ 是真应用
+# 2. 起静态服务器（二选一，见下）
+python3 -m http.server 8899 --bind 127.0.0.1 --directory /d/tmp/serve
+node .workbuddy-ai/static-server.mjs /d/tmp/serve 8899
+# 3. 截图
 chrome --headless=new --window-size=1440,810 --timeout=25000 \
        --screenshot=shot.png "http://127.0.0.1:8899/music/h5/"
 ```
+
+这台机器上的 python3 是个装了一半的 3.13（`Failed to import encodings`），基本用不了，
+所以实际都用零依赖的替身 `node .workbuddy-ai/static-server.mjs <根> 8899` ——
+它多做两件事：目录请求回 `index.html`，目录里只有一个 html 时回那一个。
 
 **截图时进场动画可能停在第一帧。** `MiniPlayer` 那类带 `animation: … both` 的元素，
 在只被截一次图的页面里可能停在 0% 关键帧上（`.wrap` 的 `translateY(18px)`、
