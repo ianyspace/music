@@ -837,7 +837,7 @@ Worker 里没有任何速率限制，免费版 D1 的日写入量是**十万行�
   两件都不牢：动画只在换行后 0.42s 内动，读晚了看到的就是静止值，
   而「样式表里根本没有这条动画」也长这样。
 - **播放页的抽屉遮罩是 `position: fixed; inset: 0` 的 50% 黑**，所以开着抽屉截出来的图
-  是隔着烟玻璃看歌词。要截歌词就先按 Escape 关掉抽屉 —— `.workbuddy-ai/probe-lyric-styles.mjs`
+  是隔着烟玻璃看歌词。要截歌词就先按 Escape 关掉抽屉 —— `scripts/probe-lyric-styles.js`
   对每个样式做一次「选中 → Escape → 截图 → 再打开」。
 - **带入场动画的样式，截图只能证明其中一部分**：沉浸单行的长大是一个 0.42s 的动画，
   等它跑完截图什么也看不到 —— 要轮询当前行的文字，**在换行的那一瞬间**截。
@@ -848,7 +848,7 @@ Worker 里没有任何速率限制，免费版 D1 的日写入量是**十万行�
   看起来像「样式根本没生效」。**几张图的 md5 各不相同，肉眼却完全一样**，
   这就是它难发现的地方：文件变了 ≠ 看得出来。做法是先把播放位置跳到曲中，
   再 `scrollTop = offsetTop - (clientHeight - offsetHeight) / 2`，等一帧再截
-  （见 `.workbuddy-ai/probe-wipe.mjs`）。
+  （见 `scripts/probe-wipe.js`）。
 - **`getComputedStyle` 在过渡途中返回的是「正在经过的值」**：沉浸单行的远处行是
   0.35s 淡出的，点完就量会读到「71 行全都可见」，看起来像样式根本没生效，实际是
   还没淡完。做法是先 `waitFor` 行自己的 `aria-checked` 变 true（它和样式类是**同一个
@@ -1253,6 +1253,8 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
 - `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
 - `node scripts/drive-page.js <url>|--all [--insecure] [--track=X] [--size=WxH] [--out=前缀]` — 用真 Chrome 打开页面、点一遍、按断言判成败，并报告失败请求和全部异常；有异常或断言不过就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）。`--all` 跑两棵树（`/desktop/`、`/h5/`）
 - `node scripts/serve-static.js <根> [端口]` — 零依赖静态服务器，给下面那套「截图看一眼」用：目录请求回 `index.html`，目录里只有一个 html 时回那一个。这台机器的 python3 是个装了一半的 3.13（`Failed to import encodings`），所以用它顶 `python3 -m http.server`
+- `node scripts/probe-lyric-styles.js [--track=夜曲] [--prefix=fx]` — 四种歌词样式各截一张图，真 Chrome，裁到字上（先起 `serve-static.js`）
+- `node scripts/probe-wipe.js [--track=夜曲]` — 把 `--wipe` 钉在四个已知值各截一张，量卡拉OK 填充是不是真的两段色（先起 `serve-static.js`）
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 ### 要看「画出来是什么样」的时候
