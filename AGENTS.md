@@ -1252,6 +1252,7 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
 - `node scripts/preview-covers.js` — 生成封面的可量尺寸预览页：列表/抽屉/缓存/唱片四种形状，每种都放了「有封面」和「没封面」两个对照
 - `node scripts/preview-empty-list.js` — 生成空列表文案的预览页：四个分支两套布局并排，另附一列「旧写法（`<p>` 在 `<ul>` 里）」对照，量「消息是不是列表的兄弟节点、有没有真的画出来」
 - `node scripts/drive-page.js <url>|--all [--insecure] [--track=X] [--size=WxH] [--out=前缀]` — 用真 Chrome 打开页面、点一遍、按断言判成败，并报告失败请求和全部异常；有异常或断言不过就非零退出。零依赖（Node 22 自带 `WebSocket`，直接说 DevTools 协议）。`--all` 跑两棵树（`/desktop/`、`/h5/`）
+- `node scripts/serve-static.js <根> [端口]` — 零依赖静态服务器，给下面那套「截图看一眼」用：目录请求回 `index.html`，目录里只有一个 html 时回那一个。这台机器的 python3 是个装了一半的 3.13（`Failed to import encodings`），所以用它顶 `python3 -m http.server`
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 ### 要看「画出来是什么样」的时候
@@ -1268,14 +1269,14 @@ cmd //c mklink /J music "D:\code\music\out"   # music -> out
                                               # 于是 http://127.0.0.1:8899/music/h5/ 是真应用
 # 2. 起静态服务器（二选一，见下）
 python3 -m http.server 8899 --bind 127.0.0.1 --directory /d/tmp/serve
-node .workbuddy-ai/static-server.mjs /d/tmp/serve 8899
+node scripts/serve-static.js /d/tmp/serve 8899
 # 3. 截图
 chrome --headless=new --window-size=1440,810 --timeout=25000 \
        --screenshot=shot.png "http://127.0.0.1:8899/music/h5/"
 ```
 
 这台机器上的 python3 是个装了一半的 3.13（`Failed to import encodings`），基本用不了，
-所以实际都用零依赖的替身 `node .workbuddy-ai/static-server.mjs <根> 8899` ——
+所以实际都用零依赖的替身 `node scripts/serve-static.js <根> [端口]` ——
 它多做两件事：目录请求回 `index.html`，目录里只有一个 html 时回那一个。
 
 **截图时进场动画可能停在第一帧。** `MiniPlayer` 那类带 `animation: … both` 的元素，
