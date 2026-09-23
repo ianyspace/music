@@ -576,55 +576,20 @@ const DesktopMusic = function ({
                         onOpen={onOpenAccount}
                     />
 
-                    <button
-                        type="button"
-                        className={styles['side-toggle']}
-                        onClick={() => setListOpen((open) => !open)}
-                        onPointerEnter={() => setListHover(true)}
-                        onPointerLeave={() => setListHover(false)}
-                        aria-expanded={listVisible}
-                        aria-label={listVisible ? '收起列表' : '展开列表'}
-                        title={listVisible ? '收起列表' : '展开列表'}
-                    >
-                        {/* The chevron follows the state, not the label: it
-                            points the way the list will move. */}
-                        {listVisible ? <IconPanelFold /> : <IconPanel />}
-                    </button>
-
-                    {/* 只看喜欢 — a filter, not a destination: it narrows the
-                        list below and stays lit while it does. The phone's bar
-                        carries the same button with the same paint, and it is
-                        *not* gated on a QQ number there or here: a guest's
-                        likes are real likes, they simply live in this browser.
-
-                        It sits between the toggle and the search because the
-                        search is the only tile that has to be able to grow (it
-                        becomes the field) and so has to be last. */}
-                    <button
-                        type="button"
-                        className={likedOnly
-                            ? `${styles['side-heart']} ${styles['side-heart-on']}`
-                            : styles['side-heart']}
-                        title={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
-                        aria-label={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
-                        aria-pressed={likedOnly}
-                        onClick={onToggleLikedOnly}
-                    >
-                        {/* `size={18}`: the heart's own default is 22, which in
-                            a row of an 18px panel glyph and a 16px search glyph
-                            would read as a bigger control than its neighbours.
-                            The tile normalises the size, the same way the phone
-                            bar's `.nav-btn` does. */}
-                        <IconHeart size={18} filled={likedOnly} />
-                    </button>
-
                     {/* The closed state is a *button*, not an empty search
                         field. It used to be a full-width pill carrying the
                         placeholder 「搜索歌曲」, which looks like an input you
                         can type into and is not one — and it spent the column's
-                        widest row saying nothing. Same 36px square as the toggle
-                        beside it, so the row is one line whether the field is
-                        open or shut and the list never shifts. */}
+                        widest row saying nothing. Same 36px square as the two
+                        tiles beside it, so the row is one line whether the field
+                        is open or shut and the list never shifts.
+
+                        It leads the row's three list controls, and that is what
+                        keeps its own opening invisible: the field takes over the
+                        leftmost slot of the group, so 只看喜欢 and the fold
+                        toggle to its right stay exactly where the pointer left
+                        them. The group as a whole sits at the column's trailing
+                        edge — see the `margin-left: auto` in the stylesheet. */}
                     {searchOpen ? (
                         <label className={styles.search}>
                             <span className={styles['search-icon']}><IconSearch /></span>
@@ -658,6 +623,53 @@ const DesktopMusic = function ({
                             <IconSearch />
                         </button>
                     )}
+
+                    {/* 只看喜欢 — a filter, not a destination: it narrows the
+                        list below and stays lit while it does. The phone's bar
+                        carries the same button with the same paint, and it is
+                        *not* gated on a QQ number there or here: a guest's
+                        likes are real likes, they simply live in this browser.
+
+                        It follows the search rather than preceding it: the
+                        search slot is the one that grows into a field, so it has
+                        to be the leftmost of the three for this tile to stay put
+                        while the field opens. */}
+                    <button
+                        type="button"
+                        className={likedOnly
+                            ? `${styles['side-heart']} ${styles['side-heart-on']}`
+                            : styles['side-heart']}
+                        title={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
+                        aria-label={likedOnly ? '显示全部歌曲' : '只看喜欢的歌曲'}
+                        aria-pressed={likedOnly}
+                        onClick={onToggleLikedOnly}
+                    >
+                        {/* `size={18}`: the heart's own default is 22, which in
+                            a row of an 18px panel glyph and a 16px search glyph
+                            would read as a bigger control than its neighbours.
+                            The tile normalises the size, the same way the phone
+                            bar's `.nav-btn` does. */}
+                        <IconHeart size={18} filled={likedOnly} />
+                    </button>
+
+                    {/* The fold toggle closes the row, and so sits at the
+                        column's right edge: what it folds away is the list,
+                        which is the whole column, so the control belongs on the
+                        edge the list moves towards. */}
+                    <button
+                        type="button"
+                        className={styles['side-toggle']}
+                        onClick={() => setListOpen((open) => !open)}
+                        onPointerEnter={() => setListHover(true)}
+                        onPointerLeave={() => setListHover(false)}
+                        aria-expanded={listVisible}
+                        aria-label={listVisible ? '收起列表' : '展开列表'}
+                        title={listVisible ? '收起列表' : '展开列表'}
+                    >
+                        {/* The chevron follows the state, not the label: it
+                            points the way the list will move. */}
+                        {listVisible ? <IconPanelFold /> : <IconPanel />}
+                    </button>
                 </div>
 
                 <div

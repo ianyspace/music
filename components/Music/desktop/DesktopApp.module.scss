@@ -42,6 +42,13 @@
        dot sitting on the mark. */
     --badge-ring: #16161b;
     --track: rgba(255, 255, 255, 0.18);
+    /* The played half of the seek rail. It used to be `--accent`, which painted
+       a 3px red line the full width of the capsule — the loudest thing in a bar
+       that is otherwise one grey ramp, and the last red in it once the play
+       button's disc went neutral. Same weight as `--text-2`, but a token of its
+       own: this is a rail, not secondary text, and the two are free to move
+       apart. */
+    --progress: rgba(255, 255, 255, 0.6);
     --hover: rgba(255, 255, 255, 0.06);
     --row-active: rgba(251, 92, 116, 0.18);
     /* The panels' content components are shared with the phone layout, so they

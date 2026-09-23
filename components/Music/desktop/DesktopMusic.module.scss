@@ -565,22 +565,25 @@
     pointer-events: none;
 }
 
-/* The column's first row: the app's mark, then the fold toggle, the 只看喜欢
-   filter and the search. It is a row of controls, not a surface — same
-   `pointer-events: none` here as on `.side`, with `auto` on each control
-   itself, because the half of the row the search does not fill is empty space
-   lying over the record.
+/* The column's first row: the app's mark alone at the leading end, then the
+   three list controls — search, 只看喜欢, fold — at the trailing end. It is a
+   row of controls, not a surface — same `pointer-events: none` here as on
+   `.side`, with `auto` on each control itself, because the empty middle of the
+   row is space lying over the record.
 
    `padding-bottom: 0`: the gap down to the list is `.side`'s own `gap`, so
    there is exactly one number deciding it.
 
-   **The search is last in the row on purpose.** When the field opens it goes
-   from a 36px tile to `flex: 1`, and because nothing follows it, it grows
-   rightward into the empty half of the row — the mark, the toggle and the
-   heart stay exactly where the pointer left them. The phone's bar puts the
-   field between the mark and the actions, which works at 390px with three
-   controls; here the row is 312px wide and the field is the one thing that has
-   to be able to grow. */
+   **The mark keeps the left edge and the actions take the right** — the two
+   edges the phone's bar puts them on as well. The free space between them is
+   spent by the search slot's own `margin-left: auto` (see below).
+
+   The search leads the group for a reason that is not aesthetic: it is the slot
+   that becomes the field, and `flex: 1` on a child moves only what comes *after*
+   it. Leading the group, the field grows leftward into the empty middle and the
+   two tiles to its right do not move by a pixel — anywhere else in the group,
+   everything before it would be shoved back against the mark the moment it
+   opened. */
 .side-head {
     display: flex;
     align-items: center;
@@ -702,14 +705,26 @@
     pointer-events: none;
 }
 
-/* --- the search, in the row with the toggle -------------------------------
+/* --- the search, leading the row's actions --------------------------------
    One control here, and no menu beside it. The three-dots popover that used to
    sit here was folded into the settings dialog, and the settings dialog is now
    gone as well: there is nothing left on this layout that wants to be a list of
    actions. What a visitor can still do to the list, they do to the list.
 
-   No rule of its own: `.search-btn` is one of the three tiles declared together
-   under `.side-head` above. */
+   `.search-btn` has no other rule of its own — it is one of the three tiles
+   declared together under `.side-head` above. What it does own is this margin,
+   shared with the field that replaces it: the slot is the first of the row's
+   three controls, so the row's free space is spent here, in one place, and the
+   heart and the toggle follow the slot out to the trailing edge.
+
+   **It must not move to another tile.** Two `auto` margins would split the free
+   space between them and the group would drift apart; without it the three
+   tiles would bunch up against the mark. */
+
+.search-btn,
+.search {
+    margin-left: auto;
+}
 
 .search {
     display: flex;
@@ -728,8 +743,11 @@
     background: var(--glass-bg-soft);
     pointer-events: auto;
     /* The field unrolls out of the button's corner rather than swelling from
-       its middle — it is the button, opened. */
-    transform-origin: left center;
+       its middle — it is the button, opened. The origin is the *right* edge,
+       because the field's right end is where the button it replaces was: the
+       slot leads the row's actions, so what grows is the field's left edge,
+       leftward into the empty middle of the row. */
+    transform-origin: right center;
     animation: search-open 0.22s cubic-bezier(0.32, 0.72, 0.2, 1) both;
 
     &:focus-within {
@@ -1375,10 +1393,14 @@
     background: transparent;
     cursor: pointer;
 
+    /* The played half is `--progress`, a neutral white, not `--accent`: a 3px
+       red line across the full width of the capsule was the loudest thing in
+       the bar, and it is the last red in it now that the play button has no
+       disc. */
     &::-webkit-slider-runnable-track {
         height: 3px;
         border-radius: 2px;
-        background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--track) var(--fill, 0%));
+        background: linear-gradient(to right, var(--progress) var(--fill, 0%), var(--track) var(--fill, 0%));
         transition: height 0.16s ease;
     }
 
@@ -1408,7 +1430,7 @@
     &::-moz-range-progress {
         height: 3px;
         border-radius: 2px;
-        background: var(--accent);
+        background: var(--progress);
     }
 
     &::-moz-range-thumb {
@@ -1567,31 +1589,32 @@
     }
 }
 
-/* The bar's only accent is the play button and the rail's fill. A toggle that
-   is *on* used to turn `--accent` as well, which put up to three red glyphs
-   among the grey ones and made the bar read as two palettes in one pill. "On"
-   is a bright glyph on a soft chip now — `:hover`'s own fill, held — so the
-   state is just as visible without spending a second colour on it. */
+/* The bar has no accent colour left in it at all: the play button's disc and
+   the rail's fill both went neutral (see `.ctrl-play` and `.seek`), so the
+   capsule is one grey ramp. A toggle that is *on* turns `--text` on a soft
+   chip — `:hover`'s own fill, held — which is as visible as a colour would make
+   it. It used to turn `--accent`, which put up to three red glyphs among the
+   grey ones and made the bar read as two palettes in one pill. */
 .ctrl-on {
     color: var(--text);
     background: var(--hover);
 }
 
-/* The bar's one solid-colour button. It has been getting smaller for three
-   passes — 50px, then 44, now 40 — and the size was only half of why it read
-   as the bar's subject rather than its control.
+/* The bar's play/pause button, and the one control in it with no fill at all.
 
-   The other half was the paint: a `linear-gradient` from `--accent-2` to
-   `--accent` under a `0 12px 26px -10px` red glow. That is a lit, raised ball,
-   which is the exact look the rest of this page just dropped — the glass is
-   flat now, the record is the only thing with a highlight on it, and a glossy
-   red sphere floating in a pane of frosted glass belonged to neither. Flat
-   `--accent`, no gradient, no glow.
+   It has been a lit disc (`linear-gradient` from `--accent-2` to `--accent`
+   under a `0 12px 26px -10px` red glow), then a flat `--accent` one, and now
+   nothing: with the rail's own fill no longer red either, a red disc was the
+   one loud thing left in an otherwise monochrome capsule. The hierarchy it used
+   to get from paint it gets from colour instead — this glyph is `--text`, its
+   neighbours are `--text-2` — plus the hover chip the transport all share.
 
-   The phone's play button is 30px with an 18px glyph — the glyph fills the
-   button. This is 40px with the same 18px glyph, so it is the *ring* around it
-   that carries the weight, which is what "the main one" should look like in a
-   row of 36px rings. */
+   The 40px box stays although it is invisible without a disc: it is the tallest
+   thing in the row and `.bar-row`'s content height is measured against it, so
+   shrinking it would move the transport. The phone's play button is 30px with
+   an 18px glyph — the glyph fills the button; this is the same 18px glyph with
+   more room around it, which is what "the main one" looks like in a row of
+   36px rings. */
 .ctrl-play {
     display: inline-flex;
     align-items: center;
@@ -1600,21 +1623,20 @@
     height: 40px;
     margin: 0 2px;
     /* No optical nudge. It had `padding-left: 2px`, copied from the phone's
-       player, where the same trick is applied to a transparent button — but
-       this one is a solid disc, so the 1px the padding moved the glyph by was
-       measurable against the circle rather than invisible. The `IconPlay` path
-       already carries its own nudge (its ink sits 2.17 units right of the
-       viewBox centre, which is what makes a right-pointing triangle read as
-       centred), and `IconPause` is symmetric; centring the box centres both. */
+       player — and the `IconPlay` path already carries its own (its ink sits
+       2.17 units right of the viewBox centre, which is what makes a
+       right-pointing triangle read as centred), while `IconPause` is
+       symmetric; centring the box centres both. */
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: var(--accent);
-    color: #fff;
+    background: transparent;
+    color: var(--text);
     cursor: pointer;
     transition: transform 0.16s, background-color 0.2s;
 
     &:hover:not(:disabled) {
+        background: var(--hover);
         transform: scale(1.05);
     }
 
