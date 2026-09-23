@@ -23,13 +23,14 @@
 | `components/Music/`（根） | 只放共享件：`Cover` / `Marquee` / `icons` / `shared` / `audioCache` / `librarySource` / `playStats` / `likes` |
 | `cloudflare-worker/schema.sql` | D1 的建表语句（`plays` + `likes`；Worker 自己也会跑一遍同样的 DDL） |
 | `lib/cache/indexedDb.js` | IndexedDB 薄封装（缓存存储层） |
-| `utils/retireServiceWorker.js` | 注销旧 Service Worker 的过渡代码，可删 |
-| `public/` | 站点图标（favicon.ico + PNG 一套），构建时原样拷进 `out/` |
+| `public/sw.js` | 离线外壳的 service worker：网络优先、失败才回缓存，只缓存本站的 HTML / CSS / JS / 图标 |
+| `utils/registerServiceWorker.js` | 注册它。只在生产构建里注册，`npm run dev` 下不注册 |
+| `public/` | 站点图标（favicon.ico + PNG 一套）+ `sw.js`，构建时原样拷进 `out/` |
 | `cloudflare-worker/` | Cloudflare Worker，把 R2 桶暴露成曲库清单 |
 | `scripts/preview-*.js` | 视觉核验：读**构建产物里的真实 CSS** + 硬编码 markup 生成单文件 HTML，用浏览器打开即可量尺寸 |
 | `styles/index.scss` | 唯一全局样式入口，只由 `pages/_app.js` 导入 |
 
-> **`public/` 里只放图标，没有 `sw.js`** —— 服务工人已彻底移除，见下方。
+> **`public/` 里只有图标和 `sw.js`** —— 离线外壳回来了，但和上一代是两回事（网络优先、只做兜底），见下方。
 > **`utils/basePath.js` 已删除**：`withBasePath()` 的唯一调用者是原 `_app.js` 里的 SW 注册，
 > SW 一走它就没有使用者了。但**图标的 basePath 得自己拼**（见下一条）。
 
@@ -53,14 +54,29 @@
   于是 `inset: 0` 撑成整个滚动高度、面板被推到最底部（表现为"只有遮罩没有抽屉"）。
   抽屉 / 缓存管理这类全屏浮层一律挂在各自外壳（`h5/MusicApp` / `desktop/DesktopApp`）
   的最外层渲染 —— 桌面端虽然没有 tab 动画，也照此办理，免得以后加了动画再踩一次。
-- **没有 Service Worker，这是有意的，不要加回来**。
-  它曾负责预缓存页面外壳，但带来两个无法接受的代价：部署后旧外壳继续吐旧 JS；
-  以及「我现在看到的是不是最新版」没法靠刷新回答 —— 排查线上问题时这个不确定性
-  反复误导过判断。页面外壳由 Pages 自己提供，已经很稳，不需要中间层。
-  已经装过旧 SW 的浏览器由 `utils/retireServiceWorker.js` 在加载时注销并清掉
-  `music-shell-*` / `music-runtime-*` 缓存；**它只注销、永不注册**。
-  旧外壳自然淘汰完（几个月）这个文件就可以删。注意：光删 `public/sw.js` 是没用的，
-  已安装的 SW 不会因此消失，它只会在 fetch `sw.js` 时拿到 404 然后继续用旧缓存。
+- **有一个 Service Worker，但它只做断网兜底、不做加速 —— 往里加东西之前先读这一段**。
+  这个仓库删过一次 worker：它**预缓存**外壳，代价是部署后旧外壳继续吐旧 JS，
+  而且「我现在看到的是不是最新版」没法靠刷新回答 —— 排查线上问题时这个不确定性反复误导过判断。
+  `public/sw.js` 堵死这条的方式是**网络优先**：所有请求先 `fetch()`，只有它抛错（断网）才回缓存。
+  于是「有 worker」不再等于「可能在读旧的」—— 在线拿到的永远是线上那一份，刷新一次就能确定版本。
+  **这条策略是这个文件存在的全部理由；改成 cache-first 就等于把那两个代价一起请回来。**
+  - **缓存范围只有本站的 HTML / CSS / JS / 图标**。曲库 Worker、R2 音频、封面都是跨域的，
+    一律不碰（跨域响应要么不透明、要么带 `Range`，都不适合整份缓存）。
+    音频和清单归应用自己的 IndexedDB / localStorage 管，见上面那两条。
+  - **安装时除了三条路由和图标，还会顺着 HTML 把里面的 `_next/static/**` 抓一遍。**
+    这一遍不能省：安装发生在第一次访问时，而**那次访问的请求不经过这个 worker**（它还没接管），
+    不补这一遍的话「访问过一次然后断网」是打不开的 —— 外壳在、脚本不在。
+  - **`activate` 里的清理按前缀**（自己的 `music-offline-` + 上一代的 `music-shell-` /
+    `music-runtime-`）：`caches` 是整个 origin 共用的，而这个 origin 上还挂着博客（`/space/`），
+    不能顺手删别人的缓存。原来的 `utils/retireServiceWorker.js` 已经删掉 ——
+    它注销的是 origin 上**所有**注册（会把博客的 worker 一起干掉），而旧注册现在会被
+    同一个地址上的新脚本顶掉，旧缓存由 `activate` 清。
+  - **注册只在生产构建里发生**（`utils/registerServiceWorker.js`）：`npm run dev` 下注册会把
+    dev server 的请求也拦下来，改代码看不到效果。本地要看离线行为，用 `npm run build` +
+    `scripts/serve-static.js` 服务 `out/`（那也是产物本身的形态）。
+  - **它不影响冒烟脚本**：`drive-page.js` 打的是真网络，而 worker 是网络优先。
+    但万一遇到「明明改了却看不到」的怪事，先怀疑它 —— devtools 的
+    Application → Service Workers 里 Unregister 就能排除。
 - **一行文字别用 flex 包**（踩过坑）：`Marquee` 里的 `.item` 原本是 `inline-flex; align-items: center`，
   而 flex 容器会把每个子文本块 blockify —— 于是「行首」落在每个子块自己的开头，
   CSS 会把**行首那个可折叠空格**吃掉。结果 `title - artist` 里 `" - "` 只剩右边那个空格，
@@ -673,7 +689,8 @@ Cloudflare D1，由 `cloudflare-worker/` 的 `POST /plays` / `GET /stats`（播�
 
 ### 1. 已经干净、不用再改的部分
 
-- 站点是 `output: 'export'` 的纯静态产物，**没有服务端、没有凭据、没有 Service Worker**。
+- 站点是 `output: 'export'` 的纯静态产物，**没有服务端、没有凭据**。有一个 Service Worker
+  （`public/sw.js`），但它只缓存本站同源的 GET 响应，不读也不存任何凭据，攻击面没有变化。
 - D1 的每一条 SQL 都走 `?1` 绑定参数。唯一拼进语句里的是模块常量
   （`RANKING_LIMIT`、`MAX_LIKES_PER_REQUEST`）→ 没有注入面。
 - 仓库**和全部提交历史**里 `client_secret` / `AIza` / `-----BEGIN` / `ghp_` 零命中。
@@ -1449,13 +1466,16 @@ Jekyll 构建就无人对抗，于是它成了最后一次部署，整站变成�
   跳过的那次推送在 Actions 列表里什么都不显示，只有线上会变。判断设置还在不在的方法见本节
   「判断它有没有真的生效」。
 
-**推完必须验一句「线上到底在服务什么」**，三条一起看：
+**推完必须验一句「线上到底在服务什么」**，四条一起看：
 
 ```
 curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/h5/        # 200
 curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/README.md  # 404
 curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/.nojekyll  # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://ianyspace.github.io/music/sw.js      # 200
 ```
+
+最后一条查的是 `public/` 里那种**不带内容哈希**的文件：它上没上线，构建日志看不出来。
 
 `h5` 200 只说明**那一刻**是对的（这个故障是间歇性的）；`README.md` 404 + `.nojekyll` 200
 才说明当前服务的是 `out/`。要确认某个改动真的上线了，去 grep 产物里的字符串

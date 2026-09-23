@@ -73,9 +73,10 @@ jobs:
       # `output: 'export'` (see next.config.js) makes `next build` emit the whole
       # static site into `out/`, which is what GitHub Pages serves.
       #
-      # `public/**` is copied verbatim into `out/`, which is where the site icons
-      # come from (favicon.ico + the PNG set). Next does not rewrite those paths
-      # for basePath, so `pages/_document.js` builds them itself.
+      # `public/**` is copied verbatim into `out/`: the site icons (favicon.ico +
+      # the PNG set) and the offline service worker (`sw.js`). Next does not
+      # rewrite those paths for basePath, so `pages/_document.js` builds the icon
+      # hrefs itself.
       - name: Build static site
         run: npm run build
         env:
@@ -118,9 +119,10 @@ jobs:
           # is no public/ file left to assert — the component either draws or
           # the page's JS is broken, and a missing file is no longer a failure
           # mode this check can see.
-          # The service worker was removed on purpose; its reappearance would mean
-          # a stale shell is being shipped again.
-          test ! -e out/sw.js         || { echo "::error::out/sw.js exists — the service worker was removed on purpose"; exit 1; }
+          # The offline service worker is a public/ file, so like the icons it is
+          # copied verbatim and nothing else would notice it going missing — the
+          # site would just quietly stop working offline.
+          test -f out/sw.js           || { echo "::error::out/sw.js missing"; exit 1; }
           echo "build output verified"
 
       # GitHub also runs its own legacy Jekyll build ("pages build and

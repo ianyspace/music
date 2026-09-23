@@ -66,9 +66,10 @@ export const audioCacheKey = function (track) {
  * never invalidated by time. `forceRefresh` in the fetch helpers is how fresh
  * data gets in, not this.
  *
- * It is **not** an offline shell: with no service worker the site cannot open
- * without a network at all. What survives offline is the audio cache, and only
- * for a page that is already open.
+ * It is **not** the offline mechanism — the shell is (`public/sw.js`, which
+ * serves the page offline). This is what *fills* that shell: offline, the list on
+ * screen comes from here. Offline audio is the audio cache's job, and only for
+ * songs already cached.
  *
  * Lists written before this became permanent still carry a real `expiresAt`,
  * and those are still honoured so an old entry cannot outlive its intent.

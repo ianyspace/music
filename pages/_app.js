@@ -1,7 +1,7 @@
 import React from 'react';
 import Head from 'next/head';
 
-import { retireServiceWorker } from 'utils/retireServiceWorker';
+import { registerServiceWorker } from 'utils/registerServiceWorker';
 
 import 'styles/index.scss';
 
@@ -11,21 +11,22 @@ import 'styles/index.scss';
  * the global stylesheet (Next's pages router only allows global CSS imports
  * from here) and pin the viewport.
  *
- * There is deliberately no service worker. One used to precache the app shell,
- * and it caused more problems than it solved: a stale shell could keep serving
- * old JS after a deploy, and it made "is this the live build?" impossible to
- * answer by simply reloading. The app does not need it either — audio, the
- * track list and settings live in IndexedDB / localStorage (see
- * `components/Music/audioCache.js`), and Pages serves the shell itself, so a
- * normal request is enough to stay fast.
+ * It also registers the offline service worker (`public/sw.js`). That worker is
+ * a **pure offline fallback, never a freshness layer**: every request goes
+ * network-first and the cache is only read when `fetch()` rejects, so being
+ * online always means getting the live copy, and a reload always answers "am I
+ * looking at the current build?". That is what makes having one safe again — an
+ * earlier worker *precached* the shell, and a stale shell could keep serving old
+ * JS after a deploy.
  *
- * All that is left is `retireServiceWorker`, which tears the old shell down on
- * browsers that still have it installed. It only unregisters; it never
- * registers anything.
+ * The worker only caches this site's own HTML / CSS / JS / icons. Audio, the
+ * track list and settings still live in IndexedDB / localStorage (see
+ * `components/Music/audioCache.js`), and the cross-origin library Worker, R2
+ * audio and covers are never touched.
  */
 export default function App({ Component, pageProps }) {
     React.useEffect(() => {
-        retireServiceWorker();
+        registerServiceWorker();
     }, []);
 
     return (
