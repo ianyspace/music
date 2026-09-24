@@ -77,6 +77,12 @@
   - **它不影响冒烟脚本**：`drive-page.js` 打的是真网络，而 worker 是网络优先。
     但万一遇到「明明改了却看不到」的怪事，先怀疑它 —— devtools 的
     Application → Service Workers 里 Unregister 就能排除。
+  - **回归检查是 `scripts/probe-offline.js`**（`npm run build` 之后直接跑，自带静态服务器）。
+    它守的就是上面这几条：接管、缓存清单、**在线不读缓存**、**断网真的回缓存**、清理按前缀。
+    **把 worker 改成 cache-first 的话它会红** —— 那是这个文件唯一不能碰的约定。
+    它模拟断网的方式是**关掉自己的静态服务器**，不是 CDP 的网络仿真：要断的是 worker 自己的
+    `fetch()`，而仿真不一定盖得到它（踩过：用仿真跑，断网那一步和在线那一步读到的是同一个
+    结果，看着像通过，其实什么都没证明）。
 - **一行文字别用 flex 包**（踩过坑）：`Marquee` 里的 `.item` 原本是 `inline-flex; align-items: center`，
   而 flex 容器会把每个子文本块 blockify —— 于是「行首」落在每个子块自己的开头，
   CSS 会把**行首那个可折叠空格**吃掉。结果 `title - artist` 里 `" - "` 只剩右边那个空格，
@@ -1272,6 +1278,7 @@ token 只在**一处**声明：`desktop/DesktopApp.module.scss` 的 `.page`。
 - `node scripts/serve-static.js <根> [端口]` — 零依赖静态服务器，给下面那套「截图看一眼」用：目录请求回 `index.html`，目录里只有一个 html 时回那一个。这台机器的 python3 是个装了一半的 3.13（`Failed to import encodings`），所以用它顶 `python3 -m http.server`
 - `node scripts/probe-lyric-styles.js [--track=夜曲] [--prefix=fx]` — 四种歌词样式各截一张图，真 Chrome，裁到字上（先起 `serve-static.js`）
 - `node scripts/probe-wipe.js [--track=夜曲]` — 把 `--wipe` 钉在四个已知值各截一张，量卡拉OK 填充是不是真的两段色（先起 `serve-static.js`）
+- `node scripts/probe-offline.js [--port=8913] [--chrome=PATH]` — 离线外壳（`public/sw.js`）的回归检查：装完有没有接管、缓存里有没有外壳 HTML 和 `_next` 资源、**在线时会不会误读缓存**、**断网时是不是真的回缓存**、激活时的清理有没有动别人家的缓存。自带静态服务器（把 `out/` 挂在 `/music/` 下），`npm run build` 之后直接跑，不用 Junction、也不用先起 `serve-static.js`
 - `cd cloudflare-worker && npx wrangler deploy` — 部署曲库 Worker
 
 ### 要看「画出来是什么样」的时候
