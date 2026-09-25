@@ -356,8 +356,7 @@ export const IconPanelFold = ({ size = 18 }) => (
 // hub — turned into a grey smudge at 20px, and sitting alone in the corner of
 // an otherwise empty screen it read as decoration rather than as a door. This
 // is the same idea cut down to what survives the size: a hub and six spokes.
-export const IconGear = ({ size = 20 }) => (
-    <SvgStroke size={size}>
+export const IconGear = ({ size = 20 }) => (    <SvgStroke size={size}>
         <circle cx="12" cy="12" r="3.2" />
         <path d="M12 3.2V6.2M12 20.8V17.8M16.4 4.4 14.9 7M7.6 4.4 9.1 7M16.4 19.6 14.9 17M7.6 19.6 9.1 17" />
     </SvgStroke>
@@ -366,6 +365,22 @@ export const IconGear = ({ size = 20 }) => (
 export const IconClose = ({ size = 18 }) => (
     <SvgStroke size={size}>
         <path d="M6 6l12 12M18 6L6 18" />
+    </SvgStroke>
+);
+
+// Volume: a speaker with one arc, for the immersive bar's volume slider.
+export const IconVolume = ({ size = 20 }) => (
+    <SvgStroke size={size}>
+        <path d="M4 9.5v5h3.4L12 18.6V5.4L7.4 9.5H4Z" />
+        <path d="M15.5 9.2a4 4 0 0 1 0 5.6" />
+    </SvgStroke>
+);
+
+// Fullscreen: four corners reaching outward — inward arrows when exiting is
+// left to the title to say, since the corners alone read as "expand".
+export const IconExpand = ({ size = 20 }) => (
+    <SvgStroke size={size}>
+        <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
     </SvgStroke>
 );
 

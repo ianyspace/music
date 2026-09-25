@@ -160,28 +160,26 @@ const PAGES = [
         // The rows carry `title`; the row menu beside each one carries
         // `aria-label`, so excluding `aria-label` leaves exactly the rows.
         rows: 'ul li button:not([aria-label])',
-        // No `aria-label` on this one, and the "on" label is 「收起歌词」.
+        // No `aria-label` on this one; the "on" label is 「隐藏歌词」 on the
+        // immersive play bar.
         lyrics: {
-            selector: 'button[title="显示歌词"], button[title="收起歌词"]',
+            selector: 'button[title="显示歌词"], button[title="隐藏歌词"]',
             cycle: true,
         },
-        // `aria-expanded` here is `listOpen && !autoHidden` — the panel's
-        // visibility, not the visitor's choice — and playing folds the panel
-        // three seconds in. So the first of two clicks lands on a panel that is
-        // already folded and visibly changes nothing, and the second is the one
-        // that shows. That is the page working as designed; a cycle assertion
-        // would be reading the auto-fold, not the button.
+        // The playlist panel's fold button (in the panel's header) and the
+        // handle that summons the folded panel back. `aria-expanded` here is
+        // the panel's visibility, not the visitor's choice — playing folds the
+        // panel five seconds in, so a cycle assertion would be reading the
+        // auto-fold, not the button.
         list: {
-            selector: 'button[aria-label="收起列表"], button[aria-label="展开列表"]',
+            selector: 'button[aria-label="收起歌单"], button[aria-label="展开歌单"]',
             cycle: false,
         },
-        // Escape only — it closes the settings sheet, which must not stop the
-        // music.
+        // Escape only — it closes the settings popover, which must not stop
+        // the music.
         keys: [{ key: 'Escape', paused: false }],
-        // 置顶 / 取消置顶. The row drawer is the one action both layouts have,
-        // and this is the reason it is driven on *both* pages: it was wired
-        // into the phone alone once, and only a person noticed.
-        pin: ROW_DRAWER,
+        // No `pin`: the row drawer retired with the old workspace — the
+        // immersive page's rows have exactly one action, playing them.
     },
     {
         name: 'h5',

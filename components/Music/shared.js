@@ -69,6 +69,25 @@ export const DESKTOP_LIST_KEY = 'music:setting:desktopList';
 export const VISUAL_3D_KEY = 'music:setting:visual3d';
 export const VISUAL_INTENSITY_KEY = 'music:setting:visualIntensity';
 export const VISUAL_INTENSITIES = ['calm', 'standard', 'strong'];
+// The immersive page (the desktop layout's only form since the redesign).
+// Background is a *mode name* — the nebula is the default and the custom
+// library is opt-in — so an unrecognised stored value falls back to `nebula`
+// rather than to a mode nobody picked, the same whitelist reasoning as
+// `LYRIC_STYLES` and `VISUAL_INTENSITIES`.
+export const IMMERSIVE_BG_KEY = 'music:setting:immersiveBg';
+export const IMMERSIVE_BGS = ['nebula', 'custom'];
+// The visitor's own backgrounds: a JSON array of `{ id, type, url }` plus the
+// id of the one on screen. The preset ships with the page and needs no entry.
+export const IMMERSIVE_CUSTOM_KEY = 'music:setting:immersiveCustom';
+// Readability filter strength for a picture/video background, 0–100.
+export const IMMERSIVE_FILTER_KEY = 'music:setting:immersiveFilter';
+// Whether the lyrics stay visible while the nebula is on. The custom
+// background is *for* the lyrics, so that side has no switch.
+export const IMMERSIVE_LYRIC_KEY = 'music:setting:immersiveLyric';
+// Whether the playlist panel folds itself away while music plays.
+export const IMMERSIVE_PANEL_KEY = 'music:setting:immersivePanel';
+// The immersive page's own volume, 0–100 — separate from any other layout.
+export const IMMERSIVE_VOLUME_KEY = 'music:setting:immersiveVolume';
 // The two list preferences. Both are *sets/orders of track keys* — the same
 // `<source>:<id>` form `audioCacheKey` builds — held as a JSON array in
 // localStorage rather than in IndexedDB: they are small, they are read on

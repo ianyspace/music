@@ -1,0 +1,223 @@
+/*
+ * The immersive page's shell. The background is the page: layered absolutely
+ * from the colour field upward, every control floating in glass above.
+ */
+
+$ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+
+.root {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-height: 560px;
+    overflow: hidden;
+    background: #0b0c10;
+    color: #f2f3f7;
+}
+
+/* --- the base, under everything ------------------------------------------ */
+
+.backdrop {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(60% 80% at 18% 12%, rgba(64, 66, 89, 0.35), transparent 70%),
+        radial-gradient(50% 70% at 85% 80%, rgba(38, 40, 62, 0.4), transparent 70%),
+        #0b0c10;
+}
+
+/* The song's own colour, blooming at the centre — the light source the glass
+    samples, kept faint so the nebula owns the colour on screen. */
+.glow {
+    position: absolute;
+    inset: -20%;
+    opacity: 0.16;
+    filter: blur(90px);
+    transition: opacity 1200ms $ease-glass;
+}
+
+.cover-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    opacity: 0.14;
+    filter: blur(46px) saturate(1.25) brightness(0.8);
+    transform: scale(1.15);
+    transition: opacity 1200ms $ease-glass;
+}
+
+/* --- background layers ----------------------------------------------------- */
+
+.layer {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    /* Only the newest layer fades in; the one under it is already fully
+        visible, so the cross-fade has no dark frame. */
+    animation: layer-in 900ms $ease-glass both;
+}
+
+.layer-top {
+    opacity: 1;
+    animation: none;
+}
+
+@keyframes layer-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* --- the custom background -------------------------------------------------- */
+
+.media,
+.preset {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+.media-el {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.03);
+}
+
+/* The readability veil: a uniform dim plus an edge vignette, driven by the
+    one --veil number (0–0.8). Lyrics sit on top of this. */
+.veil {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(120% 90% at 50% 45%, transparent 40%, rgba(5, 6, 10, 0.55) 100%),
+        rgba(5, 6, 10, var(--veil, 0.32));
+    transition: background 400ms $ease-glass;
+}
+
+/* The built-in preset: three huge blurred blobs of the song's colour, drifting
+    on their own long loops. Zero network, zero JS per frame. */
+.preset-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(110px);
+    opacity: 0.5;
+    will-change: transform;
+}
+
+.preset-blob-a {
+    width: 55vmax;
+    height: 55vmax;
+    left: -12vmax;
+    top: -18vmax;
+    animation: blob-a 26s ease-in-out infinite alternate;
+}
+
+.preset-blob-b {
+    width: 48vmax;
+    height: 48vmax;
+    right: -14vmax;
+    bottom: -16vmax;
+    opacity: 0.38;
+    animation: blob-b 34s ease-in-out infinite alternate;
+}
+
+.preset-blob-c {
+    width: 34vmax;
+    height: 34vmax;
+    left: 32%;
+    top: 38%;
+    opacity: 0.26;
+    animation: blob-c 22s ease-in-out infinite alternate;
+}
+
+@keyframes blob-a {
+    to { transform: translate(16vmax, 10vmax) scale(1.15); }
+}
+
+@keyframes blob-b {
+    to { transform: translate(-14vmax, -8vmax) scale(0.9); }
+}
+
+@keyframes blob-c {
+    to { transform: translate(10vmax, -12vmax) scale(1.2); }
+}
+
+/* --- the idle hint ----------------------------------------------------------- */
+
+.idle {
+    position: absolute;
+    left: 50%;
+    top: 44%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+
+    p {
+        margin: 0;
+        font-size: 15px;
+        letter-spacing: 0.06em;
+    }
+}
+
+/* --- the summon edge ----------------------------------------------------------- */
+
+.edge {
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 8px;
+    z-index: 19;
+    cursor: pointer;
+
+    &:hover {
+        background: linear-gradient(to right, rgba(255, 255, 255, 0.14), transparent);
+    }
+}
+
+/* --- the toast ------------------------------------------------------------------- */
+
+.toast {
+    position: absolute;
+    left: 50%;
+    top: 30px;
+    transform: translateX(-50%);
+    padding: 8px 18px;
+    border-radius: 999px;
+    background: rgba(18, 19, 25, 0.72);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.9);
+    z-index: 50;
+    animation: toast-in 300ms $ease-glass;
+    pointer-events: none;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -8px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layer,
+    .toast {
+        animation-duration: 80ms;
+    }
+
+    .preset-blob {
+        animation: none;
+    }
+}
