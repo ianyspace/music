@@ -78,6 +78,7 @@ attribute float aSeed;
 uniform float uTime;
 uniform float uGather;
 uniform float uBass;
+uniform float uHigh;
 uniform float uLevel;
 uniform float uIntensity;
 uniform float uFocal;
@@ -85,6 +86,8 @@ uniform float uCameraZ;
 uniform vec2 uHalfViewport;
 uniform float uPointSize;
 uniform float uMotion;
+uniform float uWaveAge;
+uniform float uWaveAmp;
 
 varying vec3 vColor;
 varying float vAlpha;
@@ -100,34 +103,48 @@ void main() {
 
     // Where this particle goes when the picture comes apart: a direction on
     // the unit sphere, pushed out to a shell of varying radius, so the
-    // scatter is a cloud rather than a balloon. The shell stays *inside* a
-    // couple of cover-widths — a burst that throws dots off-screen reads as
-    // the picture breaking, not as the picture dancing.
+    // scatter is a cloud rather than a balloon.
     vec3 scatter = normalize(rand * 2.0 - 1.0) * (0.75 + rand.x * 0.55);
 
     // Assembling: 0 is fully scattered, 1 is the finished picture.
     vec3 pos = mix(scatter, aTarget, uGather);
 
-    // The beat pushes each particle a little way out along its own scatter
-    // direction — a bounded breathing pulse, never a trip to the shell. The
-    // magnitude (≤ ~0.4 world units on a 2-unit cover) is what keeps the
-    // picture legible while it thumps; mixing towards the shell itself tore
-    // the image into dust the moment the low end arrived.
-    float burst = uBass * uIntensity * (0.3 + 0.7 * rand.y);
-    vec3 away = normalize(scatter) * (0.08 + 0.3 * rand.z);
-    pos += away * clamp(burst, 0.0, 1.0);
-
-    // A slow drift, and a lift that follows loudness. Both scale with
-    // uMotion, so a visitor who asked for less movement gets a still picture.
-    float drift = (0.012 + 0.035 * uLevel) * uMotion;
+    // A slow per-particle drift, small by design: the cover must stay
+    // readable, so motion is a shimmer on the surface, never a scramble.
+    float drift = (0.008 + 0.02 * uLevel) * uMotion;
     pos += vec3(
         sin(uTime * 0.55 + aSeed * 6.283),
         cos(uTime * 0.47 + aSeed * 4.712),
         sin(uTime * 0.31 + aSeed * 3.141)
     ) * drift;
-    pos.y += uLevel * 0.12 * uIntensity;
 
-    float angle = uTime * 0.07 * uMotion;
+    // Effect 1 — bass is a *coherent* breathing zoom of the whole picture.
+    // Per-particle displacement (the previous attempt) read as a twitch and
+    // smeared the image; scaling everything together reads as the cover
+    // pulsing with the kick and stays sharp.
+    float zoom = 1.0 + uBass * 0.05 * uIntensity;
+    pos.xy *= zoom;
+
+    // Effect 2 — on a detected beat (uWaveAmp, set by the CPU) a ring rolls
+    // out from the centre: particles near the wavefront are pushed radially
+    // outward. Coherent, so the picture visibly *ripples* rather than
+    // trembling — the structure survives because neighbours move together.
+    float r = length(pos.xy);
+    float waveR = uWaveAge * 2.1;
+    float band = exp(-pow((r - waveR) / 0.3, 2.0));
+    pos.xy += (r > 0.001 ? pos.xy / r : vec2(0.0)) * band * uWaveAmp * 0.22;
+
+    // Effect 3 — treble sparkle: a few particles glint, brighter and
+    // larger, like highlights catching light on the picture's surface.
+    float glint = 0.0;
+    if (rand.z > 0.88) {
+        float phase = uTime * (2.0 + rand.x * 3.0) + aSeed * 37.0;
+        glint = pow(max(0.0, sin(phase)), 6.0) * uHigh * uIntensity;
+    }
+
+    // A very slow yaw — just enough parallax to keep the cloud alive. The
+    // earlier 0.07 rad/s tilted the picture enough to hurt recognition.
+    float angle = uTime * 0.016 * uMotion;
     float c = cos(angle);
     float s = sin(angle);
     pos = vec3(pos.x * c + pos.z * s, pos.y, -pos.x * s + pos.z * c);
@@ -144,16 +161,12 @@ void main() {
     // plain number near 1, which is what uPointSize is measured in; dividing
     // by depth alone would give a length in pixels and land in the hundreds.
     float persp = uFocal / depth / uHalfViewport.y;
-    gl_PointSize = clamp(uPointSize * persp, 0.8, 34.0);
-    // A slight gamma lift on the sampled colour. The dots overlap additively,
-    // so per-dot brightness has to sit well under 1 — the picture's value is
-    // carried by the *sum* of neighbours, and unmoved it saturates to white.
-    // A gamma lift on the sampled colour, now safe: with over-blending the
-    // brightest visible dot wins, so the lift cannot saturate the way it
-    // did under additive blending. Covers read darker as particle fields
-    // than they do full-frame — gaps show the dark page through — so the
-    // lift also compensates for that.
-    vColor = clamp(pow(aColor, vec3(0.72)), 0.0, 1.0);
+    gl_PointSize = clamp(uPointSize * persp * (1.0 + glint * 0.9), 0.8, 34.0);
+    // A gamma lift on the sampled colour: with over-blending the brightest
+    // visible dot wins, so the lift cannot saturate. Covers read darker as
+    // particle fields than full-frame — gaps show the dark page through —
+    // so the lift also compensates for that. Glints brighten on top.
+    vColor = clamp(pow(aColor, vec3(0.72)) + glint * 0.5, 0.0, 1.0);
     // A fade with distance, so the back of the cloud reads as behind the
     // front of it rather than as more dots. Over-blending wants near-opaque
     // dots — the topmost dot's colour is what a pixel sees.
@@ -395,6 +408,7 @@ const CoverParticles = function ({
             time: gl.getUniformLocation(program, 'uTime'),
             gather: gl.getUniformLocation(program, 'uGather'),
             bass: gl.getUniformLocation(program, 'uBass'),
+            high: gl.getUniformLocation(program, 'uHigh'),
             level: gl.getUniformLocation(program, 'uLevel'),
             intensity: gl.getUniformLocation(program, 'uIntensity'),
             focal: gl.getUniformLocation(program, 'uFocal'),
@@ -402,6 +416,8 @@ const CoverParticles = function ({
             halfViewport: gl.getUniformLocation(program, 'uHalfViewport'),
             pointSize: gl.getUniformLocation(program, 'uPointSize'),
             motion: gl.getUniformLocation(program, 'uMotion'),
+            waveAge: gl.getUniformLocation(program, 'uWaveAge'),
+            waveAmp: gl.getUniformLocation(program, 'uWaveAmp'),
         };
 
         const buffers = {
@@ -415,6 +431,13 @@ const CoverParticles = function ({
         let startedAt = performance.now();
         let dead = false;
         let reader = null;
+
+        // Beat detection: a slow moving average of the bass is the "floor";
+        // a bass value that jumps clearly above it is a kick. Each detected
+        // kick fires one shockwave (amplitude held here, age read per frame).
+        let bassFloor = 0.12;
+        let lastBeatAt = -10_000;
+        let waveAmp = 0;
 
         const motion = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.15 : 1;
 
@@ -487,6 +510,7 @@ const CoverParticles = function ({
 
         let bass = 0;
         let level = 0;
+        let high = 0;
 
         const tick = function (now) {
             if (dead) return;
@@ -507,8 +531,21 @@ const CoverParticles = function ({
             const playing = live.isPlaying && Boolean(live.analyser);
             const wantBass = playing ? sample.low : 0.06;
             const wantLevel = playing ? sample.level : 0.1;
+            const wantHigh = playing ? sample.high : 0;
             bass += (wantBass - bass) * (wantBass > bass ? ATTACK : RELEASE);
             level += (wantLevel - level) * (wantLevel > level ? ATTACK : RELEASE);
+            high += (wantHigh - high) * (wantHigh > high ? ATTACK : RELEASE);
+
+            // Beat detection on the smoothed bass: it must clear the running
+            // floor by a margin and respect a short refractory period, or
+            // every sustained note fires waves nonstop.
+            bassFloor += (bass - bassFloor) * 0.012;
+            if (playing && bass > 0.2 && bass > bassFloor * 1.3 && now - lastBeatAt > 240) {
+                lastBeatAt = now;
+                waveAmp = Math.min(1.25, 0.4 + (bass - bassFloor) * 1.7);
+            }
+            waveAmp *= 0.93;
+            const waveAge = Math.min((now - lastBeatAt) / 1000, 4);
 
             const t = Math.min(1, (now - startedAt) / GATHER_MS);
             const eased = 1 - (1 - t) * (1 - t) * (1 - t);
@@ -520,6 +557,7 @@ const CoverParticles = function ({
             gl.uniform1f(locations.time, (now - startedAt) / 1000);
             gl.uniform1f(locations.gather, eased);
             gl.uniform1f(locations.bass, bass);
+            gl.uniform1f(locations.high, high);
             gl.uniform1f(locations.level, level);
             gl.uniform1f(locations.intensity, INTENSITY[live.intensity] || INTENSITY.standard);
             gl.uniform1f(locations.focal, FOCAL * Math.min(canvas.width, canvas.height) * 0.5);
@@ -530,6 +568,8 @@ const CoverParticles = function ({
             // enough that faces stay recognisable.
             gl.uniform1f(locations.pointSize, 9 * Math.min(window.devicePixelRatio || 1, 2));
             gl.uniform1f(locations.motion, motion);
+            gl.uniform1f(locations.waveAge, waveAge);
+            gl.uniform1f(locations.waveAmp, waveAmp);
 
             gl.bindBuffer(gl.ARRAY_BUFFER, buffers.target);
             gl.enableVertexAttribArray(locations.target);
