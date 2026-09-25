@@ -217,6 +217,28 @@
     pointer-events: none;
 }
 
+/* The particle cloud, in the record's place.
+
+   A little wider than the record's box: the cloud is the *whole* cover rather
+   than a circle inscribed in it, and the scatter on a loud beat needs room
+   that the disc's own rim never did. The height term is the same 56vh the
+   record is tuned to, minus a little, because the cloud's particles travel
+   outside its nominal box. */
+.stage-visual {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: min(62vh, 50vw, 780px, max(300px, calc(100vw - 2 * var(--side) - 56px)));
+    aspect-ratio: 1;
+    flex: 0 0 auto;
+    transition: opacity 0.3s ease;
+}
+
+.stage-lyrics .stage-visual {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* --- the record rig (the theme of the page) --- */
 
 /* Sized by the *disc*: the rig is the disc's box, and the tonearm overhangs

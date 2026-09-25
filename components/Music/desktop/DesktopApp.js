@@ -1,6 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { normalizeQq, parseTrackName, trackGradient } from '../shared';
+import {
+    normalizeQq,
+    parseTrackName,
+    storageGet,
+    storageSet,
+    trackGradient,
+    VISUAL_3D_KEY,
+    VISUAL_INTENSITIES,
+    VISUAL_INTENSITY_KEY,
+} from '../shared';
+import { attachAnalyser, resumeAnalyser } from '../core/audioAnalyser';
 import usePlayer from '../core/usePlayer';
 import PageHead from '../core/PageHead';
 import PlayerAudio from '../core/PlayerAudio';
@@ -108,6 +118,62 @@ const DesktopApp = function () {
         onMetadata,
     } = usePlayer({ lyricsAutoOpen: true, drive: false });
 
+    /* --- the visual effects ------------------------------------------------
+     *
+     * The two preferences live here rather than in `DesktopMusic` for the same
+     * reason the theme does: this shell owns what is stored, and the workspace
+     * is a plain view of it.
+     *
+     * 3D starts **on**. It is the reason the page exists, a visitor who never
+     * opens the panel still gets it, and the way to turn it off is one click
+     * in the corner. Starting it off would make the feature invisible to
+     * everyone who does not go looking.
+     */
+    const [visual3d, setVisual3d] = useState(true);
+    const [visualIntensity, setVisualIntensity] = useState('standard');
+    // Read back after mount, never in the initialiser: this is a static export,
+    // so a `useState` that touched localStorage would also run on the build
+    // machine and hand the browser markup that disagrees with what it reads.
+    // One effect restores both and writes both, so the two cannot race — a
+    // read-effect plus a write-effect would, because effects run in
+    // declaration order and the writer would still see the default.
+    const visualSyncedRef = useRef(false);
+    useEffect(() => {
+        if (!visualSyncedRef.current) {
+            visualSyncedRef.current = true;
+            const saved3d = storageGet(VISUAL_3D_KEY);
+            if (saved3d === 'off') setVisual3d(false);
+            else if (saved3d === 'on') setVisual3d(true);
+            const savedIntensity = storageGet(VISUAL_INTENSITY_KEY);
+            if (VISUAL_INTENSITIES.includes(savedIntensity)) setVisualIntensity(savedIntensity);
+            return;
+        }
+        storageSet(VISUAL_3D_KEY, visual3d ? 'on' : 'off');
+        storageSet(VISUAL_INTENSITY_KEY, visualIntensity);
+    }, [visual3d, visualIntensity]);
+
+    // --- the spectrum -------------------------------------------------------
+    //
+    // Built on the first play, not on mount. Two reasons, and either alone
+    // would be enough: an `AudioContext` created before any gesture starts
+    // `suspended`, and *routing* the element through a suspended context mutes
+    // it — the graph takes the audio out of the normal output path and only
+    // gives it back at `destination`. And building it at all is a cost nobody
+    // who left the switch off should pay.
+    //
+    // `isPlaying` only ever becomes true from a click, so this runs inside the
+    // gesture's sticky activation and `resume()` is allowed to work.
+    const [analyser, setAnalyser] = useState(null);
+    useEffect(() => {
+        if (!visual3d || !isPlaying) return;
+        const element = audioRef.current;
+        if (!element) return;
+        const node = attachAnalyser(element);
+        if (!node) return;
+        resumeAnalyser();
+        setAnalyser(node);
+    }, [visual3d, isPlaying, audioRef]);
+
     /* --- 账号, the one card this shell raises over the workspace ---------- */
 
     const [accountOpen, setAccountOpen] = useState(false);
@@ -200,6 +266,11 @@ const DesktopApp = function () {
                 isLiked={isLiked}
                 qqBound={Boolean(qq)}
                 onOpenAccount={openAccount}
+                visual3d={visual3d}
+                visualIntensity={visualIntensity}
+                analyser={analyser}
+                onToggleVisual3d={() => setVisual3d((on) => !on)}
+                onChooseVisualIntensity={setVisualIntensity}
             />
 
             {/* The row drawer, opened by a row's own three-dots button. It is
@@ -432,8 +503,14 @@ const DesktopApp = function () {
                 </div>
             )}
 
+            {/* `crossOrigin` is safe here and only here: `/desktop` plays the
+                public R2 library, whose bucket answers with the request's own
+                `Origin`. The phone layout passes nothing, because its library
+                can be a visitor's own Drive folder and those files are served
+                without CORS — asking for it there would fail the load. */}
             <PlayerAudio
                 audioRef={audioRef}
+                crossOrigin="anonymous"
                 onEnded={onEnded}
                 onPlay={onPlay}
                 onPause={onPause}

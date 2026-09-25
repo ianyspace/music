@@ -1,0 +1,54 @@
+/* The particle cloud.
+
+   The button is here for the same reason the record was one: the centre of
+   the stage is what you click to get to the lyrics, and a `<canvas>` cannot
+   be that — it is not focusable, and it carries no role of its own. So the
+   canvas sits inside a real button and the button is the whole control. */
+
+.stage {
+    /* Sized by whatever box the stage gives it, and never by its own content:
+       the canvas has no intrinsic size, so a button that took its size from
+       the child would collapse to nothing. */
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transition: transform 0.18s ease;
+
+    @media (hover: hover) {
+        &:hover:not(:disabled) {
+            transform: scale(1.012);
+        }
+    }
+
+    &:active:not(:disabled) {
+        transform: scale(0.99);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--focus, #7f77dd);
+        outline-offset: 6px;
+    }
+}
+
+/* No click target underneath means no pointer affordance either. */
+.stage-static {
+    cursor: default;
+}
+
+.wrap {
+    position: absolute;
+    inset: 0;
+    display: block;
+}
+
+.canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}

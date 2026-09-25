@@ -56,6 +56,19 @@ export const REPEAT_MODES = ['off', 'all', 'one'];
 // they do: a setting that silently reverts reads as a broken switch rather than
 // as a default.
 export const DESKTOP_LIST_KEY = 'music:setting:desktopList';
+// The wide-screen layout's visual effects. Two keys, not one packed value:
+// whether the 3D stage is on at all, and how hard it pushes. They are
+// independent — turning the stage off and back on must land on the intensity
+// the visitor was using, not on a default — and the intensity is a whitelist
+// like `LYRIC_STYLES`, for the same reason: a stored name that is no longer
+// offered has to fall back rather than be coerced into a step nobody picked.
+//
+// Desktop-only on purpose. The phone layout keeps its 2D record; a particle
+// cloud is not something to run on a phone, so these keys are read by
+// `DesktopApp` only and the phone never looks at them.
+export const VISUAL_3D_KEY = 'music:setting:visual3d';
+export const VISUAL_INTENSITY_KEY = 'music:setting:visualIntensity';
+export const VISUAL_INTENSITIES = ['calm', 'standard', 'strong'];
 // The two list preferences. Both are *sets/orders of track keys* — the same
 // `<source>:<id>` form `audioCacheKey` builds — held as a JSON array in
 // localStorage rather than in IndexedDB: they are small, they are read on

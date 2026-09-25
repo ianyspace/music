@@ -32,6 +32,8 @@ import Cover from '../Cover';
 import Marquee from '../Marquee';
 import MarkNote from '../core/MarkNote';
 import { coverUrlOf } from '../librarySource';
+import CoverParticles, { supportsWebgl } from './visual/CoverParticles';
+import VisualSettings from './visual/VisualSettings';
 
 import styles from './DesktopMusic.module.scss';
 
@@ -176,6 +178,14 @@ const DesktopMusic = function ({
     // the viewport rather than something inside this column.
     qqBound,
     onOpenAccount,
+    // --- the visual effects -------------------------------------------------
+    // Owned by the shell, like the theme and the ripples: this page draws what
+    // it is told and knows nothing about where the choice is kept.
+    visual3d = false,
+    visualIntensity = 'standard',
+    analyser = null,
+    onToggleVisual3d,
+    onChooseVisualIntensity,
 }) {
     const searchInputRef = useRef(null);
     const activeLyricRef = useRef(null);
@@ -224,6 +234,22 @@ const DesktopMusic = function ({
     const lyricsShown = Boolean(lyricsVisible && canToggleLyrics);
 
     const visibleCount = visibleTracks.length;
+
+    // Whether the stage is handed over to the particle cloud.
+    //
+    // The WebGL question is answered after mount, not during render, and for
+    // the same reason the preferences above are restored in an effect: this is
+    // a static export, so render runs once on the build machine where there is
+    // no `document` at all. Deciding it here would prerender the record and
+    // then hand the browser a different tree to hydrate.
+    //
+    // The consequence is that the record is what the first frame shows, and
+    // the cloud arrives a moment later. That is the right order anyway: a
+    // browser with no WebGL keeps the record, which is better than the hole
+    // that "3D is on" would otherwise leave.
+    const [webglOk, setWebglOk] = useState(false);
+    useEffect(() => { setWebglOk(supportsWebgl()); }, []);
+    const showParticles = visual3d && webglOk;
 
     // --- the list steps aside while the music plays -------------------------
     //
@@ -472,35 +498,51 @@ const DesktopMusic = function ({
                 next (a visualiser, a spectrum) — the stage is the one block
                 with room for it -------------------------------------------- */}
             <div className={`${styles.stage}${lyricsShown ? ` ${styles['stage-lyrics']}` : ''}`}>
-                {/* The record stays mounted under the lyrics rather than being
-                    swapped out: the rotor keeps its angle, so coming back from
-                    the words is coming back to the same groove, not to a record
-                    that restarted. */}
-                <div className={styles['stage-record']}>
-                    <div className={styles.rig}>
-                        <Tonearm playing={isPlaying} />
-
-                        <button
-                            type="button"
-                            className={`${styles.disc}${isPlaying ? ` ${styles['disc-playing']}` : ''}`}
-                            onClick={canToggleLyrics ? onToggleLyrics : onTogglePlay}
-                            disabled={!current}
-                            aria-hidden={lyricsShown || undefined}
-                            tabIndex={lyricsShown ? -1 : 0}
-                            title={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
-                            aria-label={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
-                        >
-                            <span className={styles.rotor} aria-hidden="true">
-                                <span className={styles['disc-grooves']} />
-                                <span className={styles['disc-label']} style={{ background: gradient }}>
-                                    <Cover track={current ? current.track : null} />
-                                    {current ? <IconNote /> : <IconMusicSpace size={34} />}
-                                </span>
-                                <span className={styles['disc-sheen']} />
-                            </span>
-                        </button>
+                {/* Whichever of the two is on screen, it stays mounted while
+                    the lyrics are up (faded out, not unmounted): the record's
+                    rotor keeps its angle, and the cloud's particles keep their
+                    places, so coming back from the words is coming back to the
+                    same picture rather than to one that starts over. */}
+                {showParticles ? (
+                    <div className={styles['stage-visual']}>
+                        <CoverParticles
+                            coverUrl={coverUrl}
+                            gradient={gradient}
+                            isPlaying={isPlaying}
+                            intensity={visualIntensity}
+                            analyser={analyser}
+                            onActivate={current
+                                ? (canToggleLyrics ? onToggleLyrics : onTogglePlay)
+                                : undefined}
+                        />
                     </div>
-                </div>
+                ) : (
+                    <div className={styles['stage-record']}>
+                        <div className={styles.rig}>
+                            <Tonearm playing={isPlaying} />
+
+                            <button
+                                type="button"
+                                className={`${styles.disc}${isPlaying ? ` ${styles['disc-playing']}` : ''}`}
+                                onClick={canToggleLyrics ? onToggleLyrics : onTogglePlay}
+                                disabled={!current}
+                                aria-hidden={lyricsShown || undefined}
+                                tabIndex={lyricsShown ? -1 : 0}
+                                title={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
+                                aria-label={canToggleLyrics ? '查看歌词' : isPlaying ? '暂停' : '播放'}
+                            >
+                                <span className={styles.rotor} aria-hidden="true">
+                                    <span className={styles['disc-grooves']} />
+                                    <span className={styles['disc-label']} style={{ background: gradient }}>
+                                        <Cover track={current ? current.track : null} />
+                                        {current ? <IconNote /> : <IconMusicSpace size={34} />}
+                                    </span>
+                                    <span className={styles['disc-sheen']} />
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {modeToast && (
                     <span className={styles['mode-toast']} role="status">{modeToast}</span>
@@ -932,6 +974,16 @@ const DesktopMusic = function ({
                 </div>
             </div>
 
+            {/* --- the visual effects entry ---------------------------------
+                Top-right, the one corner with nothing already in it: the list
+                owns the left, the capsule owns the bottom, and the stage keeps
+                the middle to itself. */}
+            <VisualSettings
+                enabled={visual3d}
+                onToggleEnabled={onToggleVisual3d}
+                intensity={visualIntensity}
+                onChooseIntensity={onChooseVisualIntensity}
+            />
         </div>
     );
 };

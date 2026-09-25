@@ -213,6 +213,19 @@ export const IconChart = ({ size = 20 }) => (
     </SvgStroke>
 );
 
+// A cube in isometric view — the 视觉与 3D entry. A cube rather than a gear or
+// a slider because the panel is not "settings" in general: it is the one
+// question "how much of this should move", and a solid being the thing that
+// moves is the shortest way to say it. Drawn as three faces sharing a corner,
+// which is also why it survives 18px where a wireframe cube would not.
+export const IconCube = ({ size = 20 }) => (
+    <SvgStroke size={size}>
+        <path d="M12 2.8 20.5 7.4v9.2L12 21.2 3.5 16.6V7.4z" />
+        <path d="M3.5 7.4 12 12l8.5-4.6" />
+        <path d="M12 12v9.2" />
+    </SvgStroke>
+);
+
 // Download-into-a-box — the cache manager's mark.
 export const IconArchive = ({ size = 20 }) => (
     <SvgStroke size={size}>
