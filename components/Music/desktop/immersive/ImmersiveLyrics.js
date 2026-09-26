@@ -221,7 +221,9 @@ const ImmersiveLyrics = function ({
 
     const enterClass = enterFx === 'shine'
         ? styles['fx-shine']
-        : enterFx === 'glow' ? styles['fx-glow'] : '';
+        : enterFx === 'glow' ? styles['fx-glow']
+            : enterFx === 'float' ? styles['fx-float']
+                : enterFx === 'glitch' ? styles['fx-glitch'] : '';
 
     return (
         <div

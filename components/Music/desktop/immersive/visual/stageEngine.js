@@ -1,0 +1,1098 @@
+/**
+ * 粒子舞台引擎 (three.js r128)。
+ *
+ * 移植自 Mineradio 的 public/js/modules/02-visual/00-pointer-cover-particles.js
+ * + 15-ripples-cover-depth.js + 01-float-skull-backcover.js, 以及
+ * 11-main-loop.js 里的频段处理与相机 orbit。上游许可证 GNU GPL v3。
+ *
+ * 这里只做两处适应性修改:
+ *  1. 相机偏航/俯仰相对预设基线做了硬限位 —— 上游允许自由转到侧面,
+ *     本项目的沉浸式页要求主体始终基本正面朝向用户。
+ *  2. 去掉了歌单架/手势/自由飞行相机等本项目不存在的交互层。
+ */
+
+import {
+    PARTICLE_VERTEX_SHADER,
+    PARTICLE_FRAGMENT_SHADER,
+    BLOOM_VERTEX_SHADER,
+    BLOOM_FRAGMENT_SHADER,
+    STAR_RIVER_VERTEX_SHADER,
+    STAR_RIVER_FRAGMENT_SHADER,
+    SKULL_VERTEX_SHADER,
+    SKULL_FRAGMENT_SHADER,
+} from './shaders';
+import {
+    SKULL_PRESET_INDEX,
+    clampRange,
+    coverParticleGridForResolution,
+    coverTextureSizeForResolution,
+    defaultOrbitStateForPreset,
+    normalizeCoverResolution,
+    normalizeHexColor,
+} from './presetData';
+import { applyNeutralEdgeCanvas, buildEdgeAndDepth, makeSquareCoverCanvas } from './coverDepth';
+
+const PLANE_SIZE = 4.8;
+const RIPPLE_MAX = 12;
+const BASE_FOV = 45;
+const BACKGROUND_STAR_RIVER_COUNT = 1400;
+const SKULL_MODEL_SCALE = 2.34;
+const SKULL_MODEL_BASE_ROTATION_X = -0.26;
+const SKULL_MODEL_BASE_ROTATION_Y = 0.0;
+const SKULL_MODEL_BASE_POSITION = { x: 0, y: 0.22, z: 0.1 };
+
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+const env = (current, target, attack, release, step) => {
+    const rate = target > current ? attack : release;
+    return current + (target - current) * Math.min(1, rate * step);
+};
+
+const PIXEL_RATIO_CAP = { eco: 1, balanced: 1.25, high: 1.5, ultra: 2 };
+
+export default class ParticleStage {
+    constructor(THREE, container, options) {
+        this.THREE = THREE;
+        this.container = container;
+        this.options = options || {};
+        this.fx = this.options.fx || {};
+        this.palette = null;
+
+        this.time = 0;
+        this.lastFrame = 0;
+        this.raf = 0;
+        this.disposed = false;
+
+        // 音频状态 (与 11-main-loop.js 同名同义)
+        this.smoothBass = 0;
+        this.smoothMid = 0;
+        this.smoothTreb = 0;
+        this.smoothEnergy = 0;
+        this.beatPulse = 0;
+        this.bassOnset = 0;
+        this.audioEnergy = 0;
+
+        // 涟漪
+        this.rippleIdx = 0;
+        this.lastRippleAt = 0;
+        this.lastBassRising = false;
+        this.rippleActiveCount = 0;
+        this.ripples = [];
+        this.regions = [];
+        for (let ry = 0; ry < 3; ry += 1) {
+            for (let rx = 0; rx < 3; rx += 1) {
+                this.regions.push({
+                    x: (rx / 2 - 0.5) * PLANE_SIZE * 0.72,
+                    y: (ry / 2 - 0.5) * PLANE_SIZE * 0.72,
+                });
+            }
+        }
+        for (let i = 0; i < RIPPLE_MAX; i += 1) this.ripples.push({ x: 0, y: 0, age: -10, str: 0 });
+
+        // 相机 orbit
+        const baseline = defaultOrbitStateForPreset(this.fx.preset);
+        this.orbit = {
+            userTheta: baseline.theta,
+            userPhi: baseline.phi,
+            userRadius: baseline.radius,
+            theta: baseline.theta,
+            phi: baseline.phi,
+            radius: baseline.radius,
+            baselineTheta: baseline.theta,
+            baselinePhi: baseline.phi,
+            baselineRadius: baseline.radius,
+            minPhi: -Math.PI * 0.45,
+            maxPhi: Math.PI * 0.45,
+            minRadius: 2.4,
+            maxRadius: 14.0,
+            rotating: false,
+            last: { x: 0, y: 0 },
+            recentering: false,
+        };
+        // 相对基线的硬限位: 主体始终保持基本正面
+        this.thetaLimit = 0.42;
+        this.phiLimit = 0.24;
+
+        this.camPunch = 0;
+        this.cinemaT = 0;
+        this.beatCam = { thetaKick: 0, phiKick: 0, radiusKick: 0, rollKick: 0, punch: 0 };
+
+        // 预设切换转场
+        this.presetTransition = { active: false, start: 0, duration: 0.24, from: 0, to: 0 };
+        this.colorMixTween = null;
+
+        // 安魂
+        this.skullGroup = null;
+        this.skullAsset = { data: null, promise: null, failed: false };
+        this.skullOpacity = 0;
+        this.skullFlash = 0;
+        this.skullJaw = 0;
+        this.skullAmpPulse = 0;
+        this.skullCameraBlend = 0;
+        this.skullWheelZoom = 0;
+        this.skullWheelZoomTarget = 0;
+
+        this.coverProcessToken = 0;
+        this.coverCache = { seed: '', edgeCanvas: null };
+
+        this.build();
+    }
+
+    build() {
+        const THREE = this.THREE;
+        const width = this.container.clientWidth || window.innerWidth;
+        const height = this.container.clientHeight || window.innerHeight;
+
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: false,
+            alpha: true,
+            powerPreference: 'high-performance',
+        });
+        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.setSize(width, height, false);
+        this.applyPixelRatio();
+        this.canvas = this.renderer.domElement;
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
+        this.canvas.style.display = 'block';
+        this.container.appendChild(this.canvas);
+
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(BASE_FOV, width / height, 0.1, 100);
+        this.applyCamera(0);
+
+        this.dotTexture = this.makeDotTexture();
+        this.coverTex = new THREE.Texture();
+        this.coverTex.minFilter = THREE.LinearFilter;
+        this.coverTex.magFilter = THREE.LinearFilter;
+        this.coverTex.wrapS = THREE.ClampToEdgeWrapping;
+        this.coverTex.wrapT = THREE.ClampToEdgeWrapping;
+        this.prevCoverTex = new THREE.Texture();
+        this.prevCoverTex.minFilter = THREE.LinearFilter;
+        this.prevCoverTex.magFilter = THREE.LinearFilter;
+        this.coverEdgeTex = new THREE.Texture();
+        this.coverEdgeTex.minFilter = THREE.LinearFilter;
+        this.coverEdgeTex.magFilter = THREE.LinearFilter;
+
+        const blank = document.createElement('canvas');
+        blank.width = 4;
+        blank.height = 4;
+        const bctx = blank.getContext('2d');
+        bctx.fillStyle = '#1c1c28';
+        bctx.fillRect(0, 0, 4, 4);
+        this.coverTex.image = blank;
+        this.coverTex.needsUpdate = true;
+        this.prevCoverTex.image = blank;
+        this.prevCoverTex.needsUpdate = true;
+        this.coverEdgeTex.image = applyNeutralEdgeCanvas();
+        this.coverEdgeTex.needsUpdate = true;
+
+        // 涟漪数据纹理 (1×N, RGBA: x, y, age, str)
+        this.rippleData = new Float32Array(RIPPLE_MAX * 4);
+        this.rippleTex = new THREE.DataTexture(
+            this.rippleData, 1, RIPPLE_MAX, THREE.RGBAFormat, THREE.FloatType
+        );
+        this.rippleTex.magFilter = THREE.NearestFilter;
+        this.rippleTex.minFilter = THREE.NearestFilter;
+
+        this.uniforms = {
+            uTime: { value: 0 },
+            uBass: { value: 0 },
+            uMid: { value: 0 },
+            uTreble: { value: 0 },
+            uBeat: { value: 0 },
+            uEnergy: { value: 0 },
+            uBurstAmt: { value: 0 },
+            uVinylSpin: { value: 0 },
+            uPreset: { value: Number(this.fx.preset) || 0 },
+            uIntensity: { value: 0.85 },
+            uDepth: { value: 1.0 },
+            uPointScale: { value: 1.0 },
+            uSpeed: { value: 1.0 },
+            uTwist: { value: 0 },
+            uColorBoost: { value: 1.1 },
+            uScatter: { value: 0 },
+            uCoverRes: { value: normalizeCoverResolution(this.fx.coverResolution) },
+            uBgFade: { value: 0.2 },
+            uBloomStrength: { value: 0.62 },
+            uBloomSize: { value: 2.65 },
+            uTintColor: { value: new THREE.Color('#9db8cf') },
+            uTintStrength: { value: 0 },
+            uCoverTex: { value: this.coverTex },
+            uPrevCoverTex: { value: this.prevCoverTex },
+            uColorMixT: { value: 1.0 },
+            uEdgeTex: { value: this.coverEdgeTex },
+            uRippleTex: { value: this.rippleTex },
+            uRippleCount: { value: 0 },
+            uDotTex: { value: this.dotTexture },
+            uHasCover: { value: 0 },
+            uHasDepth: { value: 0 },
+            uEdgeEnabled: { value: 1 },
+            uAiBoost: { value: 0 },
+            uMouseXY: { value: new THREE.Vector2(-999, -999) },
+            uMouseActive: { value: 0 },
+            uHandXY: { value: new THREE.Vector2(-999, -999) },
+            uHandActive: { value: 0 },
+            uGestureGrip: { value: 0 },
+            uPixel: { value: this.renderer.getPixelRatio() },
+            uAlpha: { value: 0 },
+            uParticleDim: { value: 1 },
+            uBackdropAdapt: { value: 0.72 },
+            uFloatAlpha: { value: 0 },
+            uLoading: { value: 0 },
+        };
+
+        const grid = coverParticleGridForResolution(this.fx.coverResolution);
+        this.grid = grid;
+        this.geometry = this.buildCoverParticleGeometry(grid);
+
+        this.material = new THREE.ShaderMaterial({
+            uniforms: this.uniforms,
+            vertexShader: PARTICLE_VERTEX_SHADER,
+            fragmentShader: PARTICLE_FRAGMENT_SHADER,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.NormalBlending,
+        });
+        this.bloomMaterial = new THREE.ShaderMaterial({
+            uniforms: this.uniforms,
+            vertexShader: BLOOM_VERTEX_SHADER,
+            fragmentShader: BLOOM_FRAGMENT_SHADER,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+            blending: THREE.AdditiveBlending,
+        });
+        this.bloomParticles = new THREE.Points(this.geometry, this.bloomMaterial);
+        this.bloomParticles.frustumCulled = false;
+        this.bloomParticles.renderOrder = 0;
+        this.scene.add(this.bloomParticles);
+        this.particles = new THREE.Points(this.geometry, this.material);
+        this.particles.frustumCulled = false;
+        this.particles.renderOrder = 1;
+        this.scene.add(this.particles);
+
+        this.buildStarRiver();
+        this.bindPointer();
+        this.syncFxUniforms();
+        this.setPreset(Number(this.fx.preset) || 0, { silent: true, preserveCamera: true });
+
+        this.resizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(() => this.resize())
+            : null;
+        if (this.resizeObserver) this.resizeObserver.observe(this.container);
+        window.addEventListener('resize', this.onWindowResize);
+
+        this.lastFrame = performance.now();
+        this.loop = this.loop.bind(this);
+        this.raf = requestAnimationFrame(this.loop);
+    }
+
+    makeDotTexture() {
+        const THREE = this.THREE;
+        const cv = document.createElement('canvas');
+        cv.width = 64;
+        cv.height = 64;
+        const ctx = cv.getContext('2d');
+        const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 31);
+        g.addColorStop(0.0, 'rgba(255,255,255,0.96)');
+        g.addColorStop(0.42, 'rgba(255,255,255,0.78)');
+        g.addColorStop(0.72, 'rgba(255,255,255,0.22)');
+        g.addColorStop(1.0, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 64, 64);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        return tex;
+    }
+
+    buildCoverParticleGeometry(gridInput) {
+        const THREE = this.THREE;
+        const grid = coverParticleGridForResolution(gridInput / 118);
+        const count = grid * grid;
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const uvs = new Float32Array(count * 2);
+        const rand = new Float32Array(count);
+        const texelStep = 1 / grid;
+        for (let i = 0; i < count; i += 1) {
+            const gx = i % grid;
+            const gy = Math.floor(i / grid);
+            const u = (gx + 0.5) * texelStep;
+            const v = (gy + 0.5) * texelStep;
+            const px = gx / (grid - 1);
+            const py = gy / (grid - 1);
+            positions[i * 3] = (px - 0.5) * PLANE_SIZE;
+            positions[i * 3 + 1] = (py - 0.5) * PLANE_SIZE;
+            positions[i * 3 + 2] = 0;
+            uvs[i * 2] = u;
+            uvs[i * 2 + 1] = v;
+            rand[i] = Math.random();
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('aUv', new THREE.BufferAttribute(uvs, 2));
+        geo.setAttribute('aRand', new THREE.BufferAttribute(rand, 1));
+        geo.userData.grid = grid;
+        geo.userData.count = count;
+        return geo;
+    }
+
+    buildStarRiver() {
+        const THREE = this.THREE;
+        const count = BACKGROUND_STAR_RIVER_COUNT;
+        const bgGeo = new THREE.BufferGeometry();
+        const seeds = new Float32Array(count);
+        const lanes = new Float32Array(count);
+        const depths = new Float32Array(count);
+        for (let i = 0; i < count; i += 1) {
+            seeds[i] = Math.random() * 1000 + i * 0.37;
+            lanes[i] = Math.random();
+            depths[i] = Math.random();
+        }
+        bgGeo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+        bgGeo.setAttribute('aLane', new THREE.BufferAttribute(lanes, 1));
+        bgGeo.setAttribute('aDepthSeed', new THREE.BufferAttribute(depths, 1));
+
+        this.starRiverUniforms = {
+            uDotTex: this.uniforms.uDotTex,
+            uTime: this.uniforms.uTime,
+            uBass: this.uniforms.uBass,
+            uTreble: this.uniforms.uTreble,
+            uBeat: this.uniforms.uBeat,
+            uEnergy: this.uniforms.uEnergy,
+            uPixel: this.uniforms.uPixel,
+            uPointScale: this.uniforms.uPointScale,
+            uParticleDim: this.uniforms.uParticleDim,
+            uTintColor: this.uniforms.uTintColor,
+            uAlpha: { value: 0 },
+        };
+        this.starRiverMaterial = new THREE.ShaderMaterial({
+            uniforms: this.starRiverUniforms,
+            vertexShader: STAR_RIVER_VERTEX_SHADER,
+            fragmentShader: STAR_RIVER_FRAGMENT_SHADER,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+            blending: THREE.AdditiveBlending,
+        });
+        this.starRiver = new THREE.Points(bgGeo, this.starRiverMaterial);
+        this.starRiver.frustumCulled = false;
+        this.starRiver.renderOrder = -2;
+        this.scene.add(this.starRiver);
+    }
+
+    applyPixelRatio() {
+        const cap = PIXEL_RATIO_CAP[this.fx.performanceQuality] || 1;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
+    }
+
+    // ---------------------------------------------------------------- 指针
+
+    bindPointer() {
+        this.onPointerMove = (e) => {
+            if (!this.orbit.rotating) return;
+            const dx = e.clientX - this.orbit.last.x;
+            const dy = e.clientY - this.orbit.last.y;
+            this.orbit.userTheta = clampRange(
+                this.orbit.userTheta - dx * 0.0042,
+                this.orbit.baselineTheta - this.thetaLimit,
+                this.orbit.baselineTheta + this.thetaLimit
+            );
+            this.orbit.userPhi = clampRange(
+                this.orbit.userPhi + dy * 0.0032,
+                this.orbit.baselinePhi - this.phiLimit,
+                this.orbit.baselinePhi + this.phiLimit
+            );
+            this.orbit.last.x = e.clientX;
+            this.orbit.last.y = e.clientY;
+        };
+        this.onPointerDown = (e) => {
+            if (e.button === 2) return;
+            this.orbit.rotating = true;
+            this.orbit.last.x = e.clientX;
+            this.orbit.last.y = e.clientY;
+        };
+        this.onPointerUp = () => { this.orbit.rotating = false; };
+        this.onWheel = (e) => {
+            e.preventDefault();
+            if (Number(this.fx.preset) === SKULL_PRESET_INDEX) {
+                this.skullWheelZoomTarget = clampRange(this.skullWheelZoomTarget + e.deltaY * 0.00155, -0.95, 1.28);
+                return;
+            }
+            this.orbit.userRadius = clampRange(
+                this.orbit.userRadius + e.deltaY * 0.005,
+                this.orbit.minRadius,
+                this.orbit.maxRadius
+            );
+        };
+        this.onDblClick = () => {
+            this.orbit.recentering = true;
+            if (Number(this.fx.preset) === SKULL_PRESET_INDEX) this.skullWheelZoomTarget = 0;
+        };
+        this.canvas.addEventListener('mousedown', this.onPointerDown);
+        window.addEventListener('mousemove', this.onPointerMove);
+        window.addEventListener('mouseup', this.onPointerUp);
+        this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+        this.canvas.addEventListener('dblclick', this.onDblClick);
+    }
+
+    // ---------------------------------------------------------------- 相机
+
+    applyCamera(dt) {
+        const orbit = this.orbit;
+        if (orbit.recentering) {
+            orbit.userTheta += (orbit.baselineTheta - orbit.userTheta) * Math.min(1, dt * 6);
+            orbit.userPhi += (orbit.baselinePhi - orbit.userPhi) * Math.min(1, dt * 6);
+            orbit.userRadius += (orbit.baselineRadius - orbit.userRadius) * Math.min(1, dt * 6);
+            if (Math.abs(orbit.userTheta - orbit.baselineTheta) < 0.002
+                && Math.abs(orbit.userPhi - orbit.baselinePhi) < 0.002) {
+                orbit.recentering = false;
+            }
+        }
+        orbit.theta += (orbit.userTheta - orbit.theta) * Math.min(1, dt * 8);
+        orbit.phi += (orbit.userPhi - orbit.phi) * Math.min(1, dt * 8);
+        orbit.radius += (orbit.userRadius - orbit.radius) * Math.min(1, dt * 8);
+
+        const shake = clampRange(Number(this.fx.cinemaShake) || 0, 0, 1.8) * (this.fx.cinema ? 1 : 0);
+        const theta = orbit.theta + this.beatCam.thetaKick * shake
+            + Math.sin(this.cinemaT * 0.08) * 0.012 * shake;
+        const phi = clampRange(
+            orbit.phi + this.beatCam.phiKick * shake + Math.sin(this.cinemaT * 0.06 + 1) * 0.010 * shake,
+            orbit.minPhi,
+            orbit.maxPhi
+        );
+        const radius = orbit.radius - this.beatCam.radiusKick * shake * 0.4
+            - Math.sin(this.cinemaT * 0.04 + 2) * 0.05 * shake;
+
+        const cy = Math.cos(phi);
+        this.camera.position.set(
+            radius * cy * Math.sin(theta),
+            radius * Math.sin(phi),
+            radius * cy * Math.cos(theta)
+        );
+        this.camera.lookAt(0, 0, 0);
+        this.camera.rotation.z += this.beatCam.rollKick * shake * 0.7;
+
+        const targetFov = clampRange(BASE_FOV - this.camPunch * 1.75, 26, 72);
+        if (Math.abs(this.camera.fov - targetFov) > 0.01) {
+            this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 8);
+            this.camera.updateProjectionMatrix();
+        }
+    }
+
+    // ---------------------------------------------------------------- 预设
+
+    setPreset(p, opts) {
+        opts = opts || {};
+        const prev = this.uniforms.uPreset.value;
+        const index = clampRange(Math.round(Number(p) || 0), 0, 12);
+        this.uniforms.uPreset.value = index;
+        if (prev === index) return;
+        if (index === SKULL_PRESET_INDEX) this.ensureSkullLayer();
+        else this.clearSkullResidue();
+
+        if (!opts.silent) this.triggerPresetTransition(prev, index);
+
+        if (!opts.preserveCamera && index !== 5) {
+            const base = defaultOrbitStateForPreset(index);
+            this.orbit.baselineTheta = base.theta;
+            this.orbit.baselinePhi = clampRange(base.phi, this.orbit.minPhi, this.orbit.maxPhi);
+            this.orbit.baselineRadius = clampRange(base.radius, this.orbit.minRadius, this.orbit.maxRadius);
+            this.orbit.userTheta = this.orbit.baselineTheta;
+            this.orbit.userPhi = this.orbit.baselinePhi;
+            this.orbit.userRadius = this.orbit.baselineRadius;
+        }
+    }
+
+    triggerPresetTransition(from, to) {
+        const t = this.presetTransition;
+        t.active = true;
+        t.start = this.uniforms.uTime.value;
+        t.duration = to === 5 ? 0.3 : 0.24;
+        t.from = from;
+        t.to = to;
+        const newVisual = to >= 4;
+        const wallpaperFlow = to === 5;
+        this.uniforms.uScatter.value = Math.max(
+            this.uniforms.uScatter.value,
+            this.fx.scatter + (newVisual ? (wallpaperFlow ? 0.008 : 0.024) : 0.12)
+        );
+        this.uniforms.uBurstAmt.value = Math.max(this.uniforms.uBurstAmt.value, wallpaperFlow ? 0.05 : 0.15);
+        this.camPunch = Math.max(this.camPunch, wallpaperFlow ? 0.04 : 0.12);
+        for (let i = 0; i < 3; i += 1) {
+            this.triggerRipple(
+                (Math.random() - 0.5) * 3.4,
+                (Math.random() - 0.5) * 3.4,
+                0.58 + Math.random() * 0.32
+            );
+        }
+    }
+
+    tickPresetTransition() {
+        const t = this.presetTransition;
+        if (!t.active) return;
+        const raw = (this.uniforms.uTime.value - t.start) / t.duration;
+        const clamped = Math.max(0, Math.min(1, raw));
+        const wave = Math.sin(clamped * Math.PI);
+        const newVisual = t.to >= 4;
+        const wallpaperFlow = t.to === 5;
+        this.uniforms.uScatter.value = Math.max(
+            this.uniforms.uScatter.value,
+            this.fx.scatter + wave * (newVisual ? (wallpaperFlow ? 0.008 : 0.026) : 0.16)
+        );
+        this.uniforms.uBurstAmt.value = Math.max(
+            this.uniforms.uBurstAmt.value,
+            wave * (wallpaperFlow ? 0.045 : (newVisual ? 0.12 : 0.15))
+        );
+        this.uniforms.uPointScale.value = (Number(this.fx.point) || 1) * (1 + wave * (wallpaperFlow ? 0.016 : 0.048));
+        if (raw >= 1) {
+            t.active = false;
+            this.syncFxUniforms();
+        }
+    }
+
+    syncFxUniforms() {
+        const fx = this.fx;
+        const u = this.uniforms;
+        u.uPreset.value = Number(fx.preset) || 0;
+        u.uIntensity.value = Number(fx.intensity) || 0;
+        u.uDepth.value = Number(fx.depth) || 0;
+        u.uPointScale.value = Number(fx.point) || 0;
+        u.uSpeed.value = Number(fx.speed) || 0;
+        u.uTwist.value = Number(fx.twist) || 0;
+        u.uColorBoost.value = Number(fx.color) || 0;
+        u.uScatter.value = Number(fx.scatter) || 0;
+        u.uCoverRes.value = normalizeCoverResolution(fx.coverResolution);
+        u.uBgFade.value = Number(fx.bgFade) || 0;
+        u.uBloomStrength.value = fx.bloom ? (Number(fx.bloomStrength) || 0) : 0;
+        u.uBackdropAdapt.value = fx.coverBackdropAdapt !== false
+            ? clampRange(Number(fx.lyricBackgroundAdapt) || 0, 0, 1)
+            : 0;
+        u.uEdgeEnabled.value = fx.edge ? 1 : 0;
+        const tintOn = fx.visualTintMode === 'custom';
+        u.uTintColor.value.set(normalizeHexColor(
+            tintOn ? fx.visualTintColor : (this.palette && (this.palette.secondary || this.palette.primary)) || fx.visualTintColor,
+            '#9db8cf'
+        ));
+        u.uTintStrength.value = tintOn ? 0.42 : (this.palette && (this.palette.secondary || this.palette.primary) ? 0.3 : 0.14);
+        this.bloomParticles.visible = !!fx.bloom && (Number(fx.bloomStrength) || 0) > 0.01;
+        this.syncSkullColors();
+    }
+
+    setFx(fx, palette) {
+        const prevResolution = normalizeCoverResolution(this.fx.coverResolution);
+        const prevPreset = Number(this.fx.preset) || 0;
+        this.fx = fx;
+        if (palette !== undefined) this.palette = palette;
+        const nextResolution = normalizeCoverResolution(fx.coverResolution);
+        if (nextResolution !== prevResolution) this.applyCoverResolution();
+        this.applyPixelRatio();
+        this.uniforms.uPixel.value = this.renderer.getPixelRatio();
+        if ((Number(fx.preset) || 0) !== prevPreset) this.setPreset(fx.preset);
+        this.syncFxUniforms();
+    }
+
+    applyCoverResolution() {
+        const grid = coverParticleGridForResolution(this.fx.coverResolution);
+        if (grid === this.grid && this.geometry && this.geometry.userData.grid === grid) return;
+        const oldGeo = this.geometry;
+        this.geometry = this.buildCoverParticleGeometry(grid);
+        this.grid = grid;
+        this.particles.geometry = this.geometry;
+        this.bloomParticles.geometry = this.geometry;
+        if (oldGeo && oldGeo !== this.geometry) oldGeo.dispose();
+        this.uniforms.uBurstAmt.value = Math.max(this.uniforms.uBurstAmt.value, 0.18);
+    }
+
+    // ---------------------------------------------------------------- 封面
+
+    setCoverImage(image) {
+        if (!image) {
+            this.coverProcessToken += 1;
+            this.uniforms.uHasCover.value = 0;
+            this.uniforms.uHasDepth.value = 0;
+            this.uniforms.uAiBoost.value = 0;
+            return;
+        }
+        const token = this.coverProcessToken + 1;
+        this.coverProcessToken = token;
+        const size = coverTextureSizeForResolution(this.fx.coverResolution);
+        const cv = makeSquareCoverCanvas(image, size);
+        if (this.uniforms.uHasCover.value > 0.5 && this.coverTex.image) {
+            try {
+                const prevW = this.coverTex.image.width || 256;
+                const prevH = this.coverTex.image.height || 256;
+                const prevScale = Math.min(1, 256 / Math.max(prevW, prevH, 1));
+                const prevCv = document.createElement('canvas');
+                prevCv.width = Math.max(1, Math.round(prevW * prevScale));
+                prevCv.height = Math.max(1, Math.round(prevH * prevScale));
+                prevCv.getContext('2d').drawImage(this.coverTex.image, 0, 0, prevCv.width, prevCv.height);
+                this.prevCoverTex.image = prevCv;
+                this.prevCoverTex.needsUpdate = true;
+            } catch (err) { /* 上一张封面不可用就跳过渐变 */ }
+        }
+        this.coverTex.image = cv;
+        this.coverTex.needsUpdate = true;
+        this.uniforms.uHasCover.value = 1;
+        this.startColorMixTween(Number(this.fx.preset) === 0 ? 520 : 960);
+
+        const runHeavy = () => {
+            if (token !== this.coverProcessToken) return;
+            const edgeCv = buildEdgeAndDepth(cv);
+            if (token !== this.coverProcessToken) return;
+            this.coverCache = { seed: '', edgeCanvas: edgeCv };
+            this.coverEdgeTex.image = edgeCv;
+            this.coverEdgeTex.needsUpdate = true;
+            this.setCoverDepthState(1, 0.55, 180);
+        };
+        window.setTimeout(runHeavy, 120);
+    }
+
+    setCoverDepthState(depthTo, aiTo, durationMs) {
+        const from = this.uniforms.uHasDepth.value || 0;
+        const aiFrom = this.uniforms.uAiBoost.value || 0;
+        if (!durationMs) {
+            this.uniforms.uHasDepth.value = depthTo;
+            this.uniforms.uAiBoost.value = aiTo;
+            return;
+        }
+        const start = performance.now();
+        const step = (now) => {
+            const t = Math.min(1, (now - start) / durationMs);
+            const eased = 1 - Math.pow(1 - t, 3);
+            this.uniforms.uHasDepth.value = from + (depthTo - from) * eased;
+            this.uniforms.uAiBoost.value = aiFrom + (aiTo - aiFrom) * eased;
+            if (t < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+    }
+
+    startColorMixTween(durationMs) {
+        this.uniforms.uColorMixT.value = 0;
+        const start = performance.now();
+        const step = (now) => {
+            const t = Math.min(1, (now - start) / durationMs);
+            this.uniforms.uColorMixT.value = 1 - Math.pow(1 - t, 3);
+            if (t < 1) this.colorMixTween = requestAnimationFrame(step);
+            else this.colorMixTween = null;
+        };
+        this.colorMixTween = requestAnimationFrame(step);
+    }
+
+    // ---------------------------------------------------------------- 涟漪
+
+    triggerRipple(x, y, strength) {
+        const r = this.ripples[this.rippleIdx];
+        r.x = x;
+        r.y = y;
+        r.age = 0;
+        r.str = strength;
+        this.rippleIdx = (this.rippleIdx + 1) % RIPPLE_MAX;
+    }
+
+    updateRipples(dt, bass) {
+        const BASS_THRESHOLD = 0.3;
+        const RIPPLE_COOLDOWN = 0.32;
+        const isBassHit = bass > BASS_THRESHOLD && !this.lastBassRising;
+        this.lastBassRising = bass > BASS_THRESHOLD * 0.75;
+        const now = this.uniforms.uTime.value;
+        const hadActive = this.rippleActiveCount > 0;
+        if (!hadActive && !isBassHit) {
+            if (this.uniforms.uRippleCount.value !== 0) this.uniforms.uRippleCount.value = 0;
+            return;
+        }
+        if (isBassHit && (now - this.lastRippleAt) > RIPPLE_COOLDOWN) {
+            this.lastRippleAt = now;
+            const count = 2 + (Math.random() < 0.5 ? 0 : 1);
+            const used = {};
+            for (let k = 0; k < count; k += 1) {
+                let idx = 0;
+                let tries = 0;
+                do { idx = Math.floor(Math.random() * 9); tries += 1; } while (used[idx] && tries < 12);
+                used[idx] = true;
+                const reg = this.regions[idx];
+                this.triggerRipple(
+                    reg.x + (Math.random() - 0.5) * 0.7,
+                    reg.y + (Math.random() - 0.5) * 0.7,
+                    0.65 + bass * 1.4 + Math.random() * 0.25
+                );
+            }
+        }
+        for (let i = 0; i < RIPPLE_MAX; i += 1) {
+            const r = this.ripples[i];
+            if (r.str > 0.005) {
+                r.age += dt;
+                if (r.age > 2.0) { r.str = 0; r.age = -10; }
+            }
+            const off = i * 4;
+            this.rippleData[off] = r.x;
+            this.rippleData[off + 1] = r.y;
+            this.rippleData[off + 2] = r.age;
+            this.rippleData[off + 3] = r.str;
+        }
+        let active = 0;
+        for (let i = 0; i < RIPPLE_MAX; i += 1) if (this.ripples[i].str > 0.005) active += 1;
+        this.rippleActiveCount = active;
+        if (active || hadActive || isBassHit) this.rippleTex.needsUpdate = true;
+        this.uniforms.uRippleCount.value = active;
+    }
+
+    // ---------------------------------------------------------------- 安魂
+
+    loadSkullAsset() {
+        if (this.skullAsset.data || this.skullAsset.promise || this.skullAsset.failed) {
+            return this.skullAsset.promise || Promise.resolve(this.skullAsset.data);
+        }
+        const base = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_BASE_PATH) || '';
+        this.skullAsset.promise = fetch(`${base}/assets/skull-decimation-points.bin?v=regular-surface-teeth-soften-20260621`, { cache: 'reload' })
+            .then((res) => {
+                if (!res.ok) throw new Error('skull asset ' + res.status);
+                return res.arrayBuffer();
+            })
+            .then((buf) => {
+                if (!buf || buf.byteLength < 20 || buf.byteLength % 20 !== 0) throw new Error('invalid skull asset');
+                this.skullAsset.data = new Float32Array(buf);
+                this.skullAsset.promise = null;
+                return this.skullAsset.data;
+            })
+            .catch(() => {
+                this.skullAsset.failed = true;
+                this.skullAsset.promise = null;
+                return null;
+            });
+        return this.skullAsset.promise;
+    }
+
+    ensureSkullLayer() {
+        if (this.skullGroup) return;
+        if (!this.skullAsset.data) {
+            if (!this.skullAsset.failed) this.loadSkullAsset();
+            return;
+        }
+        const THREE = this.THREE;
+        const asset = this.skullAsset.data;
+        const count = Math.floor((asset.length || 0) / 5);
+        const geo = new THREE.BufferGeometry();
+        const positions = new Float32Array(count * 3);
+        const seeds = new Float32Array(count);
+        const kinds = new Float32Array(count);
+        for (let i = 0; i < count; i += 1) {
+            positions[i * 3] = asset[i * 5];
+            positions[i * 3 + 1] = asset[i * 5 + 1];
+            positions[i * 3 + 2] = asset[i * 5 + 2];
+            kinds[i] = asset[i * 5 + 3];
+            seeds[i] = asset[i * 5 + 4];
+        }
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
+        geo.setAttribute('kind', new THREE.BufferAttribute(kinds, 1));
+
+        const mat = new THREE.ShaderMaterial({
+            uniforms: {
+                uMap: { value: this.dotTexture },
+                uTime: this.uniforms.uTime,
+                uPixel: this.uniforms.uPixel,
+                uBass: this.uniforms.uBass,
+                uMid: this.uniforms.uMid,
+                uTreble: this.uniforms.uTreble,
+                uBeat: this.uniforms.uBeat,
+                uJawOpen: { value: 0 },
+                uSkullFlash: { value: 0 },
+                uPointScale: this.uniforms.uPointScale,
+                uBloomStrength: this.uniforms.uBloomStrength,
+                uColorBoost: this.uniforms.uColorBoost,
+                uOpacity: { value: 0 },
+                uColorA: { value: new THREE.Color('#b8ae98') },
+                uColorB: { value: new THREE.Color('#fff4d8') },
+                uShadow: { value: new THREE.Color('#100d0d') },
+                uLight: { value: new THREE.Color('#ffe3a0') },
+            },
+            vertexShader: SKULL_VERTEX_SHADER,
+            fragmentShader: SKULL_FRAGMENT_SHADER,
+            transparent: true,
+            depthWrite: false,
+            depthTest: true,
+            blending: THREE.NormalBlending,
+        });
+        this.skullGroup = new THREE.Points(geo, mat);
+        this.skullGroup.frustumCulled = false;
+        this.skullGroup.visible = false;
+        this.skullGroup.position.set(SKULL_MODEL_BASE_POSITION.x, SKULL_MODEL_BASE_POSITION.y, SKULL_MODEL_BASE_POSITION.z);
+        this.skullGroup.scale.setScalar(SKULL_MODEL_SCALE);
+        this.skullGroup.rotation.x = SKULL_MODEL_BASE_ROTATION_X;
+        this.skullGroup.rotation.y = SKULL_MODEL_BASE_ROTATION_Y;
+        this.skullGroup.renderOrder = 32;
+        this.scene.add(this.skullGroup);
+        this.syncSkullColors();
+    }
+
+    clearSkullResidue() {
+        this.skullOpacity = 0;
+        this.skullFlash = 0;
+        this.skullJaw = 0;
+        this.skullAmpPulse = 0;
+        this.skullCameraBlend = 0;
+        if (!this.skullGroup) return;
+        this.skullGroup.visible = false;
+        const u = this.skullGroup.material.uniforms;
+        u.uOpacity.value = 0;
+        u.uJawOpen.value = 0;
+        u.uSkullFlash.value = 0;
+    }
+
+    syncSkullColors() {
+        if (!this.skullGroup || !this.skullGroup.material) return;
+        const THREE = this.THREE;
+        const u = this.skullGroup.material.uniforms;
+        const custom = this.fx.visualTintMode === 'custom';
+        const color = normalizeHexColor(
+            custom
+                ? this.fx.visualTintColor
+                : (this.palette && (this.palette.secondary || this.palette.primary)) || this.fx.visualTintColor,
+            '#9db8cf'
+        );
+        const strength = clampRange(custom ? 0.98 : (this.palette && (this.palette.secondary || this.palette.primary) ? 0.3 : 0.14), 0, custom ? 0.99 : 0.78);
+        const tint = new THREE.Color(color);
+        const soft = tint.clone().lerp(new THREE.Color('#e8f5ff'), custom ? 0.05 : 0.28);
+        const bright = tint.clone().lerp(new THREE.Color(custom ? '#f6fbff' : '#fff7d6'), custom ? 0.14 : 0.46);
+        const dark = tint.clone().lerp(new THREE.Color('#05070c'), custom ? 0.74 : 0.72);
+        u.uColorA.value.copy(
+            new THREE.Color(custom ? '#9fb7c8' : '#b8ae98').lerp(soft, strength * (custom ? 0.99 : 0.64))
+        );
+        u.uColorB.value.copy(
+            new THREE.Color(custom ? '#eef9ff' : '#fff4d8').lerp(bright, strength * (custom ? 0.94 : 0.46))
+        );
+        u.uShadow.value.copy(
+            new THREE.Color(custom ? '#070b12' : '#100d0d').lerp(dark, strength * (custom ? 0.72 : 0.42))
+        );
+        u.uLight.value.copy(
+            new THREE.Color(custom ? '#d6f3ff' : '#ffe3a0').lerp(bright, strength * (custom ? 0.98 : 0.76))
+        );
+    }
+
+    updateSkull(dt, bass, mid) {
+        const active = Number(this.fx.preset) === SKULL_PRESET_INDEX;
+        if (active && !this.skullAsset.data && !this.skullAsset.failed) {
+            this.loadSkullAsset();
+            return;
+        }
+        if (active && !this.skullAsset.data) return;
+        if (active) this.ensureSkullLayer();
+        if (!this.skullGroup) return;
+        const target = active ? 1 : 0;
+        this.skullOpacity += (target - this.skullOpacity) * Math.min(1, dt * (active ? 3.2 : 2.4));
+        if (this.skullOpacity < 0.006 && !active) {
+            this.skullGroup.visible = false;
+            return;
+        }
+        this.skullGroup.visible = true;
+        const u = this.skullGroup.material.uniforms;
+        u.uOpacity.value = this.skullOpacity * clampRange(0.78 + (Number(this.fx.intensity) || 0.85) * 0.18, 0.56, 1.0);
+
+        const beatTransient = clampRange(Math.max(0, this.beatPulse - 0.16) / 0.84, 0, 1.35);
+        const flashTarget = clampRange(
+            Math.pow(beatTransient, 1.34) * 1.08 + Math.max(0, bass - 0.6) * 0.18 * beatTransient, 0, 1
+        );
+        this.skullFlash += (flashTarget - this.skullFlash) * Math.min(1, dt * (flashTarget > this.skullFlash ? 24 : 6.2));
+        u.uSkullFlash.value = this.skullFlash;
+
+        const jawTarget = clampRange(
+            0.6 + (0.5 + 0.5 * Math.sin(this.uniforms.uTime.value * 0.5)) * 0.05 + bass * 0.06 + this.skullFlash * 0.09,
+            0.52, 0.88
+        );
+        this.skullJaw += (jawTarget - this.skullJaw) * Math.min(1, dt * (jawTarget > this.skullJaw ? 7.8 : 3.4));
+        u.uJawOpen.value = this.skullJaw;
+
+        const drift = {
+            x: Math.sin(this.uniforms.uTime.value * 0.33 + 1.7) * 0.028 + Math.sin(this.uniforms.uTime.value * 0.61 + 0.4) * 0.010,
+            y: Math.sin(this.uniforms.uTime.value * 0.38 + 0.2) * 0.036 + Math.sin(this.uniforms.uTime.value * 0.83 + 2.1) * 0.012,
+            z: Math.sin(this.uniforms.uTime.value * 0.24 + 2.6) * 0.026,
+        };
+        const ampTarget = clampRange(bass * 0.006 + mid * 0.004 + this.skullFlash * 0.07, 0, 0.09);
+        this.skullAmpPulse += (ampTarget - this.skullAmpPulse) * Math.min(1, dt * (ampTarget > this.skullAmpPulse ? 11 : 4));
+        this.skullWheelZoom += (this.skullWheelZoomTarget - this.skullWheelZoom) * Math.min(1, dt * 8);
+        const targetScale = SKULL_MODEL_SCALE * (1 + this.skullAmpPulse)
+            * clampRange(1 - this.skullWheelZoom * 0.055, 0.92, 1.08);
+        this.skullGroup.position.x += (SKULL_MODEL_BASE_POSITION.x + drift.x - this.skullGroup.position.x) * Math.min(1, dt * 4.2);
+        this.skullGroup.position.y += (SKULL_MODEL_BASE_POSITION.y + drift.y - this.skullGroup.position.y) * Math.min(1, dt * 4.8);
+        this.skullGroup.position.z += (SKULL_MODEL_BASE_POSITION.z + drift.z - this.skullGroup.position.z) * Math.min(1, dt * 4.2);
+        this.skullGroup.scale.x += (targetScale - this.skullGroup.scale.x) * Math.min(1, dt * 4.6);
+        this.skullGroup.scale.y = this.skullGroup.scale.x;
+        this.skullGroup.scale.z = this.skullGroup.scale.x;
+
+        // 安魂预设自带固定机位 (与上游 setSkullCameraTargetVectors 一致)
+        this.skullCameraBlend += ((active ? 1 : 0) - this.skullCameraBlend) * Math.min(1, dt * (active ? 4.8 : 7.2));
+        if (this.skullCameraBlend > 0.002) {
+            const portrait = window.innerHeight > window.innerWidth * 1.08;
+            this.camera.position.lerp(
+                new this.THREE.Vector3(0, portrait ? -2.38 : -2.52, (portrait ? 4.92 : 4.98) + this.skullWheelZoom),
+                this.skullCameraBlend
+            );
+            this.camera.lookAt(0, portrait ? -0.28 : -0.2, 0.02);
+        }
+    }
+
+    // ---------------------------------------------------------------- 音频
+
+    stepAudio(dt, raw, playing) {
+        const step = Math.max(1, dt * 60);
+        const intensity = Number(this.fx.intensity) || 0.85;
+        if (playing) {
+            this.smoothBass = env(this.smoothBass, Math.min(0.82, raw.low * 0.78 + raw.level * 0.025), 0.28, 0.075, step);
+            this.smoothMid = env(this.smoothMid, Math.min(0.68, raw.mid * 0.64 + raw.level * 0.025), 0.18, 0.06, step);
+            this.smoothTreb = env(this.smoothTreb, Math.min(0.56, raw.high * 0.54), 0.18, 0.055, step);
+            this.smoothEnergy = env(this.smoothEnergy, Math.min(0.72, raw.level), 0.16, 0.055, step);
+            this.bassOnset = Math.max(0, this.smoothBass - this.lastSmoothBass || 0);
+            this.lastSmoothBass = this.smoothBass;
+            this.beatPulse *= Math.pow(0.36, dt);
+            if (raw.beat) this.beatPulse = Math.max(this.beatPulse, clampRange(raw.beatAmp || 0.8, 0, 1.25));
+            this.beatPulse = Math.max(this.beatPulse, Math.min(0.12, this.bassOnset * 0.18));
+        } else {
+            this.smoothBass *= Math.pow(0.91, step);
+            this.smoothMid *= Math.pow(0.91, step);
+            this.smoothTreb *= Math.pow(0.91, step);
+            this.smoothEnergy *= Math.pow(0.91, step);
+            this.beatPulse *= Math.pow(0.82, step);
+        }
+        this.audioEnergy = Math.max(this.smoothEnergy, this.beatPulse * 0.3);
+
+        let bass = Math.min(0.9, this.smoothBass * 1.05 + this.beatPulse * 0.18) * intensity;
+        let mid = Math.min(0.72, this.smoothMid * 1.12) * intensity;
+        let treble = Math.min(0.62, this.smoothTreb * 1.2) * intensity;
+        const preset = Number(this.fx.preset) || 0;
+        if (preset >= 4) {
+            const wallpaperAudio = preset === 5;
+            const authored = preset >= 9 && preset <= 12;
+            const ringBassGain = wallpaperAudio ? 1.1 : (authored ? 1.32 : 1.58);
+            const ringMidGain = wallpaperAudio ? 1.16 : (authored ? 1.48 : 1.82);
+            const ringTrebleGain = wallpaperAudio ? 1.34 : (authored ? 1.72 : 2.28);
+            const ringBeatGain = wallpaperAudio ? 0.18 : (authored ? 0.31 : 0.42);
+            const ringBass = this.smoothBass * ringBassGain + this.beatPulse * ringBeatGain
+                - this.smoothMid * 0.16 - this.smoothTreb * 0.06;
+            const ringMid = this.smoothMid * ringMidGain - this.smoothBass * 0.14 - this.smoothTreb * 0.07;
+            const ringTreble = this.smoothTreb * ringTrebleGain - this.smoothMid * 0.1 - this.smoothBass * 0.05;
+            bass = Math.pow(clamp01((ringBass - 0.05) / 0.58), 0.72) * intensity;
+            mid = Math.pow(clamp01((ringMid - 0.045) / 0.46), 0.78) * intensity;
+            treble = Math.pow(clamp01((ringTreble - 0.03) / 0.34), 0.84) * intensity;
+            if (wallpaperAudio) {
+                bass = Math.min(bass, 0.46 * intensity);
+                mid = Math.min(mid, 0.4 * intensity);
+                treble = Math.min(treble, 0.36 * intensity);
+                this.beatPulse *= 0.34;
+            } else if (authored) {
+                bass = Math.min(bass, 0.72 * intensity);
+                mid = Math.min(mid, 0.62 * intensity);
+                treble = Math.min(treble, 0.58 * intensity);
+                this.beatPulse *= 0.72;
+            }
+        }
+        return { bass, mid, treble, beat: this.beatPulse };
+    }
+
+    // ---------------------------------------------------------------- 主循环
+
+    loop(now) {
+        if (this.disposed) return;
+        this.raf = requestAnimationFrame(this.loop);
+        const dt = Math.min(0.05, Math.max(0.001, (now - this.lastFrame) / 1000));
+        this.lastFrame = now;
+
+        const mode = String(this.fx.foregroundFpsMode || 'vsync');
+        if (mode !== 'vsync' && mode !== 'adaptive') {
+            const target = Number(mode) || 60;
+            if (now - (this.lastDrawAt || 0) < 1000 / target - 0.5) return;
+        }
+        this.lastDrawAt = now;
+
+        const audio = (this.options.readAudio && this.options.readAudio()) || { low: 0, mid: 0, high: 0, level: 0, beat: false, beatAmp: 0, playing: false };
+        const bands = this.stepAudio(dt, audio, !!audio.playing);
+
+        this.cinemaT += dt * 60;
+        this.camPunch *= 0.9;
+        this.beatCam.thetaKick *= 0.86;
+        this.beatCam.phiKick *= 0.86;
+        this.beatCam.radiusKick *= 0.86;
+        this.beatCam.rollKick *= 0.86;
+        if (audio.beat) {
+            const kick = clampRange((audio.beatAmp || 0.8) * 0.02, 0, 0.06);
+            this.beatCam.thetaKick += (Math.random() - 0.5) * kick;
+            this.beatCam.phiKick += (Math.random() - 0.5) * kick * 0.7;
+            this.beatCam.radiusKick += kick * 2.2;
+            this.beatCam.rollKick += (Math.random() - 0.5) * kick * 0.5;
+        }
+
+        const speedMul = isFinite(Number(this.fx.speed)) ? Math.max(0.05, Number(this.fx.speed)) : 1;
+        this.uniforms.uTime.value += dt * speedMul;
+        this.uniforms.uVinylSpin.value = (this.uniforms.uVinylSpin.value + dt * (0.4 + this.smoothBass * 0.09) * speedMul) % (Math.PI * 2);
+        this.uniforms.uBass.value = bands.bass;
+        this.uniforms.uMid.value = bands.mid;
+        this.uniforms.uTreble.value = bands.treble;
+        this.uniforms.uBeat.value = bands.beat;
+        this.uniforms.uEnergy.value = this.audioEnergy;
+        this.uniforms.uBurstAmt.value *= 0.9;
+
+        const alphaTarget = this.uniforms.uHasCover.value > 0.5 ? 1 : 0.85;
+        this.uniforms.uAlpha.value += (alphaTarget - this.uniforms.uAlpha.value) * Math.min(1, dt * 2.4);
+
+        this.tickPresetTransition();
+        this.updateRipples(dt, bands.bass);
+        this.updateSkull(dt, bands.bass, bands.mid);
+        this.applyCamera(dt);
+        this.updateStarRiver(dt);
+
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    updateStarRiver(dt) {
+        if (!this.starRiverUniforms) return;
+        let target = 0.34;
+        const preset = Number(this.fx.preset) || 0;
+        if (this.fx.backgroundStarRiver === false) target = 0;
+        else if (preset === 5) target = 0;
+        else if (preset === SKULL_PRESET_INDEX) target = 0.38;
+        else if (preset === 9) target = 0.12;
+        else if (preset === 10) target = 0.18;
+        else if (preset === 11) target = 0.1;
+        else if (preset === 12) target = 0.16;
+        const current = this.starRiverUniforms.uAlpha.value;
+        const ease = target > current ? 0.085 : 0.16;
+        this.starRiverUniforms.uAlpha.value = current + (target - current) * Math.min(1, ease * Math.max(1, dt * 60));
+        this.starRiver.visible = this.starRiverUniforms.uAlpha.value > 0.006;
+    }
+
+    // ---------------------------------------------------------------- 生命周期
+
+    onWindowResize = () => this.resize();
+
+    resize() {
+        if (this.disposed) return;
+        const width = this.container.clientWidth || window.innerWidth;
+        const height = this.container.clientHeight || window.innerHeight;
+        if (!width || !height) return;
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(width, height, false);
+    }
+
+    dispose() {
+        this.disposed = true;
+        if (this.raf) cancelAnimationFrame(this.raf);
+        if (this.colorMixTween) cancelAnimationFrame(this.colorMixTween);
+        window.removeEventListener('resize', this.onWindowResize);
+        if (this.resizeObserver) this.resizeObserver.disconnect();
+        this.canvas.removeEventListener('mousedown', this.onPointerDown);
+        window.removeEventListener('mousemove', this.onPointerMove);
+        window.removeEventListener('mouseup', this.onPointerUp);
+        this.canvas.removeEventListener('wheel', this.onWheel);
+        this.canvas.removeEventListener('dblclick', this.onDblClick);
+        this.scene.traverse((obj) => {
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        });
+        this.dotTexture.dispose();
+        this.rippleTex.dispose();
+        this.renderer.dispose();
+        if (this.canvas && this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
+    }
+}

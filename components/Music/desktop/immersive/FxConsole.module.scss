@@ -281,3 +281,85 @@ $ease: cubic-bezier(0.32, 0.72, 0, 1);
         outline-offset: 2px;
     }
 }
+
+/* --- colour picker / swatches ------------------------------------------ */
+
+.colorRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.colorInput {
+    flex: none;
+    width: 40px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 7px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.swatches {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 5px;
+    justify-content: flex-end;
+}
+
+.swatch {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 160ms $ease;
+
+    &:hover {
+        transform: scale(1.18);
+    }
+}
+
+/* --- archive ------------------------------------------------------------ */
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.btn {
+    padding: 7px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 160ms ease-out;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.16);
+    }
+}
+
+.textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.28);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 11px;
+    font-family: inherit;
+    resize: vertical;
+}
+
+.hiddenFile {
+    display: none;
+}

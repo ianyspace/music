@@ -51,6 +51,8 @@ const ImmersiveSettings = function ({
     onPreset,
     fx,
     onFx,
+    onReplaceFx,
+    palette,
 }) {
     const rootRef = useRef(null);
     const [urlDraft, setUrlDraft] = useState('');
@@ -199,14 +201,14 @@ const ImmersiveSettings = function ({
                     </div>
                 )}
 
-                {bgMode === 'nebula' && (
-                    <FxConsole
-                        preset={preset}
-                        onPreset={onPreset}
-                        fx={fx}
-                        onFx={onFx}
-                    />
-                )}
+                <FxConsole
+                    preset={preset}
+                    onPreset={onPreset}
+                    fx={fx}
+                    onFx={onFx}
+                    onReplaceFx={onReplaceFx}
+                    palette={palette}
+                />
 
                 {bgMode === 'custom' && (
                     <div className={styles.row}>

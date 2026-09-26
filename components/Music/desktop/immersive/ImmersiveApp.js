@@ -20,13 +20,13 @@ import {
 import { attachAnalyser, analyserElement, resumeAnalyser, setAnalyserVolume } from '../../core/audioAnalyser';
 import { loadCoverPalette, paletteFromGradient } from '../../core/coverPalette';
 import { coverUrlOf } from '../../librarySource';
-import VisualCanvas from './VisualCanvas';
+import VisualStage from './visual/VisualStage';
 import ImmersiveLyrics from './ImmersiveLyrics';
 import LyricStarRiver from './LyricStarRiver';
 import ImmersiveSettings from './ImmersiveSettings';
 import PlaylistPanel from './PlaylistPanel';
 import PlayerBar from './PlayerBar';
-import { DEFAULT_FX, normalizeFx } from './visualPresets';
+import { fxDefaults as DEFAULT_FX, normalizeFx } from './visual/presetData';
 
 import styles from './ImmersiveApp.module.scss';
 
@@ -177,7 +177,7 @@ const ImmersiveApp = function ({
     // What every layer actually uses: the cover's own colours when the
     // artwork has an opinion and the palette switch is on, the song's
     // gradient otherwise.
-    const activePalette = fx.palette && palette && !palette.monochrome
+    const activePalette = palette && !palette.monochrome
         ? palette
         : paletteFromGradient(gradient);
 
@@ -332,29 +332,28 @@ const ImmersiveApp = function ({
     const lyricsShown = Boolean(lyricsVisible && canToggleLyrics)
         && (bgMode === 'custom' || lyricInNebula);
 
-    const renderLayer = function (layer) {
-        if (layer.mode === 'nebula') {
-            return (
-                <VisualCanvas
+    // 粒子舞台始终是最上层: 它带 alpha, 自定义背景(或封面底色)从下面透出来。
+    // 这就是「虚空」预设的用途 —— 关掉粒子, 只留你自己那张图。
+    const renderLayer = function () {
+        return (
+            <>
+                {bgMode === 'custom' && (
+                    <CustomBackground
+                        item={selectedCustom}
+                        gradient={gradient}
+                        coverUrl={coverUrl}
+                        filter={filter}
+                        onFailed={() => setCustomFailed(true)}
+                    />
+                )}
+                <VisualStage
                     coverUrl={coverUrl}
-                    gradient={gradient}
                     isPlaying={isPlaying}
-                    preset={fx.preset}
                     fx={fx}
                     palette={activePalette}
                     analyser={analyser}
-                    onActivate={current ? onTogglePlay : undefined}
                 />
-            );
-        }
-        return (
-            <CustomBackground
-                item={selectedCustom}
-                gradient={gradient}
-                coverUrl={coverUrl}
-                filter={filter}
-                onFailed={() => setCustomFailed(true)}
-            />
+            </>
         );
     };
 
@@ -380,7 +379,7 @@ const ImmersiveApp = function ({
                     className={`${styles.layer}${index === shownLayers.length - 1 ? ` ${styles['layer-top']}` : ''}`}
                     aria-hidden="true"
                 >
-                    {renderLayer(layer)}
+                    {renderLayer()}
                 </div>
             ))}
 
@@ -393,10 +392,10 @@ const ImmersiveApp = function ({
                     progressTime={progress.time}
                     analyser={analyser}
                     isPlaying={isPlaying}
-                    intensity={fx.gain}
-                    glowBoost={fx.lyricGlow}
-                    stage={fx.lyricMode}
-                    enterFx={fx.lyricFx}
+                    intensity={fx.intensity}
+                    glowBoost={fx.lyricGlowStrength}
+                    stage={fx.lyricDisplayMode}
+                    enterFx={fx.lyricMotionStyle}
                     palette={activePalette}
                     onTogglePlay={onTogglePlay}
                 />
@@ -405,11 +404,11 @@ const ImmersiveApp = function ({
             {/* The lyric star river: sparks living in the words' own band of
                 the frame. It sits above the lyrics and under the ambient
                 veil, so the words read as lit from inside the scene. */}
-            {lyricsShown && fx.lyricRiver && (
+            {lyricsShown && fx.lyricGlow && (
                 <LyricStarRiver
                     analyser={analyser}
                     isPlaying={isPlaying}
-                    intensity={fx.gain}
+                    intensity={fx.intensity}
                     palette={activePalette}
                 />
             )}
@@ -509,6 +508,8 @@ const ImmersiveApp = function ({
                 onPreset={(value) => setFx((prev) => ({ ...prev, preset: value }))}
                 fx={fx}
                 onFx={(key, value) => setFx((prev) => ({ ...prev, [key]: value }))}
+                onReplaceFx={setFx}
+                palette={activePalette}
             />
 
             {toast && (

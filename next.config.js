@@ -15,6 +15,9 @@ const nextConfig = {
     // GitHub Pages only serves static files, so `next build` has to emit a fully
     // static site into `out/` instead of a server rendered app.
     output: 'export',
+    // Public assets referenced from JS (the three.js vendor script, the skull
+    // point cloud) are NOT auto-prefixed by Next, so hand the basePath down.
+    env: { NEXT_PUBLIC_BASE_PATH: basePath || '' },
     // Local verification builds can target a throwaway directory
     // (`NEXT_DIST_DIR=.next-verify npm run build`) so they never have to clear
     // the dev server's `.next`. CI builds leave it unset and use the default.

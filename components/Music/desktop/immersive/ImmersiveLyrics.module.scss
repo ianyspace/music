@@ -145,6 +145,34 @@
     }
 }
 
+/* 控制台的「动态」三档: 静止不做入场动画之外的动作, 浮动让整行缓慢呼吸,
+   故障按鼓点做切片位移 + 色散。 */
+.fx-float {
+    animation:
+        lyr-enter var(--lyr-line-ms) cubic-bezier(0.32, 0.72, 0, 1) both,
+        lyr-float 2600ms ease-in-out infinite;
+}
+
+@keyframes lyr-float {
+    0%, 100% { transform: translate3d(0, 0, 0); }
+    50% { transform: translate3d(0, -0.06em, 0); }
+}
+
+.fx-glitch {
+    animation:
+        lyr-enter var(--lyr-line-ms) cubic-bezier(0.32, 0.72, 0, 1) both,
+        lyr-glitch 900ms steps(6, end) infinite;
+}
+
+@keyframes lyr-glitch {
+    0% { transform: translate3d(0, 0, 0); text-shadow: none; }
+    20% { transform: translate3d(-0.035em, 0.012em, 0); text-shadow: 0.02em 0 var(--lyr-accent), -0.02em 0 rgba(255, 80, 120, 0.7); }
+    40% { transform: translate3d(0.028em, -0.01em, 0); text-shadow: -0.02em 0 var(--lyr-accent), 0.02em 0 rgba(80, 200, 255, 0.7); }
+    60% { transform: translate3d(-0.015em, 0, 0); text-shadow: none; }
+    80% { transform: translate3d(0.02em, 0.008em, 0); text-shadow: 0.015em 0 var(--lyr-accent), -0.015em 0 rgba(255, 120, 80, 0.6); }
+    100% { transform: translate3d(0, 0, 0); text-shadow: none; }
+}
+
 .line-static {
     margin: 0;
     font-size: clamp(20px, 3.2vh, 34px);
@@ -162,5 +190,10 @@
     .fx-shine,
     .fx-glow {
         animation-duration: 80ms;
+    }
+
+    .fx-float,
+    .fx-glitch {
+        animation: lyr-enter 80ms linear both;
     }
 }
