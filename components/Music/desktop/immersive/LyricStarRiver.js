@@ -15,7 +15,7 @@ import styles from './LyricStarRiver.module.scss';
  * words sit *inside* the picture with the same light on them as everything
  * else.
  *
- * It is deliberately not the ambient veil (`ForegroundParticles`): that one
+ * It is deliberately not the main field's own dust layer: that one
  * is whole-frame atmosphere, this one is a spotlight on the text.
  */
 
@@ -99,7 +99,7 @@ void main() {
 const LyricStarRiver = function ({
     analyser = null,
     isPlaying = false,
-    intensity = 'standard',
+    intensity = 0.85,
     palette = null,
 }) {
     const canvasRef = useRef(null);
@@ -228,9 +228,8 @@ const LyricStarRiver = function ({
             bass += ((playing ? sample.low : 0) - bass) * (sample.low > bass ? 0.35 : 0.06);
 
             const beat = detector.update(now, bass, playing);
-            const intensityK = live.intensity === 'calm'
-                ? 0.5
-                : live.intensity === 'strong' ? 1.2 : 0.85;
+            const rawGain = Number(live.intensity);
+            const intensityK = Number.isFinite(rawGain) && rawGain > 0 ? rawGain : 0.85;
             const tint = live.palette && live.palette.accent
                 ? live.palette.accent
                 : [0.86, 0.36, 0.45];

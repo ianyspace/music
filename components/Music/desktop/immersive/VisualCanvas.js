@@ -3,33 +3,37 @@ import React, { useEffect, useRef } from 'react';
 import { createBandReader, readBands } from '../../core/audioAnalyser';
 import { createBeatDetector } from '../../core/beat';
 import { loadCoverResilient } from '../../core/coverImage';
-import { DENSITY_GRID, MOTION_SCALE, PRESET_INDEX } from './visualPresets';
+import {
+    PRESET_FRAME,
+    buildField,
+    buildRequiemField,
+    dustField,
+    fallbackSamples,
+    sampleCover,
+} from './presetFields';
+import { PRESETS_BY_ID, PRESET_INDEX, gridForRes } from './visualPresets';
 
 import styles from './VisualCanvas.module.scss';
 
 /**
- * The immersive page's background: **one particle field, many presets.**
+ * The immersive page's background: **one particle field, twelve shapes.**
  *
- * Every preset is a different placement function over the *same* buffer of
- * cover-sampled particles, picked by a `uPreset` uniform in the vertex
- * shader. That is the whole trick behind having eight visual modes at the
- * cost of one WebGL program: switching mode is a uniform write, not a reload,
- * so the console's mode buttons are instant and there is no white frame
- * between them.
+ * There is a single WebGL program. Each preset is a branch in the vertex
+ * shader, and each preset also builds its own attribute buffers (see
+ * `presetFields.js`) so the十二 modes are genuinely different objects — a
+ * grooved record, a sphere, a tunnel, a flock — rather than one rectangle of
+ * cover pixels being moved twelve ways.
  *
- * ## Why one program and not eight components
+ * Switching preset re-uploads buffers for the new shape (a few milliseconds,
+ * once) and then costs nothing per frame beyond a uniform write. That is why
+ * twelve modes can live in one program without the bundle noticing.
  *
- * The presets share everything that is expensive and disagree only about
- * where a particle goes: the same cover sampling, the same camera, the same
- * beat/spectrum plumbing, the same ripple and camera-shake passes. Eight
- * components would duplicate all of that eight times and could not cross
- * fade, because each would own its own canvas.
+ * ## What every particle carries
  *
- * ## What every preset is fed
- *
- * - `aUv` — where the particle came from on the cover (0–1 both axes);
- * - `aColor` — that pixel's colour;
- * - `aSeed` — a stable per-particle random, for scatter and variation.
+ * - `aUv`    — two numbers whose meaning belongs to the preset's branch;
+ * - `aExtra` — two more (group flags, band index, butterfly id, jaw flag…);
+ * - `aColor` — the cover pixel this particle carries, or bone shade;
+ * - `aSeed`  — a stable per-particle random, for scatter and variation.
  *
  * ## The layers that ride on top of every preset
  *
@@ -40,8 +44,6 @@ import styles from './VisualCanvas.module.scss';
  *   the cover's own palette.
  */
 
-const MAX_PARTICLES = 300_000;
-
 // Ambient dust behind the picture: atmosphere at the edges of the frame,
 // never a rival to the picture itself.
 const DUST_COUNT = 4_000;
@@ -49,24 +51,36 @@ const DUST_COUNT = 4_000;
 const CAMERA_Z = 3.4;
 const FOCAL = 2.6;
 
-// Seconds the particles take to fly into a newly loaded cover.
-const GATHER_MS = 1100;
+// Seconds the particles take to fly into a newly loaded cover. The cover
+// preset arrives faster than the others: it is the default, so it is the one
+// people see assemble most often.
+const GATHER_MS = {
+    emily: 850,
+    tunnel: 1100,
+    orbit: 1200,
+    void: 900,
+    vinyl: 1000,
+    galaxy: 1200,
+    requiem: 1400,
+    sonic: 1100,
+    halo: 1200,
+    rain: 1100,
+    prism: 1200,
+    abyss: 1200,
+};
 
 const ATTACK = 0.35;
 const RELEASE = 0.06;
-
-const INTENSITY = { calm: 0.5, standard: 0.85, strong: 1.2 };
 
 // Spectrum bands handed to the terrain preset. A power of two keeps the
 // texture fetch cheap and the grid readable.
 const BANDS = 32;
 
-const TAU = Math.PI * 2;
-
 const VERTEX_SHADER = `
 precision highp float;
 
 attribute vec2 aUv;
+attribute vec2 aExtra;
 attribute vec3 aColor;
 attribute float aSeed;
 
@@ -77,8 +91,8 @@ uniform float uBass;
 uniform float uMid;
 uniform float uHigh;
 uniform float uLevel;
-uniform float uIntensity;
-uniform float uMotion;
+uniform float uGain;
+uniform float uDepth;
 uniform float uPreset;
 uniform float uFlow;
 uniform float uSpin;
@@ -86,6 +100,7 @@ uniform float uBeat;
 uniform float uBeatAge;
 uniform float uRipplesOn;
 uniform float uCinemaOn;
+uniform float uShake;
 uniform vec3 uRipple0;
 uniform vec3 uRipple1;
 uniform vec3 uRipple2;
@@ -94,6 +109,7 @@ uniform float uFocal;
 uniform float uCameraZ;
 uniform vec2 uHalfViewport;
 uniform float uPointSize;
+uniform float uFrameScale;
 uniform float uMode;
 uniform vec3 uTint;
 uniform vec3 uAccent;
@@ -121,7 +137,6 @@ float rippleAt(float r, vec3 ripple) {
 }
 
 void main() {
-    float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
     vec3 rand = hash31(aSeed);
 
     vec3 pos = vec3(0.0);
@@ -138,7 +153,7 @@ void main() {
         float rad = aUv.y * 3.6;
         float z = -1.2 + hash11(aSeed + 5.1) * 2.2;
         pos = vec3(cos(ang) * rad, sin(ang) * rad, z);
-        pos.xy *= 1.0 + uBeat * 0.02 * uIntensity;
+        pos.xy *= 1.0 + uBeat * 0.02 * uGain;
         float twinkle = 0.5 + 0.5 * sin(uTime * (0.4 + rand.y) + aSeed * 21.0);
         float white = step(0.82, hash11(aSeed + 9.4));
         col = mix(uTint * (0.6 + rand.x * 0.4), vec3(1.0), white);
@@ -146,109 +161,208 @@ void main() {
         sizeBoost = 0.8;
     }
 
-    // --- preset 0: NEBULA — the cover, taken apart -------------------------
+    // --- 0: emily专辑封面 — the cover, taken apart ------------------------
     else if (uPreset < 0.5) {
         vec2 nrm = vec2((aUv.x - 0.5) * 2.0, (aUv.y - 0.5) * 2.0);
-        pos = vec3(nrm.x * uAspect, -nrm.y, (lum - 0.5) * 0.4) * 1.35;
-        pos.xy *= 1.0 + uBass * 0.10 * uIntensity;
+        pos = vec3(nrm.x * uAspect, -nrm.y, (aExtra.x - 0.5) * 0.55) * 1.35 * uFrameScale;
+        // A silk wave rolling across the picture: the cover breathes with the
+        // bass instead of only scaling with it.
+        float wave = sin(aUv.x * 6.0 + uTime * 0.7) * cos(aUv.y * 5.0 - uTime * 0.5);
+        pos.z += wave * 0.11 * (0.35 + uBass * uGain);
+        pos.xy *= 1.0 + uBass * 0.10 * uGain;
         pos += vec3(
             sin(uTime * 0.55 + aSeed * 6.283),
             cos(uTime * 0.47 + aSeed * 4.712),
-            sin(uTime * 0.31 + aSeed * 3.141)
-        ) * 0.02 * uMotion;
+            0.0
+        ) * 0.02;
         // The rectangle is the tell that this is a picture: an elliptical
         // falloff is what turns it into a cloud.
-        alpha *= 1.0 - smoothstep(0.55, 1.02, length(vec2(nrm.x / uAspect, nrm.y)));
+        alpha *= 1.0 - smoothstep(0.55, 1.04, length(vec2(nrm.x / uAspect, nrm.y)));
     }
 
-    // --- preset 1: TUNNEL — the cover rolled into a tube -------------------
+    // --- 1: 滚筒 — the cover rolled into a tube ---------------------------
     else if (uPreset < 1.5) {
         float seg = fract(aUv.y + uFlow);
         float zPos = (seg - 0.5) * 9.0;
-        float ang = aUv.x * TAU + uSpin + sin(zPos * 1.2 + uTime * 0.8) * 0.05 * uLevel;
-        float rr = 2.05 - uBass * 0.30 * uIntensity
-            + sin(ang * 5.0 + zPos * 1.4 + uTime * 2.0) * 0.10 * (uMid + uHigh) * uIntensity;
+        float ang = aUv.x * TAU + uSpin + sin(zPos * 1.1 + uTime * 0.7) * 0.06 * uLevel;
+        float rr = 2.05 - uBass * 0.32 * uGain
+            + sin(ang * 5.0 + zPos * 1.4 + uTime * 2.0) * 0.12 * (uMid + uHigh) * uGain;
         pos = vec3(cos(ang) * rr, sin(ang) * rr, zPos);
         // Fade in at the far mouth and out again just before the lens, so
         // particles neither pop into existence nor smear across the screen.
-        alpha *= 0.18 + 0.9 * smoothstep(-4.5, -1.6, zPos) * (1.0 - smoothstep(2.4, 4.5, zPos));
+        alpha *= 0.16 + 0.92 * smoothstep(-4.5, -1.8, zPos) * (1.0 - smoothstep(2.4, 4.5, zPos));
     }
 
-    // --- preset 2: ORBIT — the cover gathered into a planet ----------------
+    // --- 2: 星球 — the cover gathered onto a shell ------------------------
     else if (uPreset < 2.5) {
-        float theta = aUv.x * TAU + uTime * 0.10 * uMotion;
+        float theta = aUv.x * TAU + uTime * 0.10;
         float phi = aUv.y * PI;
-        float atmo = step(0.74, hash11(aSeed + 3.7));
-        float rr = (1.12 + (lum - 0.5) * 0.14 + uBass * 0.09 * uIntensity)
-            * (1.0 + atmo * (0.30 + hash11(aSeed + 1.3) * 0.55 + uLevel * 0.18));
-        pos = vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta)) * rr;
+        float rr = (1.14 + (aExtra.y - 0.5) * 0.16 + uBass * 0.10 * uGain)
+            * (1.0 + aExtra.x * (0.28 + hash11(aSeed + 1.3) * 0.60 + uLevel * 0.20));
+        pos = vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta)) * rr * uFrameScale;
         float facing = dot(normalize(pos), vec3(0.0, 0.0, 1.0));
-        alpha *= (0.30 + 0.70 * smoothstep(-0.35, 0.55, facing)) * mix(1.0, 0.25, atmo);
-        col = mix(col, uAccent, atmo * 0.6);
-        sizeBoost = mix(1.0, 1.5, atmo);
+        alpha *= (0.28 + 0.72 * smoothstep(-0.40, 0.60, facing)) * mix(1.0, 0.22, aExtra.x);
+        col = mix(col, uAccent, aExtra.x * 0.65);
+        sizeBoost = mix(1.0, 1.6, aExtra.x);
     }
 
-    // --- preset 3: GALAXY — aurora ribbons across the frame -----------------
+    // --- 3: 虚空 — near-empty, for the artwork behind ---------------------
     else if (uPreset < 3.5) {
-        float lane = floor(hash11(aSeed + 7.3) * 3.0);
-        float x = fract(aUv.x + uTime * (0.03 + uLevel * 0.06)) * 4.4 - 2.2;
-        float y = (lane - 1.0) * 0.52
-            + sin(aUv.x * TAU + uTime * 0.45 + lane) * 0.14
-            + (aUv.y - 0.5) * 0.35;
-        float z = (hash11(aSeed + 2.9) - 0.5) * 2.4;
-        pos = vec3(x, y + sin(uTime * 0.6 + x * 0.8) * 0.09 * (1.0 + uBass * 2.0), z);
-        col = mix(uTint, uAccent, clamp((x + 2.2) / 4.4, 0.0, 1.0));
-        alpha *= 0.35 + 0.65 * clamp(1.0 - abs(y) * 0.9, 0.0, 1.0);
-        sizeBoost = 1.1;
-    }
-
-    // --- preset 4: HALO — an eclipse ring and its corona -------------------
-    else if (uPreset < 4.5) {
-        float ang = aUv.x * TAU + uTime * 0.07 * uMotion;
-        float isCorona = step(0.46, hash11(aSeed + 4.5));
-        float rad = 1.22 + sin(ang * 3.0 + uTime * 0.35) * 0.05 * (1.0 + uBass);
-        float rr = rad + isCorona * (0.12 + hash11(aSeed + 8.1) * 1.15) * (1.0 + uBass * 0.18 * uIntensity);
-        float zz = (hash11(aSeed + 6.6) - 0.5) * (0.35 + isCorona * 1.2);
-        pos = vec3(cos(ang) * rr, sin(ang) * rr * 0.9, zz);
-        // Backlight: the ring is brightest where the sightline grazes it.
-        float graz = abs(sin(ang));
-        col = mix(col, uAccent, 0.35 + isCorona * 0.5);
-        alpha *= mix(0.95, 0.30, isCorona) * (0.55 + 0.45 * graz);
-        sizeBoost = mix(1.0, 0.8, isCorona);
-    }
-
-    // --- preset 5: RAIN — neon drizzle falling through frame ---------------
-    else if (uPreset < 5.5) {
-        float lanes = 200.0;
-        float laneIdx = floor(aUv.x * lanes);
-        float speed = 0.55 + hash11(laneIdx + 3.3) * 1.5;
-        float x = (laneIdx / lanes - 0.5) * 4.6 + (hash11(laneIdx) - 0.5) * 0.02;
-        float y = fract(aUv.y - uTime * speed * 0.09 * (1.0 + uLevel * 0.7));
-        float z = -1.0 + hash11(laneIdx + 7.7) * 2.0;
-        pos = vec3(x, (0.5 - y) * 3.4, z);
-        // Hundreds of particles per lane, sorted by y: that density is what
-        // reads as a thread of rain rather than as a row of dots.
-        col = mix(uTint, uAccent, hash11(laneIdx + 1.9));
-        alpha *= 0.30 + 0.70 * smoothstep(0.0, 0.35, y) * (1.0 - smoothstep(0.75, 1.0, y));
-        sizeBoost = 0.75;
-    }
-
-    // --- preset 6: TERRAIN — the spectrum as a landscape -------------------
-    else if (uPreset < 6.5) {
-        float fi = floor(aUv.x * 32.0);
-        float spec = texture2D(uSpectrum, vec2((fi + 0.5) / 32.0, 0.5)).r;
-        float h = spec * (0.85 + uBass * 0.35);
-        pos = vec3((aUv.x - 0.5) * 4.2, -1.25 + h + (lum - 0.5) * 0.05, (aUv.y - 0.5) * 4.2);
-        col = mix(uTint, uAccent, clamp(h * 1.5, 0.0, 1.0));
-        alpha *= 0.45 + 0.55 * clamp(h * 1.3, 0.0, 1.0);
-        sizeBoost = 0.9;
-    }
-
-    // --- preset 7: VOID — near-empty, for the artwork behind ---------------
-    else {
         pos = vec3((aUv.x - 0.5) * 3.0, (aUv.y - 0.5) * 3.0, -2.0);
         alpha *= 0.05;
         sizeBoost = 0.6;
+    }
+
+    // --- 4: 唱片 — a grooved disc with the cover on its label -------------
+    else if (uPreset < 4.5) {
+        if (aExtra.x < 0.5) {
+            // The grooves: the cover wrapped into a spiral, darkened to
+            // vinyl, with a specular arc where the light grazes it.
+            float ang = aUv.x * TAU * 3.0 + aUv.y * 1.2 + uSpin;
+            float rad = 0.36 + aUv.y * 1.20;
+            float groove = 0.5 + 0.5 * sin(rad * 190.0);
+            pos = vec3(cos(ang) * rad, sin(ang) * rad, groove * 0.008) * uFrameScale;
+            float sheen = pow(max(0.0, sin(ang * 0.5 + 2.2)), 3.0);
+            col = mix(col * 0.20 + vec3(0.035), col * (0.30 + 0.45 * groove), 0.35);
+            col += sheen * uAccent * 0.20;
+            alpha *= 0.50 + 0.50 * groove;
+            sizeBoost = 0.85;
+        } else {
+            // The label: the whole cover, printed small, dead centre.
+            vec2 p = vec2((aUv.x - 0.5) * 2.0 * uAspect, -(aUv.y - 0.5) * 2.0);
+            pos = vec3(p.x * 0.34, p.y * 0.34, 0.03) * uFrameScale;
+            alpha *= 1.0;
+            sizeBoost = 1.05;
+        }
+        // The record sits tilted, the way one does on a deck.
+        float tilt = -0.42;
+        float ct = cos(tilt);
+        float st = sin(tilt);
+        pos = vec3(pos.x, pos.y * ct - pos.z * st, pos.y * st + pos.z * ct);
+    }
+
+    // --- 5: 星河 — aurora ribbons across the frame ------------------------
+    else if (uPreset < 5.5) {
+        float lane = aExtra.x;
+        float x = fract(aUv.x + uTime * (0.03 + uLevel * 0.06)) * 4.6 - 2.3;
+        float y = (lane - 1.0) * 0.55
+            + sin(aUv.x * TAU + uTime * 0.45 + lane) * 0.16
+            + (aUv.y - 0.5) * 0.32;
+        float z = (aExtra.y - 0.5) * 2.4;
+        pos = vec3(x, y + sin(uTime * 0.6 + x * 0.8) * 0.10 * (1.0 + uBass * 2.0), z);
+        col = mix(uTint, uAccent, clamp((x + 2.3) / 4.6, 0.0, 1.0));
+        alpha *= 0.32 + 0.68 * clamp(1.0 - abs(y) * 0.85, 0.0, 1.0);
+        sizeBoost = 1.1;
+    }
+
+    // --- 6: 安魂 — the skull ----------------------------------------------
+    else if (uPreset < 6.5) {
+        pos = vec3(aUv.x, aUv.y, aExtra.x) * uFrameScale;
+        // The jaw drops on the kick: the one part of a skull that can move.
+        if (aExtra.y > 0.5) {
+            float open = 0.06 + uBeat * 0.30 * uGain;
+            vec3 rel = pos - vec3(0.0, -0.30, 0.0);
+            float co = cos(open);
+            float so = sin(open);
+            rel = vec3(rel.x, rel.y * co - rel.z * so, rel.y * so + rel.z * co);
+            pos = rel + vec3(0.0, -0.30, 0.0);
+        }
+        // A slow float and a breath on the bass, so it never looks like a
+        // frozen model dropped into the frame.
+        pos.y += sin(uTime * 0.5) * 0.045;
+        pos *= 1.0 + uBass * 0.035 * uGain;
+        float bone = dot(aColor, vec3(0.3333));
+        col = mix(vec3(0.93, 0.91, 0.86) * bone, uTint, 0.18);
+        col += uBeat * 0.10 * uAccent;
+        alpha *= 0.85;
+    }
+
+    // --- 7: 音域回响 — the spectrum as a landscape ------------------------
+    else if (uPreset < 7.5) {
+        float fi = aExtra.y;
+        float spec = texture2D(uSpectrum, vec2((fi + 0.5) / 32.0, 0.5)).r;
+        float h = spec * (0.9 + uBass * 0.35);
+        pos = vec3((aUv.x - 0.5) * 4.4, -1.35 + h * 1.5 + (aExtra.x - 0.5) * 0.06, (aUv.y - 0.5) * 4.4);
+        col = mix(uTint, uAccent, clamp(h * 1.6, 0.0, 1.0));
+        alpha *= 0.40 + 0.60 * clamp(h * 1.4, 0.0, 1.0);
+        sizeBoost = 0.9;
+    }
+
+    // --- 8: 月蚀圣环 — an eclipse ring and its corona ---------------------
+    else if (uPreset < 8.5) {
+        float ang = aUv.x * TAU + uTime * 0.07;
+        float isCorona = aExtra.x;
+        float rad = 1.20 + sin(ang * 3.0 + uTime * 0.35) * 0.05 * (1.0 + uBass);
+        float rr = rad + isCorona * (0.10 + aExtra.y * 1.15) * (1.0 + uBass * 0.20 * uGain);
+        float zz = (hash11(aSeed + 6.6) - 0.5) * (0.30 + isCorona * 1.30);
+        pos = vec3(cos(ang) * rr, sin(ang) * rr * 0.92, zz) * uFrameScale;
+        // Backlight: the ring is brightest where the sightline grazes it.
+        float graz = abs(sin(ang));
+        col = mix(col, uAccent, 0.30 + isCorona * 0.55);
+        alpha *= mix(0.95, 0.28, isCorona) * (0.50 + 0.50 * graz);
+        sizeBoost = mix(1.0, 0.8, isCorona);
+    }
+
+    // --- 9: 雨幕霓虹 — neon drizzle falling through frame -----------------
+    else if (uPreset < 9.5) {
+        float lanes = 220.0;
+        float laneIdx = floor(aUv.x * lanes);
+        float speed = 0.55 + aExtra.x * 1.5;
+        float x = (laneIdx / lanes - 0.5) * 4.6 + (hash11(laneIdx) - 0.5) * 0.02;
+        float y = fract(aUv.y - uTime * speed * 0.09 * (1.0 + uLevel * 0.7));
+        float z = -1.0 + aExtra.y * 2.0;
+        pos = vec3(x, (0.5 - y) * 3.4, z);
+        // Hundreds of particles per lane, sorted by y: that density is what
+        // reads as a thread of rain rather than as a row of dots.
+        col = mix(uTint, uAccent, aExtra.x);
+        alpha *= 0.28 + 0.72 * smoothstep(0.0, 0.35, y) * (1.0 - smoothstep(0.72, 1.0, y));
+        sizeBoost = 0.75;
+    }
+
+    // --- 10: 折光蝶群 — a flock of folded wings ---------------------------
+    else if (uPreset < 10.5) {
+        float id = aExtra.x;
+        vec3 r1 = hash31(id * 91.7);
+        vec3 r2 = hash31(id * 41.3 + 7.7);
+        // The migration: every butterfly circuits the frame at its own rate.
+        float t = uTime * (0.10 + r1.x * 0.10) + r1.y * TAU;
+        vec3 center = vec3(
+            sin(t) * (1.1 + r1.z * 1.5),
+            sin(t * 1.7 + r2.x * 6.0) * 0.70 + (r2.y - 0.5) * 0.90,
+            cos(t) * (1.1 + r2.z * 1.4)
+        );
+        // The wing, in the butterfly's own frame: the cover pixel it carries
+        // decides where on the wing it sits.
+        float side = aExtra.y * 2.0 - 1.0;
+        vec2 local = vec2(side * (0.10 + aUv.x * 0.52), (aUv.y - 0.5) * 0.62);
+        float flap = sin(uTime * (5.0 + r1.x * 3.0) + r2.y * 6.28) * 0.85;
+        vec3 wing = vec3(local.x * cos(flap), local.y, local.x * sin(flap) + abs(local.x) * 0.15);
+        pos = center + wing * (0.90 + r2.z * 0.50);
+        // A folded-paper silhouette: soft shoulders, no hard rectangle.
+        float d = length(vec2(local.x / 0.60, local.y / 0.36));
+        alpha *= 1.0 - smoothstep(0.72, 1.02, d);
+        col = mix(col, uAccent, 0.25 + 0.30 * r1.z);
+        col += uBeat * 0.08;
+        sizeBoost = 0.9;
+    }
+
+    // --- 11: 深海绽放 — a bioluminescent corona ---------------------------
+    else {
+        float theta = aUv.x * TAU + uTime * 0.05;
+        float layer = aExtra.x;
+        float petals = 5.0 + layer;
+        float rose = abs(cos(petals * theta * 0.5));
+        float open = 0.55 + 0.45 * (0.5 + 0.5 * sin(uTime * 0.35)) + uBass * 0.25 * uGain;
+        float rad = (0.35 + aUv.y * 1.15) * (0.35 + 0.65 * rose) * open;
+        float lift = sin(theta * 2.0 + layer) * 0.10 * (1.0 - aUv.y);
+        pos = vec3(
+            cos(theta) * rad,
+            sin(theta) * rad * 0.95 + lift,
+            (aExtra.y - 0.5) * 0.70 * (1.0 - aUv.y * 0.5)
+        ) * uFrameScale;
+        col = mix(uAccent, uTint, clamp(aUv.y, 0.0, 1.0));
+        alpha *= 0.35 + 0.65 * (1.0 - smoothstep(0.60, 1.15, rad));
+        sizeBoost = 1.05;
     }
 
     // --- assembly: gather, ripples, beat, camera, projection ---------------
@@ -261,9 +375,13 @@ void main() {
         // Treble sparkle on the picture's highlights.
         if (rand.z > 0.88) {
             float phase = uTime * (2.0 + rand.x * 3.0) + aSeed * 37.0;
-            glint = pow(max(0.0, sin(phase)), 6.0) * uHigh * uIntensity;
+            glint = pow(max(0.0, sin(phase)), 6.0) * uHigh * uGain;
         }
     }
+
+    // Depth: the console's 立体感, applied as a z stretch so a flat preset
+    // can be pushed towards the visitor or away from them.
+    pos.z *= uDepth;
 
     // Ripples and the beat's shockwave both push radially in screen space,
     // which is coherent across every preset: the field visibly ripples
@@ -280,23 +398,23 @@ void main() {
     pos.xy += dir * band * uBeat * 0.38;
 
     // The beat camera: a kick dollies in and shakes, both scaled by the
-    // intensity the visitor chose. The shake is deterministic per frame so
+    // console's own shake amount. The shake is deterministic per frame so
     // there is no jitter when nothing is playing.
-    float dolly = uCinemaOn > 0.5 ? uBeat * 0.32 * uIntensity : 0.0;
-    if (uCinemaOn > 0.5) {
-        pos.xy += vec2(sin(uTime * 61.0), cos(uTime * 53.0)) * uBeat * 0.015 * uIntensity;
+    float dolly = uCinemaOn > 0.5 ? uBeat * 0.32 * uGain : 0.0;
+    if (uCinemaOn > 0.5 && uShake > 0.001) {
+        pos.xy += vec2(sin(uTime * 61.0), cos(uTime * 53.0)) * uBeat * 0.016 * uShake;
     }
 
     // A sine sway, never a cumulative turn: the resting field is frontal.
-    float sway = sin(uTime * 0.05) * 0.026 * uMotion;
+    float sway = sin(uTime * 0.05) * 0.026;
     float cs = cos(sway);
     float ss = sin(sway);
     pos = vec3(pos.x * cs + pos.z * ss, pos.y, -pos.x * ss + pos.z * cs);
 
     // The pointer's virtual camera: a tilt with hard limits (±5° yaw,
     // ±3.5° pitch) that always decays back to face-on.
-    float yaw = uParallax.x * 0.087;
-    float pitch = uParallax.y * 0.061;
+    float yaw = uParallax.x * 0.087 * uDepth;
+    float pitch = uParallax.y * 0.061 * uDepth;
     float cy = cos(yaw);
     float sy = sin(yaw);
     pos = vec3(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
@@ -346,94 +464,6 @@ const hexToRgb = function (gradient) {
     return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
 };
 
-/** Ambient dust: its uv is (angle, radius), its colour comes from a uniform. */
-const dustField = function () {
-    const uvs = new Float32Array(DUST_COUNT * 2);
-    const colors = new Float32Array(DUST_COUNT * 3);
-    const seeds = new Float32Array(DUST_COUNT);
-    for (let index = 0; index < DUST_COUNT; index += 1) {
-        uvs[index * 2] = Math.random();
-        // sqrt keeps the disc's area uniform: a linear radius would crowd
-        // the centre and leave the rim bare.
-        uvs[index * 2 + 1] = Math.sqrt(Math.random());
-        seeds[index] = Math.random() * 100;
-    }
-    return { uvs, colors, seeds, count: DUST_COUNT };
-};
-
-/** Cover pixels, one particle per sampled cell. */
-const coverField = function (image, gridHeight) {
-    const aspect = image.naturalWidth / image.naturalHeight || 1;
-    const rows = gridHeight;
-    const cols = Math.max(8, Math.round(gridHeight * aspect));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = cols;
-    canvas.height = rows;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.drawImage(image, 0, 0, cols, rows);
-
-    let pixels;
-    try {
-        pixels = ctx.getImageData(0, 0, cols, rows).data;
-    } catch (error) {
-        return null; // tainted canvas — the image arrived without CORS
-    }
-
-    const stride = rows * cols > MAX_PARTICLES
-        ? Math.ceil(Math.sqrt((rows * cols) / MAX_PARTICLES))
-        : 1;
-    const estimate = Math.ceil((rows / stride) * (cols / stride)) + 1;
-    const uvs = new Float32Array(estimate * 2);
-    const colors = new Float32Array(estimate * 3);
-    const seeds = new Float32Array(estimate);
-
-    let written = 0;
-    for (let row = 0; row < rows; row += stride) {
-        for (let col = 0; col < cols; col += stride) {
-            const at = (row * cols + col) * 4;
-            if (pixels[at + 3] / 255 < 0.08) continue;
-            uvs[written * 2] = cols > 1 ? col / (cols - 1) : 0.5;
-            uvs[written * 2 + 1] = rows > 1 ? row / (rows - 1) : 0.5;
-            colors[written * 3] = pixels[at] / 255;
-            colors[written * 3 + 1] = pixels[at + 1] / 255;
-            colors[written * 3 + 2] = pixels[at + 2] / 255;
-            seeds[written] = Math.random() * 100;
-            written += 1;
-        }
-    }
-
-    if (written === 0) return null;
-    return {
-        uvs: uvs.subarray(0, written * 2),
-        colors: colors.subarray(0, written * 3),
-        seeds: seeds.subarray(0, written),
-        count: written,
-        aspect,
-    };
-};
-
-/** A disc of the song's colour, for when there is no cover to sample. */
-const fallbackField = function (color) {
-    const count = 30_000;
-    const uvs = new Float32Array(count * 2);
-    const colors = new Float32Array(count * 3);
-    const seeds = new Float32Array(count);
-    for (let index = 0; index < count; index += 1) {
-        const radius = Math.sqrt(Math.random()) * 0.5;
-        const angle = Math.random() * TAU;
-        uvs[index * 2] = 0.5 + Math.cos(angle) * radius;
-        uvs[index * 2 + 1] = 0.5 + Math.sin(angle) * radius;
-        const shade = 0.75 + Math.random() * 0.25;
-        colors[index * 3] = color[0] * shade;
-        colors[index * 3 + 1] = color[1] * shade;
-        colors[index * 3 + 2] = color[2] * shade;
-        seeds[index] = Math.random() * 100;
-    }
-    return { uvs, colors, seeds, count, aspect: 1 };
-};
-
 const buildProgram = function (gl) {
     const compile = function (type, source) {
         const shader = gl.createShader(type);
@@ -466,11 +496,8 @@ const buildProgram = function (gl) {
  * @param {string} coverUrl     artwork to take apart; empty means "no cover".
  * @param {string} gradient     CSS gradient of the song, for the fallback.
  * @param {boolean} isPlaying   drives the beat; paused just breathes.
- * @param {string} intensity    `calm` / `standard` / `strong`.
  * @param {string} preset       one of `visualPresets.PRESET_IDS`.
- * @param {string} density      `low` / `medium` / `high` — sampled rows.
- * @param {string} motion       `calm` / `standard` / `strong`.
- * @param {object} fx           the console's layer switches.
+ * @param {object} fx           the console's sliders and layer switches.
  * @param {number[]|null} palette the cover's primary colour, or null.
  * @param {AnalyserNode|null} analyser the shared spectrum source.
  * @param {Function} [onActivate] what clicking the field does.
@@ -479,10 +506,7 @@ const VisualCanvas = function ({
     coverUrl = '',
     gradient = '',
     isPlaying = false,
-    intensity = 'standard',
-    preset = 'nebula',
-    density = 'medium',
-    motion = 'standard',
+    preset = 'emily',
     fx = null,
     palette = null,
     analyser = null,
@@ -490,18 +514,13 @@ const VisualCanvas = function ({
 }) {
     const canvasRef = useRef(null);
     const wrapRef = useRef(null);
-    const liveRef = useRef({
-        isPlaying, intensity, analyser, gradient, preset, motion, fx, palette, density,
-    });
+    const liveRef = useRef({ isPlaying, analyser, gradient, preset, fx, palette });
     liveRef.current.isPlaying = isPlaying;
-    liveRef.current.intensity = intensity;
     liveRef.current.analyser = analyser;
     liveRef.current.gradient = gradient;
     liveRef.current.preset = preset;
-    liveRef.current.motion = motion;
     liveRef.current.fx = fx;
     liveRef.current.palette = palette;
-    liveRef.current.density = density;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -530,6 +549,7 @@ const VisualCanvas = function ({
         const uniform = (name) => gl.getUniformLocation(program, name);
         const locations = {
             uv: attribute('aUv'),
+            extra: attribute('aExtra'),
             color: attribute('aColor'),
             seed: attribute('aSeed'),
             time: uniform('uTime'),
@@ -539,8 +559,8 @@ const VisualCanvas = function ({
             mid: uniform('uMid'),
             high: uniform('uHigh'),
             level: uniform('uLevel'),
-            intensity: uniform('uIntensity'),
-            motion: uniform('uMotion'),
+            gain: uniform('uGain'),
+            depth: uniform('uDepth'),
             preset: uniform('uPreset'),
             flow: uniform('uFlow'),
             spin: uniform('uSpin'),
@@ -548,6 +568,7 @@ const VisualCanvas = function ({
             beatAge: uniform('uBeatAge'),
             ripplesOn: uniform('uRipplesOn'),
             cinemaOn: uniform('uCinemaOn'),
+            shake: uniform('uShake'),
             ripple0: uniform('uRipple0'),
             ripple1: uniform('uRipple1'),
             ripple2: uniform('uRipple2'),
@@ -556,15 +577,22 @@ const VisualCanvas = function ({
             cameraZ: uniform('uCameraZ'),
             halfViewport: uniform('uHalfViewport'),
             pointSize: uniform('uPointSize'),
+            frameScale: uniform('uFrameScale'),
             mode: uniform('uMode'),
             tint: uniform('uTint'),
             accent: uniform('uAccent'),
             spectrum: uniform('uSpectrum'),
         };
 
-        // Two dataset slots: the dust uploads once, the field once per song.
+        // Two dataset slots: the dust uploads once, the field once per song
+        // (and again whenever the preset's shape changes).
         const makeBuffers = function () {
-            return { uv: gl.createBuffer(), color: gl.createBuffer(), seed: gl.createBuffer() };
+            return {
+                uv: gl.createBuffer(),
+                extra: gl.createBuffer(),
+                color: gl.createBuffer(),
+                seed: gl.createBuffer(),
+            };
         };
         const dustBuffers = makeBuffers();
         const cloudBuffers = makeBuffers();
@@ -572,6 +600,8 @@ const VisualCanvas = function ({
         const upload = function (data, into) {
             gl.bindBuffer(gl.ARRAY_BUFFER, into.uv);
             gl.bufferData(gl.ARRAY_BUFFER, data.uvs, gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, into.extra);
+            gl.bufferData(gl.ARRAY_BUFFER, data.extras, gl.STATIC_DRAW);
             gl.bindBuffer(gl.ARRAY_BUFFER, into.color);
             gl.bufferData(gl.ARRAY_BUFFER, data.colors, gl.STATIC_DRAW);
             gl.bindBuffer(gl.ARRAY_BUFFER, into.seed);
@@ -593,37 +623,61 @@ const VisualCanvas = function ({
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         const spectrumBins = new Uint8Array(1024);
 
+        // --- the fields -----------------------------------------------------
+
         let cloudCount = 0;
         let cloudAspect = 1;
+        let builtPreset = '';
+        let builtGrid = 0;
+        let samples = null;
         let startedAt = performance.now();
         let dead = false;
         let reader = null;
         const detector = createBeatDetector();
 
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const motionBase = reduced ? 0.15 : 1;
-
-        const dust = dustField();
+        const dust = dustField(DUST_COUNT);
         upload(dust, dustBuffers);
 
-        const gridHeight = DENSITY_GRID[density] || DENSITY_GRID.medium;
-
-        const renderFallback = function () {
-            upload(fallbackField(hexToRgb(liveRef.current.gradient)), cloudBuffers);
-            cloudCount = 30_000;
-            cloudAspect = 1;
+        const applyField = function (field, aspect) {
+            upload(field, cloudBuffers);
+            cloudCount = field.count;
+            if (aspect) cloudAspect = aspect;
             startedAt = performance.now();
         };
+
+        const buildFor = function (presetId) {
+            if (!samples) return;
+            if (presetId === 'requiem') {
+                // The skull is async (a model may have to be fetched), so the
+                // old shape keeps rendering until it arrives.
+                buildRequiemField(120_000).then((field) => {
+                    if (dead || !field || liveRef.current.preset !== 'requiem') return;
+                    applyField(field, 1);
+                }).catch(() => {
+                    // No skull available: the cover cloud stands in.
+                    if (!dead && samples) applyField(buildField('emily', samples), samples.aspect);
+                });
+                builtPreset = presetId;
+                return;
+            }
+            applyField(buildField(presetId, samples), samples.aspect);
+            builtPreset = presetId;
+        };
+
+        const renderFallback = function () {
+            samples = fallbackSamples(hexToRgb(liveRef.current.gradient));
+            buildFor(liveRef.current.preset);
+        };
         const renderCover = function (image) {
-            const data = coverField(image, gridHeight);
-            if (data) {
-                upload(data, cloudBuffers);
-                cloudCount = data.count;
-                cloudAspect = data.aspect;
+            const grid = gridForRes((liveRef.current.fx || {}).coverRes);
+            const sampled = sampleCover(image, grid);
+            if (sampled) {
+                samples = sampled;
+                builtGrid = grid;
+                buildFor(liveRef.current.preset);
             } else {
                 renderFallback();
             }
-            startedAt = performance.now();
         };
         const loadField = function () {
             cloudCount = 0;
@@ -709,6 +763,9 @@ const VisualCanvas = function ({
             gl.bindBuffer(gl.ARRAY_BUFFER, bufs.uv);
             gl.enableVertexAttribArray(locations.uv);
             gl.vertexAttribPointer(locations.uv, 2, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, bufs.extra);
+            gl.enableVertexAttribArray(locations.extra);
+            gl.vertexAttribPointer(locations.extra, 2, gl.FLOAT, false, 0, 0);
             gl.bindBuffer(gl.ARRAY_BUFFER, bufs.color);
             gl.enableVertexAttribArray(locations.color);
             gl.vertexAttribPointer(locations.color, 3, gl.FLOAT, false, 0, 0);
@@ -727,6 +784,23 @@ const VisualCanvas = function ({
             lastNow = now;
 
             const live = liveRef.current;
+            const fxFlags = live.fx || {};
+
+            // The console's own knobs, with the defaults they fall back to.
+            const gain = Number.isFinite(fxFlags.gain) ? fxFlags.gain : 0.85;
+            const depth = Number.isFinite(fxFlags.depth) ? fxFlags.depth : 1;
+            const shake = Number.isFinite(fxFlags.shake) ? fxFlags.shake : 0.5;
+
+            // A preset change rebuilds the shape; so does a resolution change
+            // big enough to be worth the re-sample.
+            if (live.preset !== builtPreset && samples) buildFor(live.preset);
+            const wantedGrid = gridForRes(fxFlags.coverRes);
+            if (samples && wantedGrid !== builtGrid && live.preset !== 'requiem'
+                && Math.abs(wantedGrid - builtGrid) > 20) {
+                builtGrid = wantedGrid;
+                buildFor(live.preset);
+            }
+
             if (live.analyser && (!reader || reader.analyser !== live.analyser)) {
                 reader = createBandReader(live.analyser);
             }
@@ -741,19 +815,15 @@ const VisualCanvas = function ({
             mid += ((playing ? sample.mid : 0) - mid) * (sample.mid > mid ? ATTACK : RELEASE);
 
             const beat = detector.update(now, bass, playing);
-            const intensityValue = INTENSITY[live.intensity] || INTENSITY.standard;
-            const motionValue = (MOTION_SCALE[live.motion] || 1) * motionBase;
 
-            // The tunnel's two accumulators: distance travelled around the
-            // tube and the tube's own spin. Both speed up with the bass and
-            // kick, so the sprint is audible as well as visible.
-            flow += dt * (0.055 + bass * 0.09 + beat.amp * 0.10) * motionValue;
-            spin += dt * (0.10 + bass * 0.25 + beat.amp * 0.50) * motionValue;
+            // The tunnel's and the record's accumulators: distance travelled
+            // and spin. Both speed up with the bass and the kick.
+            flow += dt * (0.055 + bass * 0.09 + beat.amp * 0.10) * gain;
+            spin += dt * (0.10 + bass * 0.25 + beat.amp * 0.50) * gain;
 
             // Ripples: a bass transient spawns a ring. The floor tracks the
             // song's own bass level slowly, so a sustained bass note does not
             // fire one per frame.
-            const fxFlags = live.fx || {};
             rippleFloor += (bass - rippleFloor) * 0.01;
             if (fxFlags.ripples && playing && bass > 0.2
                 && bass > rippleFloor * 1.16 && now - lastRippleAt > 340) {
@@ -775,7 +845,8 @@ const VisualCanvas = function ({
             eased.x += (target.x - eased.x) * 0.3;
             eased.y += (target.y - eased.y) * 0.3;
 
-            const t = Math.min(1, (now - startedAt) / GATHER_MS);
+            const gatherMs = GATHER_MS[live.preset] || 1100;
+            const t = Math.min(1, (now - startedAt) / gatherMs);
             const gather = 1 - (1 - t) * (1 - t) * (1 - t);
 
             // The palette drives the dust and the preset's own accent. Off,
@@ -784,9 +855,15 @@ const VisualCanvas = function ({
             const tint = paletteOn && live.palette && !live.palette.monochrome
                 ? live.palette.primary
                 : hexToRgb(live.gradient);
-            const accent = paletteOn && live.palette && !live.palette.monochrome
+            let accent = paletteOn && live.palette && !live.palette.monochrome
                 ? live.palette.accent
                 : hexToRgb(live.gradient);
+            // The premium visuals ship their own two-colour identity; a
+            // cover palette would wash them out.
+            const meta = PRESETS_BY_ID[live.preset];
+            if (meta && meta.accent) accent = hexToRgb(meta.accent);
+
+            const frameCfg = PRESET_FRAME[live.preset] || PRESET_FRAME.emily;
 
             gl.clear(gl.COLOR_BUFFER_BIT);
             gl.useProgram(program);
@@ -797,8 +874,8 @@ const VisualCanvas = function ({
             gl.uniform1f(locations.mid, mid);
             gl.uniform1f(locations.high, high);
             gl.uniform1f(locations.level, level);
-            gl.uniform1f(locations.intensity, intensityValue);
-            gl.uniform1f(locations.motion, motionValue);
+            gl.uniform1f(locations.gain, gain);
+            gl.uniform1f(locations.depth, depth);
             gl.uniform1f(locations.preset, PRESET_INDEX[live.preset] || 0);
             gl.uniform1f(locations.flow, flow);
             gl.uniform1f(locations.spin, spin);
@@ -806,19 +883,21 @@ const VisualCanvas = function ({
             gl.uniform1f(locations.beatAge, beat.age);
             gl.uniform1f(locations.ripplesOn, fxFlags.ripples ? 1 : 0);
             gl.uniform1f(locations.cinemaOn, fxFlags.cinema ? 1 : 0);
+            gl.uniform1f(locations.shake, shake);
             gl.uniform3f(locations.ripple0, ripples[0].age, ripples[0].amp, 0);
             gl.uniform3f(locations.ripple1, ripples[1].age, ripples[1].amp, 0);
             gl.uniform3f(locations.ripple2, ripples[2].age, ripples[2].amp, 0);
             gl.uniform1f(locations.focal, FOCAL * Math.min(canvas.width, canvas.height) * 0.5);
-            gl.uniform1f(locations.cameraZ, CAMERA_Z);
+            gl.uniform1f(locations.cameraZ, frameCfg.cameraZ || CAMERA_Z);
             gl.uniform2f(locations.halfViewport, canvas.width * 0.5, canvas.height * 0.5);
             gl.uniform2f(locations.parallax, eased.x, eased.y);
+            gl.uniform1f(locations.frameScale, frameCfg.scale);
             gl.uniform3f(locations.tint, tint[0], tint[1], tint[2]);
             gl.uniform3f(locations.accent, accent[0], accent[1], accent[2]);
 
             // The terrain preset needs the spectrum as a texture. Only worth
             // uploading while that preset is actually on screen.
-            if ((PRESET_INDEX[live.preset] || 0) === 6 && live.analyser) {
+            if ((PRESET_INDEX[live.preset] || 0) === 7 && live.analyser) {
                 const bins = spectrumBins.length >= live.analyser.frequencyBinCount
                     ? spectrumBins
                     : new Uint8Array(live.analyser.frequencyBinCount);
@@ -851,7 +930,7 @@ const VisualCanvas = function ({
             }
 
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-            if (cloudCount) bindAndDraw(cloudBuffers, cloudCount, 1, 5);
+            if (cloudCount) bindAndDraw(cloudBuffers, cloudCount, 1, frameCfg.pointSize);
         };
 
         frame = window.requestAnimationFrame(tick);
@@ -870,18 +949,18 @@ const VisualCanvas = function ({
             window.removeEventListener('pointermove', onPointerMove);
             if (observer) observer.disconnect();
             else window.removeEventListener('resize', resize);
-            gl.deleteBuffer(dustBuffers.uv);
-            gl.deleteBuffer(dustBuffers.color);
-            gl.deleteBuffer(dustBuffers.seed);
-            gl.deleteBuffer(cloudBuffers.uv);
-            gl.deleteBuffer(cloudBuffers.color);
-            gl.deleteBuffer(cloudBuffers.seed);
+            [dustBuffers, cloudBuffers].forEach((bufs) => {
+                gl.deleteBuffer(bufs.uv);
+                gl.deleteBuffer(bufs.extra);
+                gl.deleteBuffer(bufs.color);
+                gl.deleteBuffer(bufs.seed);
+            });
             gl.deleteTexture(spectrumTexture);
             gl.deleteProgram(program);
         };
-        // The field is keyed on the cover and the sampling density: both
-        // change *which particles exist*. Everything else is a uniform.
-    }, [coverUrl, density]);
+        // The field is keyed on the cover: that is what decides which pixels
+        // exist. Everything else is a uniform or a rebuild inside the loop.
+    }, [coverUrl]);
 
     return (
         <div

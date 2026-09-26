@@ -16,15 +16,12 @@ import {
     storageGet,
     storageSet,
     trackGradient,
-    VISUAL_INTENSITIES,
-    VISUAL_INTENSITY_KEY,
 } from '../../shared';
 import { attachAnalyser, analyserElement, resumeAnalyser, setAnalyserVolume } from '../../core/audioAnalyser';
 import { loadCoverPalette, paletteFromGradient } from '../../core/coverPalette';
 import { coverUrlOf } from '../../librarySource';
 import VisualCanvas from './VisualCanvas';
 import ImmersiveLyrics from './ImmersiveLyrics';
-import ForegroundParticles from './ForegroundParticles';
 import LyricStarRiver from './LyricStarRiver';
 import ImmersiveSettings from './ImmersiveSettings';
 import PlaylistPanel from './PlaylistPanel';
@@ -111,7 +108,6 @@ const ImmersiveApp = function ({
     /* --- the page's stored preferences ---------------------------------- */
 
     const [bgMode, setBgMode] = useState('nebula');
-    const [intensity, setIntensity] = useState('standard');
     const [customBg, setCustomBg] = useState({ items: [], selected: PRESET_ID });
     const [filter, setFilter] = useState(40);
     const [autoCollapse, setAutoCollapse] = useState(true);
@@ -130,8 +126,6 @@ const ImmersiveApp = function ({
             prefsSyncedRef.current = true;
             const savedMode = storageGet(IMMERSIVE_BG_KEY);
             if (IMMERSIVE_BGS.includes(savedMode)) setBgMode(savedMode);
-            const savedIntensity = storageGet(VISUAL_INTENSITY_KEY);
-            if (VISUAL_INTENSITIES.includes(savedIntensity)) setIntensity(savedIntensity);
             try {
                 setFx(normalizeFx(JSON.parse(storageGet(IMMERSIVE_FX_KEY))));
             } catch (error) { /* no console state yet */ }
@@ -158,14 +152,13 @@ const ImmersiveApp = function ({
             return;
         }
         storageSet(IMMERSIVE_BG_KEY, bgMode);
-        storageSet(VISUAL_INTENSITY_KEY, intensity);
         storageSet(IMMERSIVE_CUSTOM_KEY, JSON.stringify(customBg));
         storageSet(IMMERSIVE_FILTER_KEY, String(filter));
         storageSet(IMMERSIVE_PANEL_KEY, autoCollapse ? 'on' : 'off');
         storageSet(IMMERSIVE_LYRIC_KEY, lyricInNebula ? 'on' : 'off');
         storageSet(IMMERSIVE_VOLUME_KEY, String(volume));
         storageSet(IMMERSIVE_FX_KEY, JSON.stringify(fx));
-    }, [bgMode, intensity, customBg, filter, autoCollapse, lyricInNebula, volume, fx]);
+    }, [bgMode, customBg, filter, autoCollapse, lyricInNebula, volume, fx]);
 
     // The cover's palette, sampled once per song. It is fetched on its own
     // rather than through the canvas because three layers want it and none of
@@ -346,10 +339,7 @@ const ImmersiveApp = function ({
                     coverUrl={coverUrl}
                     gradient={gradient}
                     isPlaying={isPlaying}
-                    intensity={intensity}
                     preset={fx.preset}
-                    density={fx.density}
-                    motion={fx.motion}
                     fx={fx}
                     palette={activePalette}
                     analyser={analyser}
@@ -403,7 +393,8 @@ const ImmersiveApp = function ({
                     progressTime={progress.time}
                     analyser={analyser}
                     isPlaying={isPlaying}
-                    intensity={intensity}
+                    intensity={fx.gain}
+                    glowBoost={fx.lyricGlow}
                     stage={fx.lyricMode}
                     enterFx={fx.lyricFx}
                     palette={activePalette}
@@ -418,7 +409,7 @@ const ImmersiveApp = function ({
                 <LyricStarRiver
                     analyser={analyser}
                     isPlaying={isPlaying}
-                    intensity={intensity}
+                    intensity={fx.gain}
                     palette={activePalette}
                 />
             )}
@@ -429,12 +420,6 @@ const ImmersiveApp = function ({
                     <p>挑一首歌，让页面活起来</p>
                 </div>
             )}
-
-            {/* --- foreground: the particle veil ----------------------------- */}
-            {/* Sits *above* the lyrics (z 7 > z 6) and below every control:
-                a sparse drift of large faint motes passing over the words is
-                what makes them read as inside the scene, not printed on it. */}
-            <ForegroundParticles analyser={analyser} isPlaying={isPlaying} />
 
             {/* --- left: the track list panel -------------------------------- */}
             <PlaylistPanel
@@ -509,8 +494,6 @@ const ImmersiveApp = function ({
                 }}
                 bgMode={bgMode}
                 onBgMode={changeBgMode}
-                intensity={intensity}
-                onIntensity={setIntensity}
                 customItems={customBg.items}
                 selectedId={selectedCustom.id}
                 onAddCustom={addCustom}
@@ -524,10 +507,6 @@ const ImmersiveApp = function ({
                 onLyricInNebula={setLyricInNebula}
                 preset={fx.preset}
                 onPreset={(value) => setFx((prev) => ({ ...prev, preset: value }))}
-                density={fx.density}
-                onDensity={(value) => setFx((prev) => ({ ...prev, density: value }))}
-                motion={fx.motion}
-                onMotion={(value) => setFx((prev) => ({ ...prev, motion: value }))}
                 fx={fx}
                 onFx={(key, value) => setFx((prev) => ({ ...prev, [key]: value }))}
             />

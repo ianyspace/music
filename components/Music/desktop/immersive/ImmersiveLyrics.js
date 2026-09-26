@@ -83,7 +83,8 @@ const ImmersiveLyrics = function ({
     progressTime,
     analyser,
     isPlaying,
-    intensity = 'standard',
+    intensity = 0.85,
+    glowBoost = 0.28,
     stage = 'single',
     enterFx = 'shine',
     palette = null,
@@ -92,10 +93,11 @@ const ImmersiveLyrics = function ({
     const rootRef = useRef(null);
     // Everything the frame loop reads lives in one ref — progress and play
     // state arrive as props every render, and the loop must not re-arm.
-    const liveRef = useRef({ analyser, isPlaying, intensity });
+    const liveRef = useRef({ analyser, isPlaying, intensity, glowBoost });
     liveRef.current.analyser = analyser;
     liveRef.current.isPlaying = isPlaying;
     liveRef.current.intensity = intensity;
+    liveRef.current.glowBoost = glowBoost;
     const linesRef = useRef(lyrics);
     linesRef.current = lyrics;
     const activeRefIdx = useRef(activeIndex);
@@ -129,7 +131,10 @@ const ImmersiveLyrics = function ({
                 : { low: 0, level: 0 };
 
             const playing = live.isPlaying && Boolean(live.analyser);
-            const intensityK = live.intensity === 'calm' ? 0.5 : live.intensity === 'strong' ? 1.2 : 0.85;
+            // The console's 律动强度 arrives as a number now; anything that
+            // is not a finite number is treated as the default.
+            const rawGain = Number(live.intensity);
+            const intensityK = Number.isFinite(rawGain) && rawGain > 0 ? rawGain : 0.85;
 
             // Beat pulse: fire on the kick, decay every frame. Three coupled
             // signals make the line visibly *play* the beat (the earlier
@@ -149,7 +154,8 @@ const ImmersiveLyrics = function ({
             // Loudness glow, attack/release smoothed so it breathes rather
             // than flickers; the beat flash rides on top, capped so the
             // brightness filter never whites the words out.
-            const wantGlow = playing ? 0.35 + sample.level * 1.3 : 0.35;
+            const boost = Number(live.glowBoost) || 0;
+            const wantGlow = (playing ? 0.35 + sample.level * 1.3 : 0.35) + boost * 0.85;
             glow += (wantGlow - glow) * (wantGlow > glow ? 0.25 : 0.06);
 
             root.style.setProperty('--lyr-scale', scale.toFixed(4));

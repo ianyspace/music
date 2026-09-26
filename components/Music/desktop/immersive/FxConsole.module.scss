@@ -55,50 +55,40 @@ $ease: cubic-bezier(0.32, 0.72, 0, 1);
     color: #fff;
 }
 
-/* The swatches are drawn from the same shapes the shader draws in pixels, so
-   a card is a thumbnail of the mode rather than a decorative square. */
-.swatch {
+/* The icon is a drawing of the preset's shape, not a decorative square: the
+   card that opens the console on should tell you what you will get. */
+.icon {
     flex: none;
+    display: grid;
+    place-items: center;
     width: 30px;
     height: 30px;
-    border-radius: 8px;
-    background: #1b1c24;
-    overflow: hidden;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.7);
+    transition: background 160ms ease-out, color 160ms ease-out;
+}
 
-    &[data-preset='nebula'] {
-        background: radial-gradient(circle at 50% 45%, #b9a8ff 0%, #6b5bd6 34%, rgba(20, 20, 30, 0) 72%);
-    }
+.card-on .icon {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
 
-    &[data-preset='tunnel'] {
-        background: repeating-radial-gradient(circle at 50% 50%, rgba(160, 190, 255, 0.95) 0 1px, rgba(0, 0, 0, 0) 2px 8px);
-    }
+/* The premium visuals carry their own accent, so the card advertises it. */
+.card-premium .icon {
+    color: var(--card-accent, #ffd27a);
+    background: color-mix(in srgb, var(--card-accent, #ffd27a) 16%, transparent);
+}
 
-    &[data-preset='orbit'] {
-        background: radial-gradient(circle at 38% 34%, #ffffff 0%, #8a8aa8 28%, #2a2a3c 60%, rgba(0, 0, 0, 0) 70%);
-    }
-
-    &[data-preset='galaxy'] {
-        background: linear-gradient(115deg, #4ad3ff 0%, #b06bff 48%, #ff7ac0 100%);
-    }
-
-    &[data-preset='halo'] {
-        background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 32%, #ffd27a 37%, rgba(0, 0, 0, 0) 43%, rgba(255, 210, 122, 0.4) 58%, rgba(0, 0, 0, 0) 72%);
-    }
-
-    &[data-preset='rain'] {
-        background: repeating-linear-gradient(to bottom, #6fd0ff 0 2px, rgba(0, 0, 0, 0) 2px 7px);
-    }
-
-    &[data-preset='terrain'] {
-        background:
-            linear-gradient(to top, rgba(90, 210, 160, 0.85) 0%, rgba(90, 210, 160, 0) 70%),
-            repeating-linear-gradient(to right, rgba(150, 230, 200, 0.9) 0 2px, rgba(0, 0, 0, 0) 2px 7px);
-    }
-
-    &[data-preset='void'] {
-        background: #15161d;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-    }
+.badge {
+    flex: none;
+    margin-left: auto;
+    padding: 1px 5px;
+    border-radius: 999px;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: #14151c;
+    background: var(--card-accent, #ffd27a);
 }
 
 .text {
@@ -120,6 +110,13 @@ $ease: cubic-bezier(0.32, 0.72, 0, 1);
     text-overflow: ellipsis;
 }
 
+.en {
+    margin-left: 5px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.38);
+}
+
 /* --- rows and segmented controls ----------------------------------------- */
 
 .row {
@@ -133,6 +130,53 @@ $ease: cubic-bezier(0.32, 0.72, 0, 1);
 .label {
     font-size: 13px;
     color: rgba(255, 255, 255, 0.82);
+}
+
+/* --- sliders ------------------------------------------------------------- */
+
+.slider {
+    display: grid;
+    grid-template-columns: 68px 1fr 40px;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+
+    input[type='range'] {
+        width: 100%;
+        height: 3px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+        appearance: none;
+        cursor: pointer;
+
+        &::-webkit-slider-thumb {
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #fff;
+        }
+
+        &::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border: 0;
+            border-radius: 50%;
+            background: #fff;
+        }
+    }
+}
+
+.slider-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.slider-value {
+    font-size: 11px;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.5);
+    font-variant-numeric: tabular-nums;
 }
 
 .seg {

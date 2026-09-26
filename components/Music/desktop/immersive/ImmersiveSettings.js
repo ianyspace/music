@@ -36,8 +36,6 @@ const ImmersiveSettings = function ({
     onAnimationEnd,
     bgMode,
     onBgMode,
-    intensity,
-    onIntensity,
     customItems,
     selectedId,
     onAddCustom,
@@ -51,10 +49,6 @@ const ImmersiveSettings = function ({
     onLyricInNebula,
     preset,
     onPreset,
-    density,
-    onDensity,
-    motion,
-    onMotion,
     fx,
     onFx,
 }) {
@@ -134,7 +128,7 @@ const ImmersiveSettings = function ({
                         <span className={styles['mode-swatch']} data-mode="nebula" aria-hidden="true" />
                         <span>
                             <span className={styles['mode-name']}>粒子视觉</span>
-                            <span className={styles['mode-sub']}>8 种预设 · 默认</span>
+                            <span className={styles['mode-sub']}>12 种预设 · 默认</span>
                         </span>
                     </button>
                     <button
@@ -209,12 +203,6 @@ const ImmersiveSettings = function ({
                     <FxConsole
                         preset={preset}
                         onPreset={onPreset}
-                        intensity={intensity}
-                        onIntensity={onIntensity}
-                        density={density}
-                        onDensity={onDensity}
-                        motion={motion}
-                        onMotion={onMotion}
                         fx={fx}
                         onFx={onFx}
                     />
