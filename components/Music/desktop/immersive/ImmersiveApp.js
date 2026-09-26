@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+    IconGear,
     IconMusicSpace,
 } from '../../icons';
 import {
@@ -48,10 +49,11 @@ const LAYER_FADE_MS = 900;
  * The immersive page — the desktop layout's only form since the redesign.
  *
  * One idea: **the background is the page.** A full-viewport WebGL nebula (or
- * the visitor's own picture/video) fills the screen; every control floats
- * over it as glass — the playlist hugging the left edge, the play bar pinned
- * to the bottom, the lyrics centred. There is no settings *page*: the bar's
- * gear opens a popover that owns every preference.
+ * the visitor's own picture/video) fills the screen; what little chrome there
+ * is floats over it — the track column on the left edge (bare rows, no panel
+ * shell), the play bar pinned to the bottom, the lyrics centred. There is no
+ * settings *page*: one gear in the top-right corner opens a popover that owns
+ * every preference, 账号 included.
  *
  * What is deliberately *not* here: the record and its tonearm, the three
  * column workspace, the corner settings panel, the theme switch. The old
@@ -458,6 +460,22 @@ const ImmersiveApp = function ({
                 </div>
             )}
 
+            {/* --- top-right: the one settings entry -------------------------
+                账号(QQ 绑定) 和渲染/视觉设置都从这里进 —— 左侧的 logo 和播放栏
+                的齿轮都去掉了, 整页只剩这一个入口。开着时再点一下不管打开,
+                交给面板自己的「点外面关闭」把它收起来, 免得两个 handler 打架。 */}
+            <button
+                type="button"
+                className={`${styles.corner}${settingsOpen ? ` ${styles['corner-on']}` : ''}`}
+                onClick={() => { if (!settingsOpen) setSettingsOpen(true); }}
+                title="设置"
+                aria-label="设置"
+                aria-haspopup="dialog"
+                aria-expanded={settingsOpen}
+            >
+                <IconGear />
+            </button>
+
             {/* --- left: the track list panel -------------------------------- */}
             <PlaylistPanel
                 expanded={panelOpen}
@@ -469,8 +487,6 @@ const ImmersiveApp = function ({
                 loadingId={loadingId}
                 isPlaying={isPlaying}
                 onToggleTrack={onToggleTrack}
-                qqBound={qqBound}
-                onOpenAccount={onOpenAccount}
                 ambient={ambient}
             />
 
@@ -514,9 +530,6 @@ const ImmersiveApp = function ({
                 liked={liked}
                 onToggleLike={() => { if (current) onToggleLike(current.track); }}
                 audioRef={audioRef}
-                volume={volume}
-                onVolume={setVolume}
-                onOpenSettings={() => setSettingsOpen(true)}
             />
 
             {/* --- settings --------------------------------------------------- */}
@@ -550,6 +563,8 @@ const ImmersiveApp = function ({
                 fx={fx}
                 onFx={(key, value) => setFx((prev) => ({ ...prev, [key]: value }))}
                 palette={activePalette}
+                qqBound={qqBound}
+                onOpenAccount={onOpenAccount}
             />
 
             {toast && (

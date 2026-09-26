@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     IconExpand,
-    IconGear,
     IconHeart,
     IconNote,
     IconPause,
@@ -13,7 +12,6 @@ import {
     IconRepeat,
     IconRepeatOne,
     IconShuffle,
-    IconVolume,
 } from '../../icons';
 import { formatTime } from '../../shared';
 import Cover from '../../Cover';
@@ -28,9 +26,13 @@ import styles from './PlayerBar.module.scss';
  * in here to remove later.
  *
  * Everything it does is the old bar's behaviour (the same cycle button, the
- * same seek, the same heart); the volume and fullscreen controls are new,
- * both local: volume writes straight to the one `<audio>` element's
- * `volume`, fullscreen is the document's, and neither belongs in `usePlayer`.
+ * same seek, the same heart); fullscreen is the document's and local to this
+ * bar, so it does not belong in `usePlayer`.
+ *
+ * No volume control: the listening level is the system's, and the stored
+ * preference is still applied to the `<audio>` element by the page — there is
+ * simply nothing to drag here. No gear either: settings opens from the
+ * corner button now.
  */
 
 const MODES = {
@@ -60,9 +62,6 @@ const PlayerBar = function ({
     liked,
     onToggleLike,
     audioRef,
-    volume,
-    onVolume,
-    onOpenSettings,
 }) {
     const percent = progress.duration > 0
         ? Math.min(100, Math.max(0, (progress.time / progress.duration) * 100))
@@ -190,18 +189,6 @@ const PlayerBar = function ({
                 </div>
 
                 <span className={styles.end}>
-                    <span className={styles.volume}>
-                        <IconVolume size={16} />
-                        <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={volume}
-                            onChange={(event) => onVolume(Number(event.target.value))}
-                            style={{ '--fill': `${volume}%` }}
-                            aria-label="音量"
-                        />
-                    </span>
                     <button
                         type="button"
                         className={`${styles.btn}${liked ? ` ${styles['btn-on']}` : ''}`}
@@ -218,16 +205,6 @@ const PlayerBar = function ({
                         <span className={styles.sep}>/</span>
                         <span>{formatTime(progress.duration)}</span>
                     </span>
-                    <button
-                        type="button"
-                        className={styles.btn}
-                        onClick={onOpenSettings}
-                        title="设置"
-                        aria-label="设置"
-                        aria-haspopup="dialog"
-                    >
-                        <IconGear />
-                    </button>
                     <button
                         type="button"
                         className={styles.btn}

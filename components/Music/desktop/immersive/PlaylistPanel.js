@@ -11,15 +11,18 @@ import {
     trackGradient,
 } from '../../shared';
 import Cover from '../../Cover';
-import MarkNote from '../../core/MarkNote';
 
 import styles from './PlaylistPanel.module.scss';
 
 /**
- * The immersive page's track list: a slim glass panel hugging the left edge.
- * Plain rows — cover, title, artist — in a native scrolling list; the playing
- * row is tinted and carries the equalizer glyph. No 3D, no windowing: every
- * track is one row, the browser scrolls.
+ * The immersive page's track list: a bare column of rows hugging the left
+ * edge. Plain rows — cover, title, artist — in a native scrolling list; the
+ * playing row is tinted and carries the equalizer glyph. No 3D, no windowing:
+ * every track is one row, the browser scrolls.
+ *
+ * No panel shell (fill / blur / border) and no app mark: the rows sit straight
+ * on the stage. 账号 used to be reachable only through the mark — it is an
+ * entry in the settings popover now.
  *
  * Presentational on purpose — the fold timer and hover state live in
  * `ImmersiveApp`, because the summon edge sits outside this component and
@@ -36,8 +39,6 @@ const PlaylistPanel = function ({
     loadingId,
     isPlaying,
     onToggleTrack,
-    qqBound,
-    onOpenAccount,
     ambient = false,
 }) {
     const listRef = useRef(null);
@@ -81,17 +82,8 @@ const PlaylistPanel = function ({
                 onPointerLeave={() => onHoverChange(false)}
                 aria-label="歌曲列表"
             >
-                {/* The panel header: source mark, count, fold. */}
+                {/* The header is just the fold now — no mark, no count. */}
                 <div className={styles.bar}>
-                    <MarkNote
-                        className={styles.mark}
-                        playing={isPlaying}
-                        qqBound={qqBound}
-                        onOpen={onOpenAccount}
-                    />
-                    {total > 0 ? (
-                        <span className={styles.count} aria-hidden="true">{total} 首</span>
-                    ) : null}
                     <button
                         type="button"
                         className={styles.fold}

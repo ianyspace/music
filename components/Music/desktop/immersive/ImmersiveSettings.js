@@ -7,10 +7,11 @@ import { presetDisplayOrder } from './visual/presetData';
 import styles from './ImmersiveSettings.module.scss';
 
 /**
- * The immersive page's settings: a glass popover rising from the play bar's
+ * The immersive page's settings: a glass popover dropping from the corner
  * gear. Everything stored about this page is changed here and nowhere else —
  * the visual console (preset, amounts, layers), the custom background
- * library, the readability filter, and the page's behaviour switches.
+ * library, the readability filter, the account (QQ) entry, and the page's
+ * behaviour switches.
  *
  * The popover closes on Escape and on an outside click; the closing animation
  * is the scrim pattern the shell already uses elsewhere (wait for the fade,
@@ -55,6 +56,8 @@ const ImmersiveSettings = function ({
     fx,
     onFx,
     palette,
+    qqBound = false,
+    onOpenAccount,
 }) {
     const rootRef = useRef(null);
     const [urlDraft, setUrlDraft] = useState('');
@@ -261,6 +264,27 @@ const ImmersiveSettings = function ({
                     />
                     <span className={styles['toggle-ui']} aria-hidden="true" />
                 </label>
+            </section>
+
+            {/* --- account ---------------------------------------------------
+                以前是歌单顶部的 logo(MarkNote): 它既是应用标记又是账号入口。
+                logo 去掉后账号只能从这里进, 所以这行同时要把绑定状态说清楚。 */}
+            <section className={styles.section}>
+                <h3 className={styles['section-title']}>账号</h3>
+                <div className={styles.row}>
+                    <span
+                        className={`${styles['row-label']} ${styles['account-state']}${qqBound ? ` ${styles['account-on']}` : ''}`}
+                    >
+                        QQ 音乐{qqBound ? ' · 已绑定' : ' · 未绑定'}
+                    </span>
+                    <button
+                        type="button"
+                        className={styles.mini}
+                        onClick={onOpenAccount}
+                    >
+                        {qqBound ? '管理' : '绑定'}
+                    </button>
+                </div>
             </section>
         </div>
     );

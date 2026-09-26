@@ -242,61 +242,6 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     justify-content: flex-end;
 }
 
-.volume {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: rgba(255, 255, 255, 0.6);
-
-    input {
-        width: 72px;
-        height: 12px;
-        appearance: none;
-        -webkit-appearance: none;
-        background: none;
-        cursor: pointer;
-
-        &::-webkit-slider-runnable-track {
-            height: 3px;
-            border-radius: 1.5px;
-            background: linear-gradient(
-                to right,
-                rgba(255, 255, 255, 0.85) var(--fill, 100%),
-                rgba(255, 255, 255, 0.18) var(--fill, 100%)
-            );
-        }
-
-        &::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 9px;
-            height: 9px;
-            margin-top: -3px;
-            border-radius: 50%;
-            background: #fff;
-        }
-
-        &::-moz-range-track {
-            height: 3px;
-            border-radius: 1.5px;
-            background: rgba(255, 255, 255, 0.18);
-        }
-
-        &::-moz-range-progress {
-            height: 3px;
-            border-radius: 1.5px;
-            background: rgba(255, 255, 255, 0.85);
-        }
-
-        &::-moz-range-thumb {
-            width: 9px;
-            height: 9px;
-            border: 0;
-            border-radius: 50%;
-            background: #fff;
-        }
-    }
-}
-
 .times {
     display: inline-flex;
     align-items: baseline;
@@ -309,12 +254,6 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
 .sep {
     color: rgba(255, 255, 255, 0.4);
-}
-
-@media (max-width: 1080px) {
-    .volume {
-        display: none;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {
