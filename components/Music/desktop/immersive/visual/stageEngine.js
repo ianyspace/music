@@ -61,6 +61,19 @@ const RIPPLE_MAX = 12;
 // 指针停多久算"松手", 之后视角开始往基线飘回去。
 const POINTER_FOLLOW_IDLE_MS = 700;
 const BASE_FOV = 45;
+/**
+ * 「镜头晃动」里那一路常驻漂移的角速度。cinemaT 是帧计数 (dt*60), 所以周期
+ * 直接等于 2π/系数 帧 —— 0.032 就是约 196 帧 ≈ 3.3 秒 (60fps)。
+ * 三个值互质, 免得偏航/俯仰/距离同步摆动变成一条直线上的来回。
+ */
+const CINEMA_DRIFT_THETA = 0.032;
+const CINEMA_DRIFT_PHI = 0.024;
+const CINEMA_DRIFT_RADIUS = 0.016;
+/**
+ * 鼓点那一下踢动的每帧衰减。0.92 的半衰期约 8.3 帧 ≈ 138ms, 读起来是推镜头
+ * 的拖尾而不是硬顿一下。按 dt 归一化过, 30fps 下不会变成一半长。
+ */
+const BEAT_KICK_DECAY = 0.92;
 const BACKGROUND_STAR_RIVER_COUNT = 1400;
 const SKULL_MODEL_SCALE = 2.34;
 const SKULL_MODEL_BASE_ROTATION_X = -0.26;
@@ -531,14 +544,14 @@ export default class ParticleStage {
 
         const shake = clampRange(Number(this.fx.cinemaShake) || 0, 0, 1.8) * (this.fx.cinema ? 1 : 0);
         const theta = orbit.theta + this.beatCam.thetaKick * shake
-            + Math.sin(this.cinemaT * 0.08) * 0.012 * shake;
+            + Math.sin(this.cinemaT * CINEMA_DRIFT_THETA) * 0.012 * shake;
         const phi = clampRange(
-            orbit.phi + this.beatCam.phiKick * shake + Math.sin(this.cinemaT * 0.06 + 1) * 0.010 * shake,
+            orbit.phi + this.beatCam.phiKick * shake + Math.sin(this.cinemaT * CINEMA_DRIFT_PHI + 1) * 0.010 * shake,
             orbit.minPhi,
             orbit.maxPhi
         );
         const radius = orbit.radius - this.beatCam.radiusKick * shake * 0.4
-            - Math.sin(this.cinemaT * 0.04 + 2) * 0.05 * shake;
+            - Math.sin(this.cinemaT * CINEMA_DRIFT_RADIUS + 2) * 0.05 * shake;
 
         const cy = Math.cos(phi);
         this.camera.position.set(
@@ -1277,10 +1290,13 @@ export default class ParticleStage {
 
         this.cinemaT += dt * 60;
         this.camPunch *= 0.9;
-        this.beatCam.thetaKick *= 0.86;
-        this.beatCam.phiKick *= 0.86;
-        this.beatCam.radiusKick *= 0.86;
-        this.beatCam.rollKick *= 0.86;
+        // 按 dt 归一化: 原来直接 *0.86 是按帧算的, 30fps 下拖尾会腰斩,
+        // "放慢"在半帧率设备上等于白改。
+        const kickDecay = Math.pow(BEAT_KICK_DECAY, dt * 60);
+        this.beatCam.thetaKick *= kickDecay;
+        this.beatCam.phiKick *= kickDecay;
+        this.beatCam.radiusKick *= kickDecay;
+        this.beatCam.rollKick *= kickDecay;
         if (audio.beat) {
             const kick = clampRange((audio.beatAmp || 0.8) * 0.02, 0, 0.06);
             this.beatCam.thetaKick += (Math.random() - 0.5) * kick;
