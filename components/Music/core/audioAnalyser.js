@@ -1,7 +1,7 @@
 /**
  * The one Web Audio graph behind the visual effects.
  *
- * Two things here are singletons *by nature*, and the rest of the module is
+ * Three things here are singletons *by nature*, and the rest of the module is
  * shaped around that:
  *
  * - `createMediaElementSource(el)` may be called **once per media element**.
@@ -13,6 +13,13 @@
  *   policy, and only a gesture can start it. So `attach` builds the graph but
  *   `resume` is what actually lets sound through — and it is called from the
  *   same click that starts playback.
+ * - The user's **volume** lives in a gain node at the graph's end, NOT in
+ *   `element.volume`. Once the element is captured, its samples feed the
+ *   analyser at whatever loudness the element produces — a low
+ *   `element.volume` scales the spectrum down with it, and a beat detector
+ *   fed 0.6× data quietly stops firing. Keeping the element at full scale
+ *   and attenuating *after* the analyser keeps the visuals identical at any
+ *   listening volume.
  *
  * Nothing here reads the DOM or knows about React: it takes an element, and it
  * answers questions about the numbers the graph produces.
@@ -40,6 +47,7 @@ const BANDS = {
 let context = null;
 let sourceNode = null;
 let analyserNode = null;
+let gainNode = null;
 let boundElement = null;
 let failed = false;
 
@@ -66,11 +74,16 @@ export const attachAnalyser = function (element) {
         analyserNode = context.createAnalyser();
         analyserNode.fftSize = FFT_SIZE;
         analyserNode.smoothingTimeConstant = SMOOTHING;
+        // The volume stage sits AFTER the analyser on purpose: the analyser
+        // must see the track at full scale whatever the visitor's volume is.
+        gainNode = context.createGain();
+        gainNode.gain.value = 1;
         sourceNode.connect(analyserNode);
         // The graph has to end at the speakers: `MediaElementSource` takes the
         // element's audio *out of* the normal output path, so without this
         // connecting the analyser would mute the player.
-        analyserNode.connect(context.destination);
+        analyserNode.connect(gainNode);
+        gainNode.connect(context.destination);
         boundElement = element;
     } catch (error) {
         // A cross-origin element with no CORS headers is the interesting
@@ -81,6 +94,7 @@ export const attachAnalyser = function (element) {
         context = null;
         sourceNode = null;
         analyserNode = null;
+        gainNode = null;
         boundElement = null;
         return null;
     }
@@ -91,6 +105,16 @@ export const attachAnalyser = function (element) {
 /** The element this graph is wired to, or `null` before the first `attach`. */
 export const analyserElement = function () {
     return boundElement;
+};
+
+/**
+ * The listening volume, 0–1, applied after the analyser. No-op until the
+ * graph exists, so callers can call it on every volume change unconditionally.
+ */
+export const setAnalyserVolume = function (volume) {
+    if (!gainNode || !context) return;
+    const clamped = Math.min(1, Math.max(0, Number(volume) || 0));
+    gainNode.gain.setTargetAtTime(clamped, context.currentTime, 0.02);
 };
 
 /**

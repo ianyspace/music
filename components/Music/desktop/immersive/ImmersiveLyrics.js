@@ -15,8 +15,9 @@ import styles from './ImmersiveLyrics.module.scss';
  * straight through the DOM — no React state, because a per-frame render would
  * be the one way to make this janky:
  *
- * - **beat pulse** — the line scales up a hair on each detected kick and
- *   eases back, so the words visibly breathe with the drummer;
+ * - **beat pulse** — the line swells ~9% and its letter-spacing breathes
+ *   open on each detected kick, with a short brightness spike marking the
+ *   exact instant of the hit — the words visibly play the drummer;
  * - **loudness glow** — the line's brightness follows the overall level,
  *   quiet verse dimmer, loud chorus lit.
  *
@@ -71,6 +72,7 @@ const ImmersiveLyrics = function ({
         let reader = null;
         const detector = createBeatDetector();
         let pulse = 0;
+        let flash = 0;
         let glow = 0.6;
         let frame = 0;
         let dead = false;
@@ -91,21 +93,30 @@ const ImmersiveLyrics = function ({
             const playing = live.isPlaying && Boolean(live.analyser);
             const intensityK = live.intensity === 'calm' ? 0.5 : live.intensity === 'strong' ? 1.2 : 0.85;
 
-            // Beat pulse: fire on the kick, decay every frame. The scale is
-            // deliberately small — the line must stay readable, and a big
-            // pulse reads as a glitch rather than as rhythm.
+            // Beat pulse: fire on the kick, decay every frame. Three coupled
+            // signals make the line visibly *play* the beat (the earlier
+            // 4.5% scale was under the perception threshold):
+            //   scale  — the line swells ~9% on the kick and eases back;
+            //   track  — letter-spacing breathes open the same amount, so
+            //            the line "takes a breath" rather than just zooming;
+            //   flash  — a short brightness spike, faster than the loudness
+            //            glow, that marks the exact instant of the hit.
             const beat = detector.update(now, sample.low, playing);
-            if (beat.fired) pulse = 1;
+            if (beat.fired) { pulse = 1; flash = 1; }
             pulse *= 0.86;
-            const scale = 1 + pulse * 0.045 * intensityK;
+            flash *= 0.87;
+            const scale = 1 + pulse * 0.09 * intensityK;
+            const track = pulse * 0.05 * intensityK;
 
             // Loudness glow, attack/release smoothed so it breathes rather
-            // than flickers.
+            // than flickers; the beat flash rides on top, capped so the
+            // brightness filter never whites the words out.
             const wantGlow = playing ? 0.35 + sample.level * 1.3 : 0.35;
             glow += (wantGlow - glow) * (wantGlow > glow ? 0.25 : 0.06);
 
             root.style.setProperty('--lyr-scale', scale.toFixed(4));
-            root.style.setProperty('--lyr-glow', glow.toFixed(3));
+            root.style.setProperty('--lyr-track', track.toFixed(4));
+            root.style.setProperty('--lyr-glow', Math.min(1.15, glow + flash * 0.35).toFixed(3));
         };
 
         frame = window.requestAnimationFrame(tick);

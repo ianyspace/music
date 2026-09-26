@@ -124,10 +124,11 @@ void main() {
         sin(uTime * 0.31 + aSeed * 3.141)
     ) * drift;
 
-    // Bass is a coherent breathing zoom of the whole cloud. Per-particle
-    // displacement read as a twitch and smeared the image; scaling everything
-    // together reads as the cover pulsing with the kick.
-    float zoom = 1.0 + uBass * 0.05 * uIntensity;
+    // Bass is a coherent breathing zoom of the whole cloud — deep enough to
+    // read as the cover pulsing with the kick (the earlier 0.05 vanished).
+    // Per-particle displacement read as a twitch and smeared the image;
+    // scaling everything together is what stays legible.
+    float zoom = 1.0 + uBass * 0.10 * uIntensity;
     pos.xy *= zoom;
 
     // On a detected beat a ring rolls out from the centre: particles near the
@@ -136,7 +137,7 @@ void main() {
     float r = length(pos.xy);
     float waveR = uWaveAge * 2.4;
     float band = exp(-pow((r - waveR) / 0.32, 2.0));
-    pos.xy += (r > 0.001 ? pos.xy / r : vec2(0.0)) * band * uWaveAmp * 0.2;
+    pos.xy += (r > 0.001 ? pos.xy / r : vec2(0.0)) * band * uWaveAmp * 0.38;
 
     // Treble sparkle on the cloud's surface highlights.
     float glint = 0.0;
@@ -160,19 +161,21 @@ void main() {
         edge = 1.0 - smoothstep(0.55, 1.02, length(norm));
     }
 
-    // A very slow yaw — a drift of the volume itself, independent of input.
-    float angle = uTime * 0.016 * uMotion;
+    // A tiny oscillating sway — deliberately NOT a cumulative turn. The old
+    // unbounded drift (uTime * 0.016 rad/s) rotated the portrait away from
+    // face-on at ~0.9°/s, so minutes of listening left it visibly sideways.
+    // A sine never accumulates: the resting cloud is always frontal.
+    float angle = sin(uTime * 0.05) * 0.026 * uMotion;
     float c = cos(angle);
     float s = sin(angle);
     pos = vec3(pos.x * c + pos.z * s, pos.y, -pos.x * s + pos.z * c);
 
-    // The virtual camera (PRD v1.2 §3.1): the pointer turns the *view* a few
-    // degrees — yaw follows x, pitch follows y. The nebula's geometry never
-    // moves; only the projection does. Near particles swing wider than far
-    // ones, which is the exact parallax cue that makes the field read as a
-    // volume rather than a flat picture sliding sideways.
-    float yaw = uParallax.x * 0.16;
-    float pitch = uParallax.y * 0.11;
+    // The virtual camera: pointer *movement* nudges the view, and the nudge
+    // always decays home (the JS side drives both), so face-on is the resting
+    // state. The gains are the hard limits — ±5° yaw, ±3.5° pitch at full
+    // parallax — a tilt, never a turn; the portrait keeps reading frontal.
+    float yaw = uParallax.x * 0.087;
+    float pitch = uParallax.y * 0.061;
     float cy = cos(yaw);
     float sy = sin(yaw);
     pos = vec3(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
@@ -192,11 +195,14 @@ void main() {
 
     float persp = uFocal / depth / uHalfViewport.y;
     gl_PointSize = clamp(uPointSize * persp * (1.0 + glint * 0.9), 0.8, 40.0);
-    vColor = clamp(pow(aColor, vec3(0.68)) * 1.12 + glint * 0.5, 0.0, 1.0);
+    // uWaveAmp doubles as the beat flash: the whole field, portrait and dust
+    // alike, brightens for the frames right after a kick and fades back.
+    vColor = clamp(pow(aColor, vec3(0.68)) * 1.12 + glint * 0.5 + uWaveAmp * 0.09, 0.0, 1.0);
 
     // The cloud wants near-opaque dots (over-blending: the topmost dot wins);
-    // the dust wants faint ones (additive: neighbours sum into glow).
-    float base = mix(0.26 + 0.18 * twinkle, 0.94 + 0.06 * uLevel * uIntensity, uMode);
+    // the dust wants faint ones (additive: neighbours sum into glow), and the
+    // dust's glow leans on the beat so the sky pulses with the drummer too.
+    float base = mix(0.26 + 0.18 * twinkle + uWaveAmp * 0.10, 0.94 + 0.06 * uLevel * uIntensity, uMode);
     // Distance fade for both: the back of a field must read as behind. The
     // cloud additionally dissolves at its elliptical edge (see above).
     float fade = mix(clamp(persp * 0.9, 0.15, 1.0), clamp(persp, 0.75, 1.1), uMode);
@@ -663,17 +669,27 @@ const NebulaCanvas = function ({
 
         // --- the pointer ----------------------------------------------------
         //
-        // The virtual camera's input: pointer position → yaw/pitch target.
-        // The eased lerp in the loop is the inertia; after the pointer rests
-        // for a moment the target itself decays back to zero, so the camera
-        // drifts home instead of freezing mid-turn (PRD v1.2: 缓慢回中).
-        const pointer = { x: 0, y: 0 };
+        // The virtual camera's input: pointer *movement*, not position. Each
+        // move event nudges the target toward the motion's direction and the
+        // target always decays home, so a flick of the mouse is a small,
+        // immediate tilt that springs back to frontal the moment the pointer
+        // rests. Position-following (the old model) held a turn while the
+        // pointer sat at a screen edge and lagged behind the gesture.
+        const target = { x: 0, y: 0 };
         const eased = { x: 0, y: 0 };
-        let lastMove = 0;
+        // A flick across the full viewport width ≈ the ±1 clamp (±5° yaw).
+        const IMPULSE = 3;
+        let lastX = null;
+        let lastY = null;
         const onPointerMove = function (event) {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = (event.clientY / window.innerHeight) * 2 - 1;
-            lastMove = performance.now();
+            if (lastX !== null) {
+                target.x += ((event.clientX - lastX) / window.innerWidth) * IMPULSE;
+                target.y += ((event.clientY - lastY) / window.innerHeight) * IMPULSE;
+                target.x = Math.max(-1, Math.min(1, target.x));
+                target.y = Math.max(-1, Math.min(1, target.y));
+            }
+            lastX = event.clientX;
+            lastY = event.clientY;
         };
         window.addEventListener('pointermove', onPointerMove, { passive: true });
 
@@ -732,14 +748,15 @@ const NebulaCanvas = function ({
             const beat = detector.update(now, bass, playing);
             const waveAge = beat.age;
 
-            // Camera input: hold the turn while the pointer moves, ease home
-            // once it has rested. The decay window is deliberately slow.
-            const idleMs = now - lastMove;
-            const cameraGain = idleMs > 2600
-                ? Math.max(0, 1 - (idleMs - 2600) / 2200)
-                : 1;
-            eased.x += (pointer.x * cameraGain - eased.x) * 0.055;
-            eased.y += (pointer.y * cameraGain - eased.y) * 0.055;
+            // Camera input: the target springs home continuously — at 60fps
+            // a 0.94 decay is back within ~10° of centre about half a second
+            // after the pointer stops — and the eased value chases it with
+            // almost no lag, which is what makes the response read as
+            // immediate. Both stay in [-1, 1] (the shader's hard limits).
+            target.x *= 0.94;
+            target.y *= 0.94;
+            eased.x += (target.x - eased.x) * 0.3;
+            eased.y += (target.y - eased.y) * 0.3;
 
             const t = Math.min(1, (now - startedAt) / GATHER_MS);
             const gather = 1 - (1 - t) * (1 - t) * (1 - t);

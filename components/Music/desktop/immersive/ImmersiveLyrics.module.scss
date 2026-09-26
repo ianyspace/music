@@ -38,6 +38,11 @@
     line-height: 1.28;
     font-weight: 700;
     text-align: center;
+    /* The beat's breathing room: spacing opens on the kick and the equal
+        text-indent cancels the trailing space's shift, so the line stays
+        optically centred while it pulses. */
+    letter-spacing: calc(var(--lyr-track, 0) * 1em);
+    text-indent: calc(var(--lyr-track, 0) * 1em);
     color: #fff;
     text-shadow:
         0 2px 26px rgba(0, 0, 0, 0.55),

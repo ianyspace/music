@@ -19,8 +19,11 @@ const FLOOR_RATE = 0.012;
 
 // A kick has to clear the floor by this factor, and be this loud at all, to
 // fire. The absolute floor keeps a quiet intro's noise from triggering.
-const MARGIN = 1.3;
-const MIN_BASS = 0.2;
+// Tuned loose enough that mid-produced pop/rock (bass sitting near 0.2 most
+// of the bar) still gets a hit per kick — the earlier 1.3/0.2 silently
+// starved quieter masters of beats, which read as "no rhythm response".
+const MARGIN = 1.22;
+const MIN_BASS = 0.17;
 
 // No second beat within this window, ms.
 const REFRACTORY_MS = 240;

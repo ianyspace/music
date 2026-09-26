@@ -18,7 +18,7 @@ import {
     VISUAL_INTENSITIES,
     VISUAL_INTENSITY_KEY,
 } from '../../shared';
-import { attachAnalyser, resumeAnalyser } from '../../core/audioAnalyser';
+import { attachAnalyser, analyserElement, resumeAnalyser, setAnalyserVolume } from '../../core/audioAnalyser';
 import { coverUrlOf } from '../../librarySource';
 import NebulaCanvas from './NebulaCanvas';
 import ImmersiveLyrics from './ImmersiveLyrics';
@@ -132,8 +132,16 @@ const ImmersiveApp = function ({
             if (Number.isFinite(savedFilter) && savedFilter >= 0 && savedFilter <= 100) setFilter(savedFilter);
             if (storageGet(IMMERSIVE_PANEL_KEY) === 'off') setAutoCollapse(false);
             if (storageGet(IMMERSIVE_LYRIC_KEY) === 'off') setLyricInNebula(false);
-            const savedVolume = Number(storageGet(IMMERSIVE_VOLUME_KEY));
-            if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) setVolume(savedVolume);
+            // Guard on the raw string, not the number: `Number('')` is 0, and
+            // 0 passes a 0–100 range check — a fresh visit with no stored
+            // volume used to restore itself to SILENT.
+            const savedVolume = storageGet(IMMERSIVE_VOLUME_KEY);
+            if (savedVolume !== '') {
+                const savedVolumeNumber = Number(savedVolume);
+                if (Number.isFinite(savedVolumeNumber) && savedVolumeNumber >= 0 && savedVolumeNumber <= 100) {
+                    setVolume(savedVolumeNumber);
+                }
+            }
             return;
         }
         storageSet(IMMERSIVE_BG_KEY, bgMode);
@@ -144,13 +152,6 @@ const ImmersiveApp = function ({
         storageSet(IMMERSIVE_LYRIC_KEY, lyricInNebula ? 'on' : 'off');
         storageSet(IMMERSIVE_VOLUME_KEY, String(volume));
     }, [bgMode, intensity, customBg, filter, autoCollapse, lyricInNebula, volume]);
-
-    // Volume lands on the element directly: it is the one audio control the
-    // player hook does not carry, and the element outlives this page.
-    useEffect(() => {
-        const element = audioRef && audioRef.current;
-        if (element) element.volume = Math.min(1, Math.max(0, volume / 100));
-    }, [volume, audioRef]);
 
     // Which custom background is on screen. The selected id always has an
     // answer: a selection that points at a deleted item falls back to the
@@ -175,6 +176,18 @@ const ImmersiveApp = function ({
         resumeAnalyser();
         setAnalyser(node);
     }, [isPlaying, audioRef]);
+
+    // Volume lands on the element directly only while the Web Audio graph
+    // hasn't captured it; once captured, the element must stay at full scale
+    // (the analyser needs unattenuated samples — see audioAnalyser) and the
+    // listening volume moves to the graph's gain node instead.
+    useEffect(() => {
+        const element = audioRef && audioRef.current;
+        const level = Math.min(1, Math.max(0, volume / 100));
+        const captured = Boolean(analyser && analyserElement() === element);
+        if (element) element.volume = captured ? 1 : level;
+        setAnalyserVolume(level);
+    }, [volume, audioRef, analyser]);
 
     /* --- the playlist panel's fold --------------------------------------- */
 
