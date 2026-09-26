@@ -87,7 +87,18 @@ export const readListCache = function (source, clientId) {
     if (legacyExpired || (trackCount === 0 && !cached.savedAt)) return null;
 
     return {
-        tracks: Array.isArray(cached.tracks) ? cached.tracks : [],
+        // Sanitize on the way out: a cached list written before a fix can
+        // carry doubled object URLs (see `sanitizeObjectUrl`), and this read
+        // is the only place every consumer goes through.
+        tracks: (Array.isArray(cached.tracks) ? cached.tracks : []).map((track) => {
+            if (!track || typeof track !== 'object') return track;
+            return {
+                ...track,
+                url: sanitizeObjectUrl(track.url),
+                lyricsUrl: track.lyricsUrl ? sanitizeObjectUrl(track.lyricsUrl) : track.lyricsUrl,
+                coverUrl: track.coverUrl ? sanitizeObjectUrl(track.coverUrl) : track.coverUrl,
+            };
+        }),
         folders: Array.isArray(cached.folders) ? cached.folders : [],
         folderId: cached.folderId || '',
         savedAt: Number(cached.savedAt) || 0,
@@ -115,9 +126,36 @@ export const clearListCache = function (source, clientId) {
 
 const absoluteUrl = function (url) {
     if (!url) return '';
-    if (/^https?:\/\//i.test(url)) return url;
+    if (/^https?:\/\//i.test(url)) return sanitizeObjectUrl(url);
     const base = String(music.r2BaseUrl || '').replace(/\/+$/, '');
-    return base ? `${base}/${String(url).replace(/^\/+/, '')}` : '';
+    return base ? sanitizeObjectUrl(`${base}/${String(url).replace(/^\/+/, '')}`) : '';
+};
+
+/**
+ * Repairs an object URL that was built twice.
+ *
+ * A library list cached before a fix can carry URLs where the bucket host got
+ * glued into its own path — `https://…r2.dev/song.jpg.r2.dev/song.jpg`. r2.dev
+ * answers such a path with an error page that carries no CORS header, and the
+ * browser reports that as a CORS failure, which reads as "the nebula lost its
+ * cover" with no hint that the URL itself was malformed. The repair keeps the
+ * head (scheme + host) and the path after the LAST host marker: a no-op for
+ * well-formed URLs, and the original path restored for doubled ones. The list
+ * cache is read through this (`readListCache`), so a stale entry heals itself
+ * on the first read — no manual cache clearing, no refetch needed.
+ */
+const R2_HOST_TAIL = /\.r2\.dev\//i;
+const sanitizeObjectUrl = function (url) {
+    const raw = String(url || '');
+    if (!raw) return '';
+    const head = raw.match(/^https?:\/\/[^/?#]+/i);
+    if (!head) return raw;
+    let path = raw.slice(head[0].length);
+    if (R2_HOST_TAIL.test(path)) {
+        const marker = path.toLowerCase().lastIndexOf('.r2.dev/');
+        if (marker > 0) path = path.slice(marker + '.r2.dev/'.length - 1);
+    }
+    return head[0] + path;
 };
 
 /**
@@ -252,7 +290,7 @@ export const hasLyrics = function (track) {
  */
 export const coverUrlOf = function (track) {
     if (!track) return '';
-    if (track.coverUrl) return track.coverUrl;
+    if (track.coverUrl) return sanitizeObjectUrl(track.coverUrl);
     if (track.coverFile && track.coverFile.thumbnailLink) return driveThumbnail(track.coverFile.thumbnailLink);
     return '';
 };
