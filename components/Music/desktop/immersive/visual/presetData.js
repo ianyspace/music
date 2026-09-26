@@ -258,20 +258,29 @@ export const normalizeForegroundFpsMode = function (value) {
     return 'vsync';
 };
 
+/**
+ * 取景距离的统一缩放: 相机拉远一点, 画面里的主体整体小一圈。粒子大小是
+ * 跟着透视走的 (着色器里 depthSize = 30 / -mv.z), 所以拉远时点也一起变小,
+ * 不会变成"稀疏的大点"。想再小一点就往上调这个数。
+ */
+const ORBIT_RADIUS_SCALE = 1.14;
+
 /** 每个预设的相机取景基线 (theta 偏航 / phi 俯仰 / radius 距离)。 */
 export const defaultOrbitStateForPreset = function (p) {
     const index = Number(p) || 0;
-    if (index === 1) return { theta: 0.0, phi: 0.03, radius: 6.2 };
-    if (index === 2) return { theta: 0.0, phi: 0.15, radius: 7.0 };
-    if (index === 3) return { theta: 0.0, phi: 0.05, radius: 8.0 };
-    if (index === 4) return { theta: 0.0, phi: 0.04, radius: 6.5 };
-    if (index === 6) return { theta: 0.18, phi: 0.1, radius: 7.4 };
-    if (index === 7) return { theta: 0.0, phi: 0.18, radius: 8.4 };
-    if (index === 9) return { theta: -0.08, phi: 0.12, radius: 7.4 };
-    if (index === 10) return { theta: 0.0, phi: 0.02, radius: 7.15 };
-    if (index === 11) return { theta: 0.1, phi: 0.11, radius: 7.0 };
-    if (index === 12) return { theta: -0.12, phi: 0.18, radius: 7.35 };
-    return { theta: 0.0, phi: 0.08, radius: 6.6 };
+    let base;
+    if (index === 1) base = { theta: 0.0, phi: 0.03, radius: 6.2 };
+    else if (index === 2) base = { theta: 0.0, phi: 0.15, radius: 7.0 };
+    else if (index === 3) base = { theta: 0.0, phi: 0.05, radius: 8.0 };
+    else if (index === 4) base = { theta: 0.0, phi: 0.04, radius: 6.5 };
+    else if (index === 6) base = { theta: 0.18, phi: 0.1, radius: 7.4 };
+    else if (index === 7) base = { theta: 0.0, phi: 0.18, radius: 8.4 };
+    else if (index === 9) base = { theta: -0.08, phi: 0.12, radius: 7.4 };
+    else if (index === 10) base = { theta: 0.0, phi: 0.02, radius: 7.15 };
+    else if (index === 11) base = { theta: 0.1, phi: 0.11, radius: 7.0 };
+    else if (index === 12) base = { theta: -0.12, phi: 0.18, radius: 7.35 };
+    else base = { theta: 0.0, phi: 0.08, radius: 6.6 };
+    return { ...base, radius: base.radius * ORBIT_RADIUS_SCALE };
 };
 
 export const normalizeFx = function (raw) {

@@ -58,6 +58,8 @@ import {
 
 const PLANE_SIZE = 4.8;
 const RIPPLE_MAX = 12;
+// 指针停多久算"松手", 之后视角开始往基线飘回去。
+const POINTER_FOLLOW_IDLE_MS = 700;
 const BASE_FOV = 45;
 const BACKGROUND_STAR_RIVER_COUNT = 1400;
 const SKULL_MODEL_SCALE = 2.34;
@@ -129,8 +131,9 @@ export default class ParticleStage {
             maxPhi: Math.PI * 0.45,
             minRadius: 2.4,
             maxRadius: 14.0,
-            rotating: false,
-            last: { x: 0, y: 0 },
+            // 视角跟随指针: 指针一动就把目标角度推出去, 停手 idle 之后
+            // 由 tickPointerFollow 慢慢收回来。
+            lastMoveAt: 0,
             recentering: false,
         };
         // 相对基线的硬限位: 主体始终保持基本正面
@@ -442,30 +445,6 @@ export default class ParticleStage {
     // ---------------------------------------------------------------- 指针
 
     bindPointer() {
-        this.onPointerMove = (e) => {
-            if (!this.orbit.rotating) return;
-            const dx = e.clientX - this.orbit.last.x;
-            const dy = e.clientY - this.orbit.last.y;
-            this.orbit.userTheta = clampRange(
-                this.orbit.userTheta - dx * 0.0042,
-                this.orbit.baselineTheta - this.thetaLimit,
-                this.orbit.baselineTheta + this.thetaLimit
-            );
-            this.orbit.userPhi = clampRange(
-                this.orbit.userPhi + dy * 0.0032,
-                this.orbit.baselinePhi - this.phiLimit,
-                this.orbit.baselinePhi + this.phiLimit
-            );
-            this.orbit.last.x = e.clientX;
-            this.orbit.last.y = e.clientY;
-        };
-        this.onPointerDown = (e) => {
-            if (e.button === 2) return;
-            this.orbit.rotating = true;
-            this.orbit.last.x = e.clientX;
-            this.orbit.last.y = e.clientY;
-        };
-        this.onPointerUp = () => { this.orbit.rotating = false; };
         this.onPointerTrack = (e) => {
             // 指针推力只在指针真的落在画布上时生效: 播放栏/歌单/控制台浮在
             // canvas 之上, 鼠标在它们上面时不该推粒子 (上游 isPointerOverUi)。
@@ -475,6 +454,21 @@ export default class ParticleStage {
             if (overCanvas) {
                 this.pointer.ndcX = (e.clientX / window.innerWidth) * 2 - 1;
                 this.pointer.ndcY = -(e.clientY / window.innerHeight) * 2 + 1;
+                // 视角跟着指针走, 不用按住: 指针离画面中心越远, 相对基线的
+                // 偏航/俯仰越大, 硬限位之内封顶。方向沿用原来拖动时的手感
+                // (右移 → 偏航减小, 下移 → 俯仰增大)。
+                const orbit = this.orbit;
+                orbit.userTheta = clampRange(
+                    orbit.baselineTheta - this.pointer.ndcX * this.thetaLimit * 0.9,
+                    orbit.baselineTheta - this.thetaLimit,
+                    orbit.baselineTheta + this.thetaLimit
+                );
+                orbit.userPhi = clampRange(
+                    orbit.baselinePhi - this.pointer.ndcY * this.phiLimit * 0.9,
+                    orbit.baselinePhi - this.phiLimit,
+                    orbit.baselinePhi + this.phiLimit
+                );
+                orbit.lastMoveAt = performance.now();
             }
             this.pointer.dirty = true;
         };
@@ -498,16 +492,27 @@ export default class ParticleStage {
             this.orbit.recentering = true;
             if (Number(this.fx.preset) === SKULL_PRESET_INDEX) this.skullWheelZoomTarget = 0;
         };
-        this.canvas.addEventListener('mousedown', this.onPointerDown);
-        window.addEventListener('mousemove', this.onPointerMove);
         window.addEventListener('mousemove', this.onPointerTrack);
-        window.addEventListener('mouseup', this.onPointerUp);
         document.addEventListener('mouseleave', this.onPointerLeave);
         this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
         this.canvas.addEventListener('dblclick', this.onDblClick);
     }
 
     // ---------------------------------------------------------------- 相机
+
+    /**
+     * 指针停手之后把视角慢慢收回基线。跟随本身是在 mousemove 里直接改
+     * userTheta/userPhi 完成的, 这里只负责"没人动就归位": 速率故意比
+     * 双击回正慢一个量级 (0.9 vs 6), 回正要看得出来是飘回去的。
+     */
+    tickPointerFollow(dt, now) {
+        const orbit = this.orbit;
+        if (orbit.recentering) return;
+        if (now - orbit.lastMoveAt < POINTER_FOLLOW_IDLE_MS) return;
+        const k = Math.min(1, dt * 0.9);
+        orbit.userTheta += (orbit.baselineTheta - orbit.userTheta) * k;
+        orbit.userPhi += (orbit.baselinePhi - orbit.userPhi) * k;
+    }
 
     applyCamera(dt) {
         const orbit = this.orbit;
@@ -1301,6 +1306,7 @@ export default class ParticleStage {
         this.uniforms.uAlpha.value += (alphaTarget - this.uniforms.uAlpha.value) * Math.min(1, dt * 2.4);
 
         this.tickPresetTransition();
+        this.tickPointerFollow(dt, now);
         this.updatePointerFrame();
         this.tickLoading(dt);
         this.updateRipples(dt, bands.bass);
@@ -1390,11 +1396,8 @@ export default class ParticleStage {
         if (this.colorMixTween) cancelAnimationFrame(this.colorMixTween);
         window.removeEventListener('resize', this.onWindowResize);
         if (this.resizeObserver) this.resizeObserver.disconnect();
-        this.canvas.removeEventListener('mousedown', this.onPointerDown);
-        window.removeEventListener('mousemove', this.onPointerMove);
         window.removeEventListener('mousemove', this.onPointerTrack);
         document.removeEventListener('mouseleave', this.onPointerLeave);
-        window.removeEventListener('mouseup', this.onPointerUp);
         if (this.loadingHideTimer) {
             window.clearTimeout(this.loadingHideTimer);
             this.loadingHideTimer = 0;
