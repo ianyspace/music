@@ -93,7 +93,7 @@ const ImmersiveApp = function ({
 }) {
     const meta = current ? parseTrackName(current.track.name) : null;
     const title = meta ? meta.title : '还没有播放中的歌曲';
-    const artist = meta ? meta.artist : '从右侧卡片挑一首开始';
+    const artist = meta ? meta.artist : '从左侧列表挑一首开始';
     const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
     const coverUrl = current ? coverUrlOf(current.track) : '';
     const currentId = current ? current.track.id : '';
@@ -368,7 +368,7 @@ const ImmersiveApp = function ({
                 what makes them read as inside the scene, not printed on it. */}
             <ForegroundParticles analyser={analyser} isPlaying={isPlaying} />
 
-            {/* --- right: the floating song-card stack ----------------------- */}
+            {/* --- left: the track list panel -------------------------------- */}
             <PlaylistPanel
                 expanded={panelOpen}
                 onExpand={setPanelOpen}
@@ -383,7 +383,7 @@ const ImmersiveApp = function ({
                 onOpenAccount={onOpenAccount}
             />
 
-            {/* The summon edge: a hairline strip on the viewport's right. The
+            {/* The summon edge: a hairline strip on the viewport's left. The
                 handle does most of the work; this is for the habit of just
                 throwing the pointer at the edge. */}
             {!panelOpen && (

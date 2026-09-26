@@ -20,10 +20,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    /* The card stack owns the right ~30% of the viewport, so the line
-        centres in what is left of it — a touch left of centre, which is
-        where the reference composition puts the words anyway. */
-    padding: 0 30% 0 6%;
+    /* The track list owns the left edge (a ~340px panel), so the line
+        centres in what is right of it — a touch right of centre. */
+    padding: 0 6% 0 25%;
     cursor: pointer;
     user-select: text;
     pointer-events: auto;

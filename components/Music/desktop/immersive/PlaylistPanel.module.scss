@@ -1,45 +1,49 @@
 /*
- * The song cards: a stack of free-floating glass cards on the right, inside
- * a perspective field. There is no panel — no box, no background behind the
- * stack; the cards are objects hovering over the nebula, the way the
- * reference image stacks them: the front card near face-on and large, the
- * ones behind receding — down, right, and back — each partly hidden by the
- * card in front of it.
+ * The track list: one slim glass panel on the left edge of the viewport,
+ * between the top of the screen and the play bar. Plain rows in a native
+ * scrolling list — no 3D, no depth tricks. The playing row is tinted with
+ * the song's own colour and carries the equalizer glyph.
  *
- * Everything animated here is a transform or an opacity. The depth-slot
- * transition lives on the `li` so a wheel step makes the whole column glide
- * one slot over; the hover lift lives on the inner button so it composes
- * with the slot instead of fighting it.
+ * Everything animated is a transform or an opacity; the fold slides the
+ * whole panel out through the left edge.
  */
 
 $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
 .stage {
     position: absolute;
-    top: 8vh;
-    right: 44px;
-    width: 470px;
-    /* No height constraint and no overflow: `overflow` would flatten the
-        3D. The back cards simply fade out before they can run away. */
+    top: 88px;
+    bottom: 124px;
+    left: 28px;
+    width: 316px;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    border-radius: 20px;
+    background: rgba(14, 15, 20, 0.52);
+    backdrop-filter: blur(26px) saturate(1.3);
+    -webkit-backdrop-filter: blur(26px) saturate(1.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
     z-index: 20;
     color: #f2f3f7;
     transition: transform 450ms $ease-glass, opacity 450ms $ease-glass;
 }
 
 .stage-folded {
-    transform: translateX(135%);
+    transform: translateX(-130%);
     opacity: 0;
     pointer-events: none;
 }
 
-/* --- the floating control row ------------------------------------------- */
+/* --- the header row ------------------------------------------------------ */
 
 .bar {
+    flex: none;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
     gap: 8px;
-    margin: 0 6px 18px 0;
+    padding: 4px 6px 12px;
 }
 
 .mark {
@@ -51,142 +55,84 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
     color: rgba(255, 255, 255, 0.45);
-    padding: 5px 10px;
+    padding: 4px 10px;
     border-radius: 999px;
-    background: rgba(16, 17, 22, 0.42);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .fold {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    background: rgba(16, 17, 22, 0.42);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
     color: rgba(255, 255, 255, 0.75);
     cursor: pointer;
     transition: background 150ms ease-out, color 150ms ease-out;
 
     &:hover {
-        background: rgba(40, 42, 52, 0.6);
+        background: rgba(255, 255, 255, 0.14);
         color: #fff;
     }
 }
 
 .fold-glyph {
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1;
 }
 
 .empty {
     margin: 0;
-    padding: 18px 22px;
-    border-radius: 16px;
-    background: rgba(16, 17, 22, 0.42);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 26px 10px;
     text-align: center;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(255, 255, 255, 0.5);
 }
 
-/* --- the depth field ------------------------------------------------------ */
+/* --- the scrolling list --------------------------------------------------- */
 
-.stack {
+.list {
+    flex: 1;
     margin: 0;
-    padding: 0;
+    padding: 0 2px 4px 0;
     list-style: none;
-    position: relative;
-    perspective: 1400px;
-    /* preserve-3d: the `li` slots must share one 3D space with each other
-        for the browser to depth-sort the overlapping cards. */
-    transform-style: preserve-3d;
-}
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 
-/* The five depth slots. Each step: down 70-ish, right 20-ish, back 150-ish,
-    tipped a touch further over — the exact geometry of the reference stack.
-    These are per-slot classes rather than :nth-child so a card *keeps its
-    depth while gliding between slots* (the class is what changes). */
-.slot0 {
-    transform: translate3d(0, 0, 0);
-    z-index: 5;
-}
+    &::-webkit-scrollbar {
+        width: 5px;
+    }
 
-.slot1 {
-    transform: translate3d(26px, 74px, -150px) rotateX(3deg);
-    z-index: 4;
-}
+    &::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+    }
 
-.slot2 {
-    transform: translate3d(48px, 142px, -300px) rotateX(4.5deg);
-    z-index: 3;
-}
-
-.slot3 {
-    transform: translate3d(67px, 204px, -450px) rotateX(6deg);
-    z-index: 2;
-}
-
-.slot4 {
-    transform: translate3d(83px, 258px, -600px) rotateX(7.5deg);
-    z-index: 1;
-}
-
-.stack li {
-    transition: transform 480ms $ease-glass;
-    transform-style: preserve-3d;
-    /* The slot transforms above need the li's own box to be at the top of
-        the stack area; every li would otherwise stack on the same origin —
-        which is exactly what we want: they all start from the same top-left
-        and the transform moves each into its slot. */
-}
-
-/* A card entering the window (wheel down) arrives from the deepest slot's
-    neighbourhood rather than popping in. */
-.slot4 {
-    animation: card-in 480ms $ease-glass backwards;
-}
-
-@keyframes card-in {
-    from {
-        opacity: 0;
-        transform: translate3d(96px, 300px, -720px) rotateX(8deg);
+    &::-webkit-scrollbar-track {
+        background: transparent;
     }
 }
 
-/* --- the card ------------------------------------------------------------- */
+/* --- the row -------------------------------------------------------------- */
 
-.card {
+.row {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     width: 100%;
-    padding: 14px 18px 14px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 18px;
-    background: rgba(18, 19, 25, 0.58);
-    backdrop-filter: blur(26px) saturate(1.35);
-    -webkit-backdrop-filter: blur(26px) saturate(1.35);
-    box-shadow: 0 22px 55px rgba(0, 0, 0, 0.5);
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 13px;
+    background: transparent;
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transition:
-        transform 260ms $ease-glass,
-        background 200ms ease-out,
-        border-color 200ms ease-out,
-        box-shadow 260ms $ease-glass;
+    transition: background 160ms ease-out;
 
     &:hover {
-        background: rgba(30, 32, 40, 0.68);
-        border-color: rgba(255, 255, 255, 0.2);
-        transform: translateZ(55px);
-        box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+        background: rgba(255, 255, 255, 0.08);
     }
 
     &:disabled {
@@ -194,19 +140,22 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     }
 }
 
-.card-active {
-    background: rgba(34, 36, 46, 0.66);
-    border-color: rgba(255, 255, 255, 0.24);
+.row-active {
+    background: rgba(255, 255, 255, 0.1);
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.13);
+    }
 }
 
 .thumb {
     flex: none;
     position: relative;
-    width: 84px;
-    height: 84px;
-    border-radius: 13px;
+    width: 42px;
+    height: 42px;
+    border-radius: 9px;
     overflow: hidden;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
 
     img {
         position: absolute;
@@ -224,97 +173,46 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     align-items: center;
     justify-content: center;
     color: #fff;
-    background: rgba(0, 0, 0, 0.32);
+    background: rgba(0, 0, 0, 0.34);
 }
 
 .text {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     min-width: 0;
     flex: 1;
 }
 
-.now-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    color: rgba(255, 255, 255, 0.62);
-}
-
 .title {
-    font-size: 17px;
-    font-weight: 700;
+    font-size: 13.5px;
+    font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.row-active .title {
     color: #fff;
 }
 
 .artist {
-    font-size: 12.5px;
-    color: rgba(255, 255, 255, 0.55);
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.5);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-/* --- the folded handle --------------------------------------------------- */
-
-.handle {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 26px;
-    height: 92px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-right: 0;
-    border-radius: 14px 0 0 14px;
-    background: rgba(16, 17, 22, 0.55);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 20;
-    transition: transform 400ms $ease-glass, opacity 400ms $ease-glass, background 150ms ease-out;
-
-    &:hover {
-        background: rgba(30, 32, 40, 0.7);
-    }
-}
-
-.handle-hidden {
-    transform: translateY(-50%) translateX(130%);
-    opacity: 0;
-    pointer-events: none;
-}
-
-.handle-glyph {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-
-    i {
-        width: 12px;
-        height: 2px;
-        border-radius: 1px;
-        background: rgba(255, 255, 255, 0.6);
-    }
-}
-
-/* --- the playing indicator ---------------------------------------------- */
+/* --- the playing indicator ------------------------------------------------ */
 
 .eq {
+    flex: none;
     display: inline-flex;
     align-items: flex-end;
     gap: 2px;
-    height: 11px;
+    height: 12px;
 
     i {
         width: 2.5px;
@@ -338,7 +236,9 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .spin {
+    flex: none;
     display: inline-flex;
+    color: rgba(255, 255, 255, 0.7);
     animation: spin 1s linear infinite;
 }
 
@@ -346,14 +246,55 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     to { transform: rotate(360deg); }
 }
 
+/* --- the folded handle --------------------------------------------------- */
+
+.handle {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 92px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-left: 0;
+    border-radius: 0 14px 14px 0;
+    background: rgba(16, 17, 22, 0.55);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    transition: transform 400ms $ease-glass, opacity 400ms $ease-glass, background 150ms ease-out;
+
+    &:hover {
+        background: rgba(30, 32, 40, 0.7);
+    }
+}
+
+.handle-hidden {
+    transform: translateY(-50%) translateX(-130%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.handle-glyph {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    i {
+        width: 12px;
+        height: 2px;
+        border-radius: 1px;
+        background: rgba(255, 255, 255, 0.6);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .stage,
-    .stack li,
-    .card {
+    .handle {
         transition-duration: 80ms;
-    }
-
-    .card:hover {
-        transform: none;
     }
 }
