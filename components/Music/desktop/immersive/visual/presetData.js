@@ -88,14 +88,20 @@ export const presetIcons = [
 /**
  * 不在网格里出现的预设槽位。
  *
- * 这两个是「音域回响」(Sonic-Topography / Wallpaper Engine), 按用户要求下线。
+ * 按用户要求下线: 两个「音域回响」(7/8), 以及星球(2)、虚空(3)、安魂(6)、
+ * 月蚀圣环(9)、雨幕霓虹(10)、折光蝶群(11)、深海绽放(12)。
+ * 现在网格里只剩 emily 专辑封面(0)、唱片(4)、星河(5)、滚筒(1)。
+ *
  * 之所以保留索引而不是把 presetMeta 数组压紧: 着色器里的 uPreset 就是索引
  * 本身, 压缩数组会让后面所有预设的分支号整体前移 —— 那等于要改一遍
- * PARTICLE_VERTEX_SHADER 里的每一 comparing。留空槽位成本为零。
+ * PARTICLE_VERTEX_SHADER 里的每一个分支。留空槽位成本为零, 而且旧存档里
+ * 存的是索引, 压紧会让老用户的预设悄悄错位。
  */
-export const presetHidden = [SONIC_PRESET_INDEX, SONIC_WORKSHOP_PRESET_INDEX];
+export const presetRetired = [
+    2, 3, SONIC_PRESET_INDEX, SONIC_WORKSHOP_PRESET_INDEX, 6, 9, 10, 11, 12,
+].sort((a, b) => a - b);
 
-export const presetDisplayOrder = [0, 9, 10, 11, 12, 6, 5, 4, 2, 1, 3];
+export const presetDisplayOrder = [0, 4, 5, 1];
 
 export const lyricColorPresets = [
     { name: '雾蓝', color: '#a9b8c8' },
@@ -276,7 +282,7 @@ export const normalizeFx = function (raw) {
     });
     out.preset = clampRange(Math.round(Number(out.preset) || 0), 0, presetMeta.length - 1);
     // 已下线的预设如果在旧存档里, 回到默认的那一张, 不要选中看不见的槽位。
-    if (presetHidden.includes(out.preset)) out.preset = fxDefaults.preset;
+    if (presetRetired.includes(out.preset)) out.preset = fxDefaults.preset;
     out.intensity = clampRange(Number(out.intensity), 0, 2);
     out.cinemaShake = clampRange(Number(out.cinemaShake), 0, 1);
     out.depth = clampRange(Number(out.depth), 0, 2);

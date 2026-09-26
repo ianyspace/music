@@ -363,7 +363,7 @@ const ImmersiveApp = function ({
         && (bgMode === 'custom' || lyricInNebula);
 
     // 粒子舞台始终是最上层: 它带 alpha, 自定义背景(或封面底色)从下面透出来。
-    // 这就是「虚空」预设的用途 —— 关掉粒子, 只留你自己那张图。
+    // 自定义背景本身带可读性滤镜, 所以不依赖「无粒子」预设也能看清。
     const renderLayer = function () {
         return (
             <>

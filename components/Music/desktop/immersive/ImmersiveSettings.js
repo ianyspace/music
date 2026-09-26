@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 import { IconClose } from '../../icons';
 import FxConsole from './FxConsole';
+import { presetDisplayOrder } from './visual/presetData';
 
 import styles from './ImmersiveSettings.module.scss';
 
@@ -131,7 +132,7 @@ const ImmersiveSettings = function ({
                         <span className={styles['mode-swatch']} data-mode="nebula" aria-hidden="true" />
                         <span>
                             <span className={styles['mode-name']}>粒子视觉</span>
-                            <span className={styles['mode-sub']}>12 种预设 · 默认</span>
+                            <span className={styles['mode-sub']}>{presetDisplayOrder.length} 种预设 · 默认</span>
                         </span>
                     </button>
                     <button
