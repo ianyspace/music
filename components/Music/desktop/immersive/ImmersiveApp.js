@@ -22,6 +22,7 @@ import { attachAnalyser, resumeAnalyser } from '../../core/audioAnalyser';
 import { coverUrlOf } from '../../librarySource';
 import NebulaCanvas from './NebulaCanvas';
 import ImmersiveLyrics from './ImmersiveLyrics';
+import ForegroundParticles from './ForegroundParticles';
 import ImmersiveSettings from './ImmersiveSettings';
 import PlaylistPanel from './PlaylistPanel';
 import PlayerBar from './PlayerBar';
@@ -360,6 +361,12 @@ const ImmersiveApp = function ({
                     <p>挑一首歌，让页面活起来</p>
                 </div>
             )}
+
+            {/* --- foreground: the particle veil ----------------------------- */}
+            {/* Sits *above* the lyrics (z 7 > z 6) and below every control:
+                a sparse drift of large faint motes passing over the words is
+                what makes them read as inside the scene, not printed on it. */}
+            <ForegroundParticles analyser={analyser} isPlaying={isPlaying} />
 
             {/* --- left: the playlist --------------------------------------- */}
             <PlaylistPanel

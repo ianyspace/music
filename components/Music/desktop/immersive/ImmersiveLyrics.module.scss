@@ -1,102 +1,69 @@
 /*
- * Centred lyrics with rhythm feedback.
+ * One lyric line, centred, embedded in the scene (PRD v1.2 §6).
+ *
+ * The root sits between the background canvas and the foreground particle
+ * canvas in `ImmersiveApp`'s stacking, so the sparse floating particles pass
+ * over the words — the words live *inside* the picture, not on top of it.
  *
  * Per-frame values arrive as CSS custom properties written by the component's
- * rAF loop; everything here composites — transform, filter, background —
- * and nothing triggers layout.
+ * rAF loop; everything here composites — transform, filter — and nothing
+ * triggers layout.
  */
 
 .root {
     --lyr-scale: 1;
     --lyr-glow: 0.6;
-    --lyr-sweep: 100%;
     --lyr-line-ms: 520ms;
 
     position: absolute;
-    inset: 12% 20%;
-    /* Scrollable, but the scrollbar is invisible: the wheel browses the
-        lyrics natively, and the component scrolls to the active line with
-        `scrollTo` — deliberately NOT `scrollIntoView`, which also scrolls
-        every ancestor, including the page shell's `overflow: hidden` box,
-        and would shove the play bar out of the viewport. */
-    overflow-y: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    inset: 0;
     display: flex;
-    flex-direction: column;
+    align-items: center;
     justify-content: center;
-    gap: 0.9em;
+    padding: 0 10%;
     cursor: pointer;
     user-select: text;
-    /* Mask the flow: lines dissolve into the top and bottom edges instead of
-        being cut by them. */
-    -webkit-mask-image: linear-gradient(
-        to bottom,
-        transparent 0%,
-        #000 16%,
-        #000 84%,
-        transparent 100%
-    );
-    mask-image: linear-gradient(
-        to bottom,
-        transparent 0%,
-        #000 16%,
-        #000 84%,
-        transparent 100%
-    );
-
-    &::-webkit-scrollbar {
-        display: none;
-    }
+    pointer-events: auto;
+    z-index: 6;
 }
 
 .line {
     margin: 0;
-    font-size: clamp(18px, 2.1vh, 26px);
-    line-height: 1.5;
-    font-weight: 600;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.34);
-    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.35);
-    transition:
-        color var(--lyr-line-ms) cubic-bezier(0.32, 0.72, 0, 1),
-        opacity var(--lyr-line-ms) cubic-bezier(0.32, 0.72, 0, 1),
-        font-size var(--lyr-line-ms) cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-/* The playing line: big, lit, and pulsing with the kick. The scale and glow
-    come from the frame loop's variables — transform and filter only, so the
-    pulse never touches layout. */
-.line-active {
-    font-size: clamp(28px, 4.2vh, 52px);
+    max-width: 100%;
+    /* ~9% of the viewport height on a normal line, shrunk per-line through
+        --lyr-fit so a long sentence still fits on ONE line. */
+    font-size: var(--lyr-fit, clamp(30px, 8.8vh, 92px));
+    line-height: 1.28;
     font-weight: 700;
+    text-align: center;
+    color: #fff;
+    text-shadow:
+        0 2px 26px rgba(0, 0, 0, 0.55),
+        0 1px 4px rgba(0, 0, 0, 0.4);
     transform: scale(var(--lyr-scale));
-    /* Karaoke fill: one gradient clipped to the glyphs, the sweep boundary
-        moved by --lyr-sweep. The glow variable rides the same filter. */
-    background-image: linear-gradient(
-        90deg,
-        #fff var(--lyr-sweep),
-        rgba(255, 255, 255, 0.38) var(--lyr-sweep)
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 2px 18px rgba(0, 0, 0, 0.45))
-        brightness(calc(0.85 + var(--lyr-glow)));
-    text-shadow: none;
-    transition:
-        font-size var(--lyr-line-ms) cubic-bezier(0.32, 0.72, 0, 1),
-        filter 200ms linear;
+    filter: brightness(calc(0.82 + var(--lyr-glow)));
     will-change: transform, filter;
+    animation: lyr-enter var(--lyr-line-ms) cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
-.line-near {
-    color: rgba(255, 255, 255, 0.55);
+/* The new line arrives from slightly below and settles — the old element is
+    replaced outright, so this enter animation *is* the line change. */
+@keyframes lyr-enter {
+    from {
+        opacity: 0;
+        transform: translateY(0.45em) scale(var(--lyr-scale));
+        filter: brightness(calc(0.82 + var(--lyr-glow))) blur(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(var(--lyr-scale));
+        filter: brightness(calc(0.82 + var(--lyr-glow))) blur(0);
+    }
 }
 
 .line-static {
     margin: 0;
-    font-size: clamp(20px, 2.6vh, 30px);
+    font-size: clamp(20px, 3.2vh, 34px);
     font-weight: 600;
     text-align: center;
     color: rgba(255, 255, 255, 0.55);
@@ -104,8 +71,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .line,
-    .line-active {
-        transition-duration: 80ms;
+    .line {
+        animation-duration: 80ms;
     }
 }

@@ -6,41 +6,37 @@ import { createBeatDetector } from '../../core/beat';
 import styles from './ImmersiveLyrics.module.scss';
 
 /**
- * The immersive page's lyrics: centred, karaoke-swept, and *on the beat*.
+ * The immersive page's lyrics: **one line at a time**, centred, and *on the
+ * beat* (PRD v1.2 §6 — no karaoke sweep, no browsing, no neighbouring lines).
  *
  * ## The rhythm part
  *
- * Every frame, one rAF loop reads the shared spectrum and drives three
- * effects straight through the DOM — no React state, because a per-frame
- * render would be the one way to make this janky:
+ * Every frame, one rAF loop reads the shared spectrum and drives two effects
+ * straight through the DOM — no React state, because a per-frame render would
+ * be the one way to make this janky:
  *
- * - **beat pulse** — the active line scales up a hair on each detected kick
- *   and eases back, so the words visibly breathe with the drummer;
- * - **loudness glow** — the active line's brightness follows the overall
- *   level, quiet verse dimmer, loud chorus lit;
- * - **sweep** — the karaoke fill is one CSS variable on the active line
- *   (`--sweep`, a percentage), recomputed from the play clock each frame.
+ * - **beat pulse** — the line scales up a hair on each detected kick and
+ *   eases back, so the words visibly breathe with the drummer;
+ * - **loudness glow** — the line's brightness follows the overall level,
+ *   quiet verse dimmer, loud chorus lit.
  *
- * All three land as CSS custom properties on the container, so the browser
- * composites them; nothing in the loop touches layout.
+ * Both land as CSS custom properties on the root, so the browser composites
+ * them; nothing in the loop touches layout.
  *
- * ## Browsing
+ * ## Line changes
  *
- * The wheel unbinds the view from the playhead for three seconds — reading
- * ahead is a legitimate thing to want — then eases back to following. The
- * listener is passive and the scroll is the container's own, so there is
- * nothing to smooth manually.
+ * There is exactly one `<p>` on screen. When the active index moves, the key
+ * changes, React swaps the element, and the enter animation (old line floats
+ * up and out is approximated by the new line arriving from below) plays —
+ * the transition length is clamped by the gap to the next line so a fast
+ * song's lines arrive before the previous one has settled.
  */
 
-// After this long without wheel input, the view returns to the playhead.
-const BROWSE_MS = 3000;
-
-// A line's enter/exit animation, clamped by the gap to the next line so a
-// fast song's lines arrive before the previous transition has cleared.
+// A line's enter animation, clamped by the gap to the next line.
 const LINE_MS_DEFAULT = 520;
 const lineMsForGap = function (gapSeconds) {
     if (!Number.isFinite(gapSeconds) || gapSeconds <= 0) return LINE_MS_DEFAULT;
-    // The transition may use at most ~55% of the line's own duration.
+    // The animation may use at most ~55% of the line's own duration.
     return Math.round(Math.min(900, Math.max(280, gapSeconds * 550)));
 };
 
@@ -55,26 +51,16 @@ const ImmersiveLyrics = function ({
     onTogglePlay,
 }) {
     const rootRef = useRef(null);
-    const activeRef = useRef(null);
     // Everything the frame loop reads lives in one ref — progress and play
     // state arrive as props every render, and the loop must not re-arm.
     const liveRef = useRef({ analyser, isPlaying, intensity });
     liveRef.current.analyser = analyser;
     liveRef.current.isPlaying = isPlaying;
     liveRef.current.intensity = intensity;
-    // `progressTime` is read through a ref too: timeupdate fires often enough
-    // for the sweep, and the rAF loop reading the prop's ref stays current.
-    const timeRef = useRef(progressTime);
-    timeRef.current = progressTime;
     const linesRef = useRef(lyrics);
     linesRef.current = lyrics;
     const activeRefIdx = useRef(activeIndex);
     activeRefIdx.current = activeIndex;
-
-    // Wheel browsing: a plain boolean plus a timer.
-    const freeRef = useRef(false);
-    const freeTimerRef = useRef(0);
-    useEffect(() => () => window.clearTimeout(freeTimerRef.current), []);
 
     // The one effect that never re-runs: it owns the frame loop for the
     // component's whole life. All per-frame values arrive through refs.
@@ -120,23 +106,6 @@ const ImmersiveLyrics = function ({
 
             root.style.setProperty('--lyr-scale', scale.toFixed(4));
             root.style.setProperty('--lyr-glow', glow.toFixed(3));
-
-            // Karaoke sweep, driven by the play clock against the active
-            // line's own window.
-            const lines = linesRef.current;
-            const active = activeRefIdx.current;
-            const line = lines && lines.timed && lines.lines[active];
-            if (line) {
-                const next = lines.lines[active + 1];
-                const gap = next ? next.time - line.time : 0;
-                const done = gap > 0
-                    ? Math.min(1, Math.max(0, (timeRef.current - line.time) / gap))
-                    : 1;
-                root.style.setProperty('--lyr-sweep', `${(done * 100).toFixed(2)}%`);
-                root.style.setProperty('--lyr-line-ms', `${lineMsForGap(gap)}ms`);
-            } else {
-                root.style.setProperty('--lyr-sweep', '100%');
-            }
         };
 
         frame = window.requestAnimationFrame(tick);
@@ -146,36 +115,36 @@ const ImmersiveLyrics = function ({
         };
     }, []);
 
-    // Bring the active line to the middle of the container — by hand, inside
-    // the container's own scroll range. `scrollIntoView` would also scroll
-    // every ancestor (including the page shell's `overflow: hidden` box,
-    // which is programmatically scrollable) and shove the play bar out of
-    // the viewport.
-    const followActive = function (smooth) {
-        const root = rootRef.current;
-        const line = activeRef.current;
-        if (!root || !line) return;
-        const top = line.offsetTop - (root.clientHeight - line.offsetHeight) / 2;
-        root.scrollTo({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' });
-    };
-
-    // Follow the playhead — unless the visitor is browsing.
+    // The enter animation's length follows the song's pace, and the font
+    // shrinks for long lines so **one line stays one line** (PRD v1.2 §6):
+    // CJK glyphs are ~1em wide, latin ones ~0.56em, so a weighted length
+    // gives the size that just fits the viewport's usable width.
     useEffect(() => {
-        if (freeRef.current) return;
-        followActive(true);
+        const root = rootRef.current;
+        if (!root) return;
+        const lines = linesRef.current;
+        const active = activeRefIdx.current;
+        const line = lines && lines.timed ? lines.lines[active] : null;
+        const next = line && lines.lines ? lines.lines[active + 1] : null;
+        const gap = line && next ? next.time - line.time : 0;
+        root.style.setProperty('--lyr-line-ms', `${lineMsForGap(gap)}ms`);
+
+        const text = line ? line.text : '';
+        let units = 0;
+        for (const ch of text) {
+            units += /[\u2e80-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch) ? 1 : 0.56;
+        }
+        const fit = Math.max(24, Math.min(
+            window.innerHeight * 0.088,
+            (window.innerWidth * 0.8) / Math.max(units, 1),
+        ));
+        root.style.setProperty('--lyr-fit', `${Math.round(fit)}px`);
     }, [activeIndex]);
 
-    const onWheel = function (event) {
-        // The container scrolls natively (it is an overflow-y box); the
-        // handler only re-arms the browse window and, on its expiry, walks
-        // the view back to the playhead.
-        freeRef.current = true;
-        window.clearTimeout(freeTimerRef.current);
-        freeTimerRef.current = window.setTimeout(() => {
-            freeRef.current = false;
-            followActive(true);
-        }, BROWSE_MS);
-    };
+    const activeLine = lyrics && lyrics.timed && lyrics.lines[activeIndex];
+    const staticText = lyricsLoading
+        ? '歌词加载中…'
+        : (lyrics ? '这首歌词没有时间轴，跟着感觉唱' : '这首歌没有歌词');
 
     return (
         <div
@@ -185,7 +154,6 @@ const ImmersiveLyrics = function ({
             tabIndex={0}
             aria-label="歌词，点击播放或暂停"
             title="点击播放 / 暂停"
-            onWheel={onWheel}
             onClick={onTogglePlay}
             onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -193,25 +161,17 @@ const ImmersiveLyrics = function ({
                     onTogglePlay();
                 }
             }}
+            aria-live="polite"
         >
-            {lyrics && lyrics.timed ? (
-                lyrics.lines.map((line, index) => (
-                    <p
-                        key={`${line.time}-${index}`}
-                        ref={index === activeIndex ? activeRef : null}
-                        className={index === activeIndex
-                            ? `${styles.line} ${styles['line-active']}`
-                            : (index === activeIndex + 1 || index === activeIndex - 1)
-                                ? `${styles.line} ${styles['line-near']}`
-                                : styles.line}
-                    >
-                        {line.text}
-                    </p>
-                ))
-            ) : (
-                <p className={styles['line-static']}>
-                    {lyricsLoading ? '歌词加载中…' : (lyrics ? '这首歌词没有时间轴，跟着感觉唱' : '这首歌没有歌词')}
+            {activeLine ? (
+                <p
+                    key={`${activeLine.time}-${activeIndex}`}
+                    className={styles.line}
+                >
+                    {activeLine.text}
                 </p>
+            ) : (
+                <p className={styles['line-static']}>{staticText}</p>
             )}
         </div>
     );

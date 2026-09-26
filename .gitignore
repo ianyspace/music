@@ -45,3 +45,4 @@ yarn-error.log*
 
 # WorkBuddy session notes — local working memory, not part of the project
 .workbuddy-ai/
+shots/

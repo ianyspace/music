@@ -11,7 +11,7 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     top: 24px;
     left: 24px;
     bottom: 104px;
-    width: 320px;
+    width: 340px;
     display: flex;
     flex-direction: column;
     border-radius: 20px;
@@ -167,7 +167,7 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 0 8px 12px;
+    padding: 0 14px 14px;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 
@@ -180,10 +180,31 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
         border-radius: 3px;
     }
 
+    /* The perspective field: the cards sit at varying depths inside it, so
+        the column reads as a stack in space rather than lines on a sheet. */
     ul {
         margin: 0;
         padding: 0;
         list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        perspective: 1100px;
+        transform-style: preserve-3d;
+    }
+
+    /* Depth stagger (PRD v1.2 §5: 卡片远近错落). A repeating four-step
+        pattern gives a deterministic, scroll-safe layout — no JS measuring,
+        no reflow: the depth is a static transform on the `li`, so it
+        composites only. */
+    li {
+        transform-style: preserve-3d;
+        transition: transform 300ms $ease-glass;
+
+        &:nth-child(4n + 1) { transform: translateZ(-30px) translateX(3px); }
+        &:nth-child(4n + 2) { transform: translateZ(-10px); }
+        &:nth-child(4n + 3) { transform: translateZ(-44px) translateX(-3px); }
+        &:nth-child(4n + 4) { transform: translateZ(-18px) translateX(2px); }
     }
 }
 
@@ -195,28 +216,33 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     color: rgba(255, 255, 255, 0.5);
 }
 
-/* A row tilts towards the pointer in 3D — the "3D playlist" promise, done
-    with a perspective transform rather than WebGL, because a list of rows
-    wants selectable text and a DOM hover, not a scene graph. */
-.row {
+/* The card: glass, cover-forward, tilt-to-the-pointer on hover. The hover
+    transform lives on the inner button so it *composes* with the li's depth
+    instead of fighting it for the same property. */
+.card {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
-    padding: 7px 8px;
-    border: 0;
-    border-radius: 12px;
-    background: none;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.055);
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transform-style: preserve-3d;
-    transition: transform 200ms $ease-glass, background 200ms ease-out;
-    perspective: 600px;
+    transform: perspective(700px) translateZ(0);
+    transition:
+        transform 220ms $ease-glass,
+        background 200ms ease-out,
+        border-color 200ms ease-out,
+        box-shadow 220ms $ease-glass;
 
     &:hover {
-        background: rgba(255, 255, 255, 0.08);
-        transform: perspective(600px) rotateY(-5deg) translateX(5px);
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.16);
+        transform: perspective(700px) translateZ(34px) rotateX(-2.2deg) rotateY(-3.2deg);
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
     }
 
     &:disabled {
@@ -224,32 +250,24 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     }
 }
 
-.row-active {
+.card-active {
     background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 
     .title {
         color: #fff;
     }
 }
 
-.index {
-    flex: none;
-    width: 22px;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    color: rgba(255, 255, 255, 0.42);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
 .thumb {
     flex: none;
     position: relative;
-    width: 38px;
-    height: 38px;
-    border-radius: 9px;
+    width: 46px;
+    height: 46px;
+    border-radius: 11px;
     overflow: hidden;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 
     img {
         position: absolute;
@@ -270,14 +288,23 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     background: rgba(0, 0, 0, 0.32);
 }
 
+.status {
+    flex: none;
+    width: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .text {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    flex: 1;
 }
 
 .title {
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -380,11 +407,11 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 @media (prefers-reduced-motion: reduce) {
     .panel,
     .handle,
-    .row {
+    .card {
         transition-duration: 80ms;
     }
 
-    .row:hover {
+    .card:hover {
         transform: none;
     }
 }

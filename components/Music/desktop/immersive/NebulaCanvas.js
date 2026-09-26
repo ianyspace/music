@@ -6,18 +6,20 @@ import { createBeatDetector } from '../../core/beat';
 import styles from './NebulaCanvas.module.scss';
 
 /**
- * The immersive page's whole background: the playing song's cover taken apart
- * into a deep field of particles, with a layer of ambient dust behind it and
- * a lens that leans towards the pointer.
+ * The immersive page's whole background: the playing song's cover blown up
+ * past the edges of the viewport and taken apart into a dense field of
+ * particles — a portrait that still reads as the cover — with a sparse layer
+ * of ambient dust behind it and a virtual camera that turns with the pointer.
  *
  * ## Inheritance
  *
  * This is the desktop stage's particle cloud (`visual/CoverParticles`) rebuilt
- * for the immersive page: the projection, the pixel-sampling cover, the
- * breathing zoom and the beat shockwave all carry over — what is new is the
- * *space*. The cloud no longer owns a centred square; it sits inside a field
- * of dust that runs to the edges of the viewport and behind it, so the page
- * has a foreground and a background instead of one glowing card.
+ * for the immersive page, then re-tuned against PRD v1.1 §3.1: the projection,
+ * the pixel-sampling cover, the breathing zoom and the beat shockwave all
+ * carry over. What changed is scale and density — the portrait now overflows
+ * the viewport at ~160k particles, so a dot is a *pixel* of the picture, and
+ * the cover's subject stays recognisable (the earlier 57k version read as a
+ * swarm, not a face).
  *
  * ## Why still plain WebGL
  *
@@ -29,22 +31,24 @@ import styles from './NebulaCanvas.module.scss';
  *
  * - **Dust** (back): a few thousand faint points spread through the z range,
  *   drawn *additively* — they are light, not surface, and they are what makes
- *   the beat's shockwave visible out where the cover is not.
- * - **The cloud** (front): one particle per sampled cover pixel, drawn with
+ *   the beat's shockwave visible out where the picture is not.
+ * - **The portrait** (front): one particle per sampled cover pixel, drawn with
  *   normal alpha blending, because additive white-out is exactly what killed
  *   the first version of the cover cloud.
  */
 
-// Sampled pixels per side of the cover. 240 → ~57k particles for a square
-// cover; the pitch rule from the cover cloud still applies (dot diameter ≈ 2
-// grid spacings, or the picture reads as speckle).
-const GRID_HEIGHT = 240;
+// Sampled pixels per side of the cover. 400 → ~160k particles for a square
+// cover — the density the portrait needs: at this pitch a dot is a *pixel*
+// of the picture, not a mote in a swarm, and the cover's subject stays
+// recognisable after particleisation (PRD v1.1 §3.1).
+const GRID_HEIGHT = 400;
 
 // Hard ceiling, so an unexpected aspect ratio cannot ask for a million.
-const MAX_PARTICLES = 120_000;
+const MAX_PARTICLES = 240_000;
 
-// Ambient dust: cheap, and responsible for most of the "space".
-const DUST_COUNT = 14_000;
+// Ambient dust: a faint backdrop *behind* the portrait. Deliberately sparse —
+// it is atmosphere at the edges of the frame, never a rival to the picture.
+const DUST_COUNT = 4_000;
 
 // Where the lens sits.
 const CAMERA_Z = 3.4;
@@ -63,9 +67,10 @@ const INTENSITY = {
     strong: 1.2,
 };
 
-// How much of the viewport height the cover cloud spans, and how far the
-// dust field spreads beyond it.
-const CLOUD_SCALE = 0.82;
+// How much of the viewport height the cover portrait spans. Above 1 means
+// the picture deliberately overflows the screen — the visitor sees the
+// subject, the edges run off-frame, like the reference's wall-sized face.
+const CLOUD_SCALE = 1.35;
 
 const VERTEX_SHADER = `
 precision mediump float;
@@ -155,17 +160,28 @@ void main() {
         edge = 1.0 - smoothstep(0.55, 1.02, length(norm));
     }
 
-    // A very slow yaw — parallax without tilting the picture out of shape.
+    // A very slow yaw — a drift of the volume itself, independent of input.
     float angle = uTime * 0.016 * uMotion;
     float c = cos(angle);
     float s = sin(angle);
     pos = vec3(pos.x * c + pos.z * s, pos.y, -pos.x * s + pos.z * c);
 
-    // The lens leans towards the pointer. Nearest things move most, so the
-    // field reads as a space rather than a sticker sliding sideways.
+    // The virtual camera (PRD v1.2 §3.1): the pointer turns the *view* a few
+    // degrees — yaw follows x, pitch follows y. The nebula's geometry never
+    // moves; only the projection does. Near particles swing wider than far
+    // ones, which is the exact parallax cue that makes the field read as a
+    // volume rather than a flat picture sliding sideways.
+    float yaw = uParallax.x * 0.16;
+    float pitch = uParallax.y * 0.11;
+    float cy = cos(yaw);
+    float sy = sin(yaw);
+    pos = vec3(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
+    float cp = cos(pitch);
+    float sp = sin(pitch);
+    pos = vec3(pos.x, pos.y * cp - pos.z * sp, pos.y * sp + pos.z * cp);
+
     float depth = pos.z + uCameraZ;
     depth = max(depth, 0.35);
-    pos.xy += uParallax * 0.3 * ((uCameraZ - pos.z) / uCameraZ);
 
     gl_Position = vec4(
         uFocal * pos.x / depth / uHalfViewport.x,
@@ -180,7 +196,7 @@ void main() {
 
     // The cloud wants near-opaque dots (over-blending: the topmost dot wins);
     // the dust wants faint ones (additive: neighbours sum into glow).
-    float base = mix(0.5 + 0.25 * twinkle, 0.96 + 0.04 * uLevel * uIntensity, uMode);
+    float base = mix(0.26 + 0.18 * twinkle, 0.94 + 0.06 * uLevel * uIntensity, uMode);
     // Distance fade for both: the back of a field must read as behind. The
     // cloud additionally dissolves at its elliptical edge (see above).
     float fade = mix(clamp(persp * 0.9, 0.15, 1.0), clamp(persp, 0.75, 1.1), uMode);
@@ -530,13 +546,17 @@ const NebulaCanvas = function ({
 
         // --- the pointer ----------------------------------------------------
         //
-        // The lens leans a little way towards the pointer, eased so the field
-        // glides rather than tracks.
+        // The virtual camera's input: pointer position → yaw/pitch target.
+        // The eased lerp in the loop is the inertia; after the pointer rests
+        // for a moment the target itself decays back to zero, so the camera
+        // drifts home instead of freezing mid-turn (PRD v1.2: 缓慢回中).
         const pointer = { x: 0, y: 0 };
         const eased = { x: 0, y: 0 };
+        let lastMove = 0;
         const onPointerMove = function (event) {
             pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
             pointer.y = (event.clientY / window.innerHeight) * 2 - 1;
+            lastMove = performance.now();
         };
         window.addEventListener('pointermove', onPointerMove, { passive: true });
 
@@ -573,12 +593,6 @@ const NebulaCanvas = function ({
             frame = window.requestAnimationFrame(tick);
             if (document.hidden) return;
 
-            if (typeof console !== 'undefined' && !tick.logged) {
-                tick.logged = true;
-                console.error('[nebula] live cloud=' + cloudCount + ' canvas='
-                    + canvas.width + 'x' + canvas.height);
-            }
-
             const live = liveRef.current;
             if (live.analyser && (!reader || reader.analyser !== live.analyser)) {
                 reader = createBandReader(live.analyser);
@@ -601,8 +615,14 @@ const NebulaCanvas = function ({
             const beat = detector.update(now, bass, playing);
             const waveAge = beat.age;
 
-            eased.x += (pointer.x - eased.x) * 0.04;
-            eased.y += (pointer.y - eased.y) * 0.04;
+            // Camera input: hold the turn while the pointer moves, ease home
+            // once it has rested. The decay window is deliberately slow.
+            const idleMs = now - lastMove;
+            const cameraGain = idleMs > 2600
+                ? Math.max(0, 1 - (idleMs - 2600) / 2200)
+                : 1;
+            eased.x += (pointer.x * cameraGain - eased.x) * 0.055;
+            eased.y += (pointer.y * cameraGain - eased.y) * 0.055;
 
             const t = Math.min(1, (now - startedAt) / GATHER_MS);
             const gather = 1 - (1 - t) * (1 - t) * (1 - t);
@@ -623,14 +643,14 @@ const NebulaCanvas = function ({
             gl.uniform1f(locations.motion, motion);
             gl.uniform1f(locations.waveAge, waveAge);
             gl.uniform1f(locations.waveAmp, beat.amp);
-            gl.uniform2f(locations.parallax, eased.x, -eased.y);
+            gl.uniform2f(locations.parallax, eased.x, eased.y);
 
-            // Back to front: additive dust first, the cloud over it.
+            // Back to front: additive dust first, the portrait over it.
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-            bindAndDraw(dustBuffers, DUST_COUNT, 0, 4.2);
+            bindAndDraw(dustBuffers, DUST_COUNT, 0, 3.4);
 
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-            if (cloudCount) bindAndDraw(cloudBuffers, cloudCount, 1, 7);
+            if (cloudCount) bindAndDraw(cloudBuffers, cloudCount, 1, 5);
         };
 
         frame = window.requestAnimationFrame(tick);

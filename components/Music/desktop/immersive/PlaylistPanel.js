@@ -18,17 +18,20 @@ import MarkNote from '../../core/MarkNote';
 import styles from './PlaylistPanel.module.scss';
 
 /**
- * The immersive page's playlist: a glass panel hugging the left edge, with a
- * 3D tilt on its rows and a fold that hides it behind a handle.
+ * The immersive page's song list: a stack of glass cards hugging the left
+ * edge (PRD v1.2 §5 — there is no playlist *concept* on this page, the list
+ * of songs is the panel). The whole column lives in a perspective field, each
+ * card sitting at its own depth; hovering lifts a card out of the stack and
+ * tilts it towards the pointer.
  *
  * Presentational on purpose — the fold timer, the hover logic and the
  * preference live in `ImmersiveApp`, because the handle that summons the
  * panel back sits *outside* it and both halves need the same state.
  *
- * The rows keep the old list's semantics (click = play/pause that track,
- * search narrows, the heart filters) but drop the row drawer: on this page a
- * row's only useful action is playing it, and the space a three-dots button
- * would hold is given back to the titles.
+ * The cards keep the old list's semantics (click = play/pause that track,
+ * search narrows, the heart filters) but drop the row drawer and the index
+ * numbers: on this page a card's only useful action is playing it, and the
+ * space is given back to the cover and the titles.
  */
 
 const PlaylistPanel = function ({
@@ -107,7 +110,7 @@ const PlaylistPanel = function ({
                         onOpen={onOpenAccount}
                     />
                     <span className={styles['head-text']}>
-                        <span className={styles['head-title']}>歌单</span>
+                        <span className={styles['head-title']}>歌曲</span>
                         <span className={styles['head-sub']}>
                             {`${visibleTracks.length} 首${likedOnly ? ' · 只看喜欢' : ''}`}
                         </span>
@@ -193,18 +196,11 @@ const PlaylistPanel = function ({
                                         <button
                                             type="button"
                                             ref={active ? activeRowRef : null}
-                                            className={`${styles.row}${active ? ` ${styles['row-active']}` : ''}`}
+                                            className={`${styles.card}${active ? ` ${styles['card-active']}` : ''}`}
                                             disabled={loading}
                                             onClick={() => onToggleTrack(track)}
                                             title={`${item.title} - ${item.artist}`}
                                         >
-                                            <span className={styles.index} aria-hidden="true">
-                                                {active
-                                                    ? (loading
-                                                        ? <span className={styles.spin}><IconRefresh size={13} /></span>
-                                                        : <span className={styles.eq} data-paused={!isPlaying || undefined}><i /><i /><i /></span>)
-                                                    : String(index + 1).padStart(2, '0')}
-                                            </span>
                                             <span
                                                 className={styles.thumb}
                                                 style={{ background: trackGradient(track.name) }}
@@ -213,13 +209,20 @@ const PlaylistPanel = function ({
                                                 <Cover track={track} />
                                                 {active && !loading ? (
                                                     <span className={styles['thumb-overlay']}>
-                                                        {isPlaying ? <IconPause size={16} /> : <IconPlay size={16} />}
+                                                        {isPlaying ? <IconPause size={18} /> : <IconPlay size={18} />}
                                                     </span>
                                                 ) : null}
                                             </span>
                                             <span className={styles.text}>
                                                 <span className={styles.title}>{item.title}</span>
                                                 <span className={styles.artist}>{item.artist}</span>
+                                            </span>
+                                            <span className={styles.status} aria-hidden="true">
+                                                {active
+                                                    ? (loading
+                                                        ? <span className={styles.spin}><IconRefresh size={14} /></span>
+                                                        : <span className={styles.eq} data-paused={!isPlaying || undefined}><i /><i /><i /></span>)
+                                                    : null}
                                             </span>
                                         </button>
                                     </li>

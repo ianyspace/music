@@ -272,6 +272,10 @@ const drive = async (target, index) => {
         '--no-first-run',
         '--no-default-browser-check',
         '--disable-extensions',
+        // Optional egress proxy for the page itself (the library Worker lives
+        // behind workers.dev, which is not always reachable directly):
+        // `DRIVE_PROXY=http://127.0.0.1:7890 node drive-page.js …`
+        ...(process.env.DRIVE_PROXY ? [`--proxy-server=${process.env.DRIVE_PROXY}`] : []),
         ...(insecure ? ['--disable-web-security', '--disable-features=IsolateOrigins,site-per-process'] : []),
         // The URL goes on the command line rather than through `Page.navigate`.
         // Driving a blank tab over CDP races: the first probe comes back reading
