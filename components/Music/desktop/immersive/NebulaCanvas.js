@@ -324,10 +324,19 @@ const loadCoverResilient = async function (url) {
         const cachedImage = await loadImageFenced(cached, 4000);
         if (cachedImage) return cachedImage;
     }
+    // The cover is ALSO requested by the card thumbnails as a plain `<img>` —
+    // no CORS — and that response (no `Access-Control-Allow-Origin`, because
+    // r2.dev only answers an `Origin`) lands in the HTTP cache. A CORS-mode
+    // request for the same URL then hits that entry and fails the check
+    // instantly — measured: `net::ERR_FAILED` in 1 ms, which read as "the
+    // nebula lost its cover" plus a CORS error in the console. A stable query
+    // param gives the nebula its own cache entry, written by a CORS-mode
+    // request and therefore always safe for it to reuse.
+    const corsUrl = url + (url.includes('?') ? '&' : '?') + 'nebula=1';
     const backoffs = [0, 1500, 4000];
     for (let attempt = 0; attempt < backoffs.length; attempt += 1) {
         if (backoffs[attempt]) await sleep(backoffs[attempt]);
-        const image = await loadImageFenced(url, 12_000);
+        const image = await loadImageFenced(corsUrl, 12_000);
         if (image) {
             coverCachePut(url, image);
             return image;
