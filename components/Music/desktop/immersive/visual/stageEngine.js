@@ -144,6 +144,16 @@ export default class ParticleStage {
         this.presetTransition = { active: false, start: 0, duration: 0.24, from: 0, to: 0 };
         this.colorMixTween = null;
 
+        // 指针推力 (emily/SILK): 指针射线打到粒子平面, 换算成粒子局部坐标
+        // 喂给 uMouseXY —— 上游同款算法 (00-pointer-cover-particles.js)。
+        this.pointer = { ndcX: 0, ndcY: 0, dirty: false, overUi: false };
+
+        // 入场聚拢 (uLoading): 换封面时短暂切到雾态, 就绪后收回。上游
+        // showLoading/hideLoading 的时长与阈值 (15-ripples-cover-depth.js)。
+        this.loadingTween = null;
+        this.loadingHideTimer = 0;
+        this.loadingShownAt = 0;
+
         // 安魂
         this.skullGroup = null;
         this.skullAsset = { data: null, promise: null, failed: false };
@@ -183,6 +193,16 @@ export default class ParticleStage {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(BASE_FOV, width / height, 0.1, 100);
         this.applyCamera(0);
+
+        // 指针射线求交用的临时对象, 每帧复用。
+        this.pointerRay = new THREE.Raycaster();
+        this.pointerPlane = new THREE.Plane();
+        this.pointerNdc = new THREE.Vector2();
+        this.pointerHit = new THREE.Vector3();
+        this.pointerWorldHit = new THREE.Vector3();
+        this.pointerPlanePoint = new THREE.Vector3();
+        this.pointerNormal = new THREE.Vector3();
+        this.pointerQuat = new THREE.Quaternion();
 
         this.dotTexture = this.makeDotTexture();
         this.coverTex = new THREE.Texture();
@@ -445,6 +465,22 @@ export default class ParticleStage {
             this.orbit.last.y = e.clientY;
         };
         this.onPointerUp = () => { this.orbit.rotating = false; };
+        this.onPointerTrack = (e) => {
+            // 指针推力只在指针真的落在画布上时生效: 播放栏/歌单/控制台浮在
+            // canvas 之上, 鼠标在它们上面时不该推粒子 (上游 isPointerOverUi)。
+            const overCanvas = !e.target || e.target === this.canvas
+                || (this.container && this.container.contains(e.target));
+            this.pointer.overUi = !overCanvas;
+            if (overCanvas) {
+                this.pointer.ndcX = (e.clientX / window.innerWidth) * 2 - 1;
+                this.pointer.ndcY = -(e.clientY / window.innerHeight) * 2 + 1;
+            }
+            this.pointer.dirty = true;
+        };
+        this.onPointerLeave = () => {
+            this.pointer.overUi = true;
+            this.pointer.dirty = true;
+        };
         this.onWheel = (e) => {
             e.preventDefault();
             if (Number(this.fx.preset) === SKULL_PRESET_INDEX) {
@@ -463,7 +499,9 @@ export default class ParticleStage {
         };
         this.canvas.addEventListener('mousedown', this.onPointerDown);
         window.addEventListener('mousemove', this.onPointerMove);
+        window.addEventListener('mousemove', this.onPointerTrack);
         window.addEventListener('mouseup', this.onPointerUp);
+        document.addEventListener('mouseleave', this.onPointerLeave);
         this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
         this.canvas.addEventListener('dblclick', this.onDblClick);
     }
@@ -583,6 +621,125 @@ export default class ParticleStage {
         }
     }
 
+    /**
+     * 指针推力: 把指针射线打到粒子所在的平面, 换算成粒子局部坐标。
+     *
+     * 粒子对象可能被相机/预设旋转过, 所以平面法线要跟着它的世界四元数转,
+     * 命中点再 worldToLocal —— 否则 uMouseXY 和着色器里的 pos 不在同一空间,
+     * 推力会偏。上游同样的两段式(先粒子平面, 失败退回 z=0 平面)。
+     */
+    updatePointerFrame() {
+        const p = this.pointer;
+        if (!p.dirty) return;
+        p.dirty = false;
+        const u = this.uniforms;
+        if (p.overUi) {
+            u.uMouseXY.value.set(-999, -999);
+            u.uMouseActive.value = 0;
+            return;
+        }
+        this.pointerNdc.set(p.ndcX, p.ndcY);
+        this.pointerRay.setFromCamera(this.pointerNdc, this.camera);
+        const out = this.pointerHit;
+        let hit = false;
+        const obj = this.particles;
+        if (obj) {
+            obj.updateMatrixWorld(true);
+            obj.getWorldPosition(this.pointerPlanePoint);
+            obj.getWorldQuaternion(this.pointerQuat);
+            this.pointerNormal.set(0, 0, 1).applyQuaternion(this.pointerQuat).normalize();
+            if (Math.abs(this.pointerNormal.dot(this.pointerRay.ray.direction)) >= 0.16) {
+                this.pointerPlane.setFromNormalAndCoplanarPoint(this.pointerNormal, this.pointerPlanePoint);
+                if (this.pointerRay.ray.intersectPlane(this.pointerPlane, this.pointerWorldHit)) {
+                    out.copy(this.pointerWorldHit);
+                    obj.worldToLocal(out);
+                    hit = true;
+                }
+            }
+        }
+        if (!hit) {
+            this.pointerPlane.set(this.pointerNormal.set(0, 0, 1), 0);
+            if (!this.pointerRay.ray.intersectPlane(this.pointerPlane, this.pointerWorldHit)) {
+                u.uMouseXY.value.set(-999, -999);
+                u.uMouseActive.value = 0;
+                return;
+            }
+            out.copy(this.pointerWorldHit);
+        }
+        const inside = isFinite(out.x) && isFinite(out.y)
+            && Math.abs(out.x) < 8.5 && Math.abs(out.y) < 8.5;
+        if (inside) {
+            u.uMouseXY.value.set(out.x, out.y);
+            u.uMouseActive.value = 1;
+        } else {
+            u.uMouseXY.value.set(-999, -999);
+            u.uMouseActive.value = 0;
+        }
+    }
+
+    /**
+     * 入场聚拢 (uLoading)。
+     *
+     * 着色器里 uLoading 越大越"雾"(粒子散开成雾团), 0 才是最终形态。所以
+     * 换封面时先快速推到 0.56, 封面就绪后再收回 0 —— 这就是 emily 那一下
+     * "散开 → 聚成封面"。时长沿用上游: 进 118ms / 96ms, 出 96~126ms。
+     */
+    tweenLoading(to, durationMs) {
+        const u = this.uniforms;
+        const from = Number(u.uLoading.value) || 0;
+        const duration = Math.max(1, durationMs || 1) / 1000;
+        this.loadingTween = { from, to, t: 0, duration };
+    }
+
+    showLoading() {
+        if (this.loadingHideTimer) {
+            window.clearTimeout(this.loadingHideTimer);
+            this.loadingHideTimer = 0;
+        }
+        this.loadingShownAt = performance.now();
+        const current = Number(this.uniforms.uLoading.value) || 0;
+        this.tweenLoading(Math.max(current, 0.56), current > 0.04 ? 86 : 118);
+    }
+
+    hideLoading() {
+        if (this.loadingHideTimer) window.clearTimeout(this.loadingHideTimer);
+        const elapsed = this.loadingShownAt ? performance.now() - this.loadingShownAt : 999;
+        this.loadingHideTimer = window.setTimeout(() => {
+            this.loadingHideTimer = 0;
+            const current = Number(this.uniforms.uLoading.value) || 0;
+            if (current <= 0.015) {
+                this.loadingTween = null;
+                this.uniforms.uLoading.value = 0;
+                return;
+            }
+            this.tweenLoading(0, current > 0.38 ? 126 : 96);
+        }, Math.max(0, 72 - elapsed));
+    }
+
+    // 直接把雾态归零 (没有封面可聚, 或组件要卸载时)。
+    forceLoadingSettled() {
+        if (this.loadingHideTimer) {
+            window.clearTimeout(this.loadingHideTimer);
+            this.loadingHideTimer = 0;
+        }
+        this.loadingTween = null;
+        this.uniforms.uLoading.value = 0;
+        this.loadingShownAt = 0;
+    }
+
+    tickLoading(dt) {
+        const tw = this.loadingTween;
+        if (!tw) return;
+        tw.t += dt;
+        const t = Math.min(1, tw.t / tw.duration);
+        const eased = t * t * (3 - 2 * t);
+        this.uniforms.uLoading.value = tw.from + (tw.to - tw.from) * eased;
+        if (t >= 1) {
+            this.uniforms.uLoading.value = tw.to;
+            this.loadingTween = null;
+        }
+    }
+
     syncFxUniforms() {
         const fx = this.fx;
         const u = this.uniforms;
@@ -692,6 +849,7 @@ export default class ParticleStage {
             this.uniforms.uHasCover.value = 0;
             this.uniforms.uHasDepth.value = 0;
             this.uniforms.uAiBoost.value = 0;
+            this.forceLoadingSettled();
             return;
         }
         const token = this.coverProcessToken + 1;
@@ -715,6 +873,8 @@ export default class ParticleStage {
         this.coverTex.needsUpdate = true;
         this.uniforms.uHasCover.value = 1;
         this.startColorMixTween(Number(this.fx.preset) === 0 ? 520 : 960);
+        // 新封面已经上纹理: 收掉雾态, 让粒子聚回封面形态。
+        this.hideLoading();
 
         const runHeavy = () => {
             if (token !== this.coverProcessToken) return;
@@ -1137,6 +1297,8 @@ export default class ParticleStage {
         this.uniforms.uAlpha.value += (alphaTarget - this.uniforms.uAlpha.value) * Math.min(1, dt * 2.4);
 
         this.tickPresetTransition();
+        this.updatePointerFrame();
+        this.tickLoading(dt);
         this.updateRipples(dt, bands.bass);
         this.updateSkull(dt, bands.bass, bands.mid);
         this.applyCamera(dt);
@@ -1226,7 +1388,13 @@ export default class ParticleStage {
         if (this.resizeObserver) this.resizeObserver.disconnect();
         this.canvas.removeEventListener('mousedown', this.onPointerDown);
         window.removeEventListener('mousemove', this.onPointerMove);
+        window.removeEventListener('mousemove', this.onPointerTrack);
+        document.removeEventListener('mouseleave', this.onPointerLeave);
         window.removeEventListener('mouseup', this.onPointerUp);
+        if (this.loadingHideTimer) {
+            window.clearTimeout(this.loadingHideTimer);
+            this.loadingHideTimer = 0;
+        }
         this.canvas.removeEventListener('wheel', this.onWheel);
         this.canvas.removeEventListener('dblclick', this.onDblClick);
         // 歌词层的纹理/几何不在 scene.traverse 的常规回收里 (有大量自建

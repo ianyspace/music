@@ -134,6 +134,9 @@ const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, lyri
             return undefined;
         }
         let cancelled = false;
+        // 换歌先切雾态 (emily 的「散开 → 聚成封面」入场), 封面纹理就绪后
+        // setCoverImage 自己把它收回去。
+        stage.showLoading();
         // 等场景就绪(按需加载 three 会有几十毫秒空窗)
         const timer = window.setInterval(() => {
             if (cancelled) return;
@@ -142,6 +145,9 @@ const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, lyri
             loadCoverResilient(coverUrl).then((image) => {
                 if (cancelled || !stageRef.current) return;
                 stageRef.current.setCoverImage(image);
+            }).catch(() => {
+                // 封面加载失败也要收掉雾态, 否则整场停在雾里。
+                if (!cancelled && stageRef.current) stageRef.current.setCoverImage(null);
             });
         }, 120);
         return () => {
