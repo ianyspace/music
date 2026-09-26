@@ -1,0 +1,239 @@
+/*
+ * The visual console's own chrome. Everything is a flat glass surface over
+ * the popover it lives in — no shadows of its own, because the popover
+ * already floats.
+ */
+
+$ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+.section {
+    padding: 4px 0 2px;
+}
+
+.title {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+/* --- the preset grid ---------------------------------------------------- */
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(255, 255, 255, 0.82);
+    cursor: pointer;
+    text-align: left;
+    transition: background 160ms ease-out, border-color 160ms ease-out, transform 160ms $ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.07);
+        border-color: rgba(255, 255, 255, 0.16);
+    }
+
+    &:active {
+        transform: scale(0.98);
+    }
+}
+
+.card-on {
+    background: rgba(255, 255, 255, 0.13);
+    border-color: rgba(255, 255, 255, 0.42);
+    color: #fff;
+}
+
+/* The swatches are drawn from the same shapes the shader draws in pixels, so
+   a card is a thumbnail of the mode rather than a decorative square. */
+.swatch {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: #1b1c24;
+    overflow: hidden;
+
+    &[data-preset='nebula'] {
+        background: radial-gradient(circle at 50% 45%, #b9a8ff 0%, #6b5bd6 34%, rgba(20, 20, 30, 0) 72%);
+    }
+
+    &[data-preset='tunnel'] {
+        background: repeating-radial-gradient(circle at 50% 50%, rgba(160, 190, 255, 0.95) 0 1px, rgba(0, 0, 0, 0) 2px 8px);
+    }
+
+    &[data-preset='orbit'] {
+        background: radial-gradient(circle at 38% 34%, #ffffff 0%, #8a8aa8 28%, #2a2a3c 60%, rgba(0, 0, 0, 0) 70%);
+    }
+
+    &[data-preset='galaxy'] {
+        background: linear-gradient(115deg, #4ad3ff 0%, #b06bff 48%, #ff7ac0 100%);
+    }
+
+    &[data-preset='halo'] {
+        background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 32%, #ffd27a 37%, rgba(0, 0, 0, 0) 43%, rgba(255, 210, 122, 0.4) 58%, rgba(0, 0, 0, 0) 72%);
+    }
+
+    &[data-preset='rain'] {
+        background: repeating-linear-gradient(to bottom, #6fd0ff 0 2px, rgba(0, 0, 0, 0) 2px 7px);
+    }
+
+    &[data-preset='terrain'] {
+        background:
+            linear-gradient(to top, rgba(90, 210, 160, 0.85) 0%, rgba(90, 210, 160, 0) 70%),
+            repeating-linear-gradient(to right, rgba(150, 230, 200, 0.9) 0 2px, rgba(0, 0, 0, 0) 2px 7px);
+    }
+
+    &[data-preset='void'] {
+        background: #15161d;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+}
+
+.text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.name {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.sub {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- rows and segmented controls ----------------------------------------- */
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+}
+
+.label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.seg {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.seg-btn {
+    min-width: 44px;
+    padding: 5px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 160ms ease-out, color 160ms ease-out;
+
+    &:hover {
+        color: #fff;
+    }
+}
+
+.seg-on {
+    background: rgba(255, 255, 255, 0.9);
+    color: #14151c;
+}
+
+.note {
+    margin: 4px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* --- layer switches ------------------------------------------------------ */
+
+.toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    cursor: pointer;
+
+    input {
+        position: absolute;
+        width: 0;
+        height: 0;
+        opacity: 0;
+    }
+}
+
+.toggle-text {
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.hint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.toggle-ui {
+    flex: none;
+    position: relative;
+    width: 38px;
+    height: 22px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    transition: background 180ms ease-out;
+
+    &::after {
+        content: '';
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 180ms $ease;
+    }
+}
+
+.toggle {
+    input:checked + .toggle-ui {
+        background: rgba(255, 255, 255, 0.55);
+    }
+
+    input:checked + .toggle-ui::after {
+        transform: translateX(16px);
+    }
+
+    input:focus-visible + .toggle-ui {
+        outline: 2px solid rgba(255, 255, 255, 0.6);
+        outline-offset: 2px;
+    }
+}

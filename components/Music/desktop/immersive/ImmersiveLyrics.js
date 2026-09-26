@@ -6,8 +6,8 @@ import { createBeatDetector } from '../../core/beat';
 import styles from './ImmersiveLyrics.module.scss';
 
 /**
- * The immersive page's lyrics: **one line at a time**, centred, and *on the
- * beat* (PRD v1.2 §6 — no karaoke sweep, no browsing, no neighbouring lines).
+ * The immersive page's lyrics: **a stage**, centred, and *on the beat*
+ * (PRD v1.2 §6 — no karaoke sweep, no browsing).
  *
  * ## The rhythm part
  *
@@ -24,13 +24,17 @@ import styles from './ImmersiveLyrics.module.scss';
  * Both land as CSS custom properties on the root, so the browser composites
  * them; nothing in the loop touches layout.
  *
- * ## Line changes
+ * ## The stage
  *
- * There is exactly one `<p>` on screen. When the active index moves, the key
- * changes, React swaps the element, and the enter animation (old line floats
- * up and out is approximated by the new line arriving from below) plays —
- * the transition length is clamped by the gap to the next line so a fast
- * song's lines arrive before the previous one has settled.
+ * Three shapes, chosen in the console:
+ * - `single` — one line, the largest it can be;
+ * - `double` — the line plus the next one underneath, so the eye can prepare;
+ * - `cinema` — five lines with the current one in the middle, each step away
+ *   smaller and dimmer, the way subtitles stack.
+ *
+ * Only the current line animates on arrival. The neighbours are deliberately
+ * static: five lines each doing an entrance would be a firework, and the
+ * point of showing them is that they are *waiting*.
  */
 
 // A line's enter animation, clamped by the gap to the next line.
@@ -41,6 +45,37 @@ const lineMsForGap = function (gapSeconds) {
     return Math.round(Math.min(900, Math.max(280, gapSeconds * 550)));
 };
 
+// How much smaller a neighbour is than the line it is waiting behind.
+const NEIGHBOUR_SCALE = {
+    double: { 1: 0.4 },
+    cinema: { '-2': 0.3, '-1': 0.46, 1: 0.46, 2: 0.3 },
+};
+
+/** The rows the stage shows right now, nearest-first. */
+const stageRows = function (lyrics, activeIndex, stage) {
+    if (!lyrics || !lyrics.timed || !lyrics.lines) return [];
+    const lines = lyrics.lines;
+    const push = (rows, index, offset) => {
+        const line = lines[index];
+        if (line) rows.push({ index, offset, text: line.text });
+    };
+
+    if (stage === 'cinema') {
+        const rows = [];
+        for (let offset = -2; offset <= 2; offset += 1) push(rows, activeIndex + offset, offset);
+        return rows;
+    }
+    if (stage === 'double') {
+        const rows = [];
+        push(rows, activeIndex, 0);
+        push(rows, activeIndex + 1, 1);
+        return rows;
+    }
+    const rows = [];
+    push(rows, activeIndex, 0);
+    return rows;
+};
+
 const ImmersiveLyrics = function ({
     lyrics,
     lyricsLoading,
@@ -49,6 +84,9 @@ const ImmersiveLyrics = function ({
     analyser,
     isPlaying,
     intensity = 'standard',
+    stage = 'single',
+    enterFx = 'shine',
+    palette = null,
     onTogglePlay,
 }) {
     const rootRef = useRef(null);
@@ -145,19 +183,39 @@ const ImmersiveLyrics = function ({
         for (const ch of text) {
             units += /[\u2e80-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch) ? 1 : 0.56;
         }
+        // A five-line stage cannot give the current line the whole frame.
+        const stageBudget = stage === 'cinema' ? 0.78 : 1;
         const fit = Math.max(24, Math.min(
-            window.innerHeight * 0.088,
+            window.innerHeight * 0.088 * stageBudget,
             // The width budget mirrors the lyrics layer's content box: the
-            // card stack takes the right ~34%, so the line fits in ~55%.
+            // list owns the left quarter, so the line fits in ~55%.
             (window.innerWidth * 0.55) / Math.max(units, 1),
         ));
         root.style.setProperty('--lyr-fit', `${Math.round(fit)}px`);
-    }, [activeIndex]);
+    }, [activeIndex, stage]);
 
-    const activeLine = lyrics && lyrics.timed && lyrics.lines[activeIndex];
+    // The cover's accent, as a colour the stylesheet can use for the sweep
+    // and the bloom. Without a palette it falls back to plain white.
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        const accent = palette && palette.accent ? palette.accent : null;
+        root.style.setProperty(
+            '--lyr-accent',
+            accent
+                ? `rgb(${Math.round(accent[0] * 255)}, ${Math.round(accent[1] * 255)}, ${Math.round(accent[2] * 255)})`
+                : '#ffffff',
+        );
+    }, [palette]);
+
+    const rows = stageRows(lyrics, activeIndex, stage);
     const staticText = lyricsLoading
         ? '歌词加载中…'
         : (lyrics ? '这首歌词没有时间轴，跟着感觉唱' : '这首歌没有歌词');
+
+    const enterClass = enterFx === 'shine'
+        ? styles['fx-shine']
+        : enterFx === 'glow' ? styles['fx-glow'] : '';
 
     return (
         <div
@@ -176,13 +234,27 @@ const ImmersiveLyrics = function ({
             }}
             aria-live="polite"
         >
-            {activeLine ? (
-                <p
-                    key={`${activeLine.time}-${activeIndex}`}
-                    className={styles.line}
-                >
-                    {activeLine.text}
-                </p>
+            {rows.length ? (
+                <div className={styles.stack} data-stage={stage}>
+                    {rows.map((row) => {
+                        const current = row.offset === 0;
+                        const table = NEIGHBOUR_SCALE[stage] || {};
+                        const rowScale = table[String(row.offset)];
+                        return (
+                            <p
+                                key={`${current ? 'line' : 'near'}-${row.index}`}
+                                className={[
+                                    styles.line,
+                                    current ? '' : styles.neighbour,
+                                    current ? enterClass : '',
+                                ].filter(Boolean).join(' ')}
+                                style={rowScale ? { '--lyr-row-scale': rowScale } : undefined}
+                            >
+                                {row.text}
+                            </p>
+                        );
+                    })}
+                </div>
             ) : (
                 <p className={styles['line-static']}>{staticText}</p>
             )}

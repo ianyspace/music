@@ -8,6 +8,7 @@ import {
     IMMERSIVE_BGS,
     IMMERSIVE_CUSTOM_KEY,
     IMMERSIVE_FILTER_KEY,
+    IMMERSIVE_FX_KEY,
     IMMERSIVE_LYRIC_KEY,
     IMMERSIVE_PANEL_KEY,
     IMMERSIVE_VOLUME_KEY,
@@ -19,13 +20,16 @@ import {
     VISUAL_INTENSITY_KEY,
 } from '../../shared';
 import { attachAnalyser, analyserElement, resumeAnalyser, setAnalyserVolume } from '../../core/audioAnalyser';
+import { loadCoverPalette, paletteFromGradient } from '../../core/coverPalette';
 import { coverUrlOf } from '../../librarySource';
-import NebulaCanvas from './NebulaCanvas';
+import VisualCanvas from './VisualCanvas';
 import ImmersiveLyrics from './ImmersiveLyrics';
 import ForegroundParticles from './ForegroundParticles';
+import LyricStarRiver from './LyricStarRiver';
 import ImmersiveSettings from './ImmersiveSettings';
 import PlaylistPanel from './PlaylistPanel';
 import PlayerBar from './PlayerBar';
+import { DEFAULT_FX, normalizeFx } from './visualPresets';
 
 import styles from './ImmersiveApp.module.scss';
 
@@ -113,6 +117,12 @@ const ImmersiveApp = function ({
     const [autoCollapse, setAutoCollapse] = useState(true);
     const [lyricInNebula, setLyricInNebula] = useState(true);
     const [volume, setVolume] = useState(100);
+    // The visual console's state: which preset is on screen, how much of
+    // everything, and which layers ride along.
+    const [fx, setFx] = useState(DEFAULT_FX);
+    // The cover's own colour scheme. Null until it has been sampled — every
+    // consumer falls back to the song's gradient until then.
+    const [palette, setPalette] = useState(null);
 
     const prefsSyncedRef = useRef(false);
     useEffect(() => {
@@ -122,6 +132,9 @@ const ImmersiveApp = function ({
             if (IMMERSIVE_BGS.includes(savedMode)) setBgMode(savedMode);
             const savedIntensity = storageGet(VISUAL_INTENSITY_KEY);
             if (VISUAL_INTENSITIES.includes(savedIntensity)) setIntensity(savedIntensity);
+            try {
+                setFx(normalizeFx(JSON.parse(storageGet(IMMERSIVE_FX_KEY))));
+            } catch (error) { /* no console state yet */ }
             try {
                 const parsed = JSON.parse(storageGet(IMMERSIVE_CUSTOM_KEY));
                 if (parsed && Array.isArray(parsed.items) && typeof parsed.selected === 'string') {
@@ -151,7 +164,29 @@ const ImmersiveApp = function ({
         storageSet(IMMERSIVE_PANEL_KEY, autoCollapse ? 'on' : 'off');
         storageSet(IMMERSIVE_LYRIC_KEY, lyricInNebula ? 'on' : 'off');
         storageSet(IMMERSIVE_VOLUME_KEY, String(volume));
-    }, [bgMode, intensity, customBg, filter, autoCollapse, lyricInNebula, volume]);
+        storageSet(IMMERSIVE_FX_KEY, JSON.stringify(fx));
+    }, [bgMode, intensity, customBg, filter, autoCollapse, lyricInNebula, volume, fx]);
+
+    // The cover's palette, sampled once per song. It is fetched on its own
+    // rather than through the canvas because three layers want it and none of
+    // them should own the request.
+    useEffect(() => {
+        let dead = false;
+        setPalette(null);
+        if (!coverUrl) return undefined;
+        (async () => {
+            const found = await loadCoverPalette(coverUrl);
+            if (!dead) setPalette(found);
+        })();
+        return () => { dead = true; };
+    }, [coverUrl]);
+
+    // What every layer actually uses: the cover's own colours when the
+    // artwork has an opinion and the palette switch is on, the song's
+    // gradient otherwise.
+    const activePalette = fx.palette && palette && !palette.monochrome
+        ? palette
+        : paletteFromGradient(gradient);
 
     // Which custom background is on screen. The selected id always has an
     // answer: a selection that points at a deleted item falls back to the
@@ -307,11 +342,16 @@ const ImmersiveApp = function ({
     const renderLayer = function (layer) {
         if (layer.mode === 'nebula') {
             return (
-                <NebulaCanvas
+                <VisualCanvas
                     coverUrl={coverUrl}
                     gradient={gradient}
                     isPlaying={isPlaying}
                     intensity={intensity}
+                    preset={fx.preset}
+                    density={fx.density}
+                    motion={fx.motion}
+                    fx={fx}
+                    palette={activePalette}
                     analyser={analyser}
                     onActivate={current ? onTogglePlay : undefined}
                 />
@@ -364,7 +404,22 @@ const ImmersiveApp = function ({
                     analyser={analyser}
                     isPlaying={isPlaying}
                     intensity={intensity}
+                    stage={fx.lyricMode}
+                    enterFx={fx.lyricFx}
+                    palette={activePalette}
                     onTogglePlay={onTogglePlay}
+                />
+            )}
+
+            {/* The lyric star river: sparks living in the words' own band of
+                the frame. It sits above the lyrics and under the ambient
+                veil, so the words read as lit from inside the scene. */}
+            {lyricsShown && fx.lyricRiver && (
+                <LyricStarRiver
+                    analyser={analyser}
+                    isPlaying={isPlaying}
+                    intensity={intensity}
+                    palette={activePalette}
                 />
             )}
 
@@ -467,6 +522,14 @@ const ImmersiveApp = function ({
                 onAutoCollapse={setAutoCollapse}
                 lyricInNebula={lyricInNebula}
                 onLyricInNebula={setLyricInNebula}
+                preset={fx.preset}
+                onPreset={(value) => setFx((prev) => ({ ...prev, preset: value }))}
+                density={fx.density}
+                onDensity={(value) => setFx((prev) => ({ ...prev, density: value }))}
+                motion={fx.motion}
+                onMotion={(value) => setFx((prev) => ({ ...prev, motion: value }))}
+                fx={fx}
+                onFx={(key, value) => setFx((prev) => ({ ...prev, [key]: value }))}
             />
 
             {toast && (

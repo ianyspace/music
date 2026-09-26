@@ -1,26 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 import { IconClose } from '../../icons';
-import { VISUAL_INTENSITIES } from '../../shared';
+import FxConsole from './FxConsole';
 
 import styles from './ImmersiveSettings.module.scss';
 
 /**
  * The immersive page's settings: a glass popover rising from the play bar's
  * gear. Everything stored about this page is changed here and nowhere else —
- * background mode, the custom background library, the nebula's intensity,
- * the readability filter, and the page's two behaviour switches.
+ * the visual console (preset, amounts, layers), the custom background
+ * library, the readability filter, and the page's behaviour switches.
  *
  * The popover closes on Escape and on an outside click; the closing animation
  * is the scrim pattern the shell already uses elsewhere (wait for the fade,
  * then unmount).
  */
-
-const INTENSITY_LABELS = {
-    calm: '轻',
-    standard: '标准',
-    strong: '强',
-};
 
 // What kind of thing a pasted URL points at, from its path alone. A query
 // string is fine — the test runs on the pathname.
@@ -55,6 +49,14 @@ const ImmersiveSettings = function ({
     onAutoCollapse,
     lyricInNebula,
     onLyricInNebula,
+    preset,
+    onPreset,
+    density,
+    onDensity,
+    motion,
+    onMotion,
+    fx,
+    onFx,
 }) {
     const rootRef = useRef(null);
     const [urlDraft, setUrlDraft] = useState('');
@@ -131,8 +133,8 @@ const ImmersiveSettings = function ({
                     >
                         <span className={styles['mode-swatch']} data-mode="nebula" aria-hidden="true" />
                         <span>
-                            <span className={styles['mode-name']}>星云</span>
-                            <span className={styles['mode-sub']}>封面粒子 · 默认</span>
+                            <span className={styles['mode-name']}>粒子视觉</span>
+                            <span className={styles['mode-sub']}>8 种预设 · 默认</span>
                         </span>
                     </button>
                     <button
@@ -204,22 +206,18 @@ const ImmersiveSettings = function ({
                 )}
 
                 {bgMode === 'nebula' && (
-                    <div className={styles.row}>
-                        <span className={styles['row-label']}>星云强度</span>
-                        <div className={styles.seg}>
-                            {VISUAL_INTENSITIES.map((level) => (
-                                <button
-                                    key={level}
-                                    type="button"
-                                    className={`${styles['seg-btn']}${intensity === level ? ` ${styles['seg-on']}` : ''}`}
-                                    onClick={() => onIntensity(level)}
-                                    aria-pressed={intensity === level}
-                                >
-                                    {INTENSITY_LABELS[level]}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    <FxConsole
+                        preset={preset}
+                        onPreset={onPreset}
+                        intensity={intensity}
+                        onIntensity={onIntensity}
+                        density={density}
+                        onDensity={onDensity}
+                        motion={motion}
+                        onMotion={onMotion}
+                        fx={fx}
+                        onFx={onFx}
+                    />
                 )}
 
                 {bgMode === 'custom' && (

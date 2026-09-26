@@ -76,6 +76,12 @@ export const VISUAL_INTENSITIES = ['calm', 'standard', 'strong'];
 // `LYRIC_STYLES` and `VISUAL_INTENSITIES`.
 export const IMMERSIVE_BG_KEY = 'music:setting:immersiveBg';
 export const IMMERSIVE_BGS = ['nebula', 'custom'];
+// The visual console's whole state — chosen preset, the three amounts, the
+// layer switches and the lyric stage — as one JSON blob. One key instead of
+// eight: the console's settings are always read and written together, and a
+// half-applied set (a preset with somebody else's switches) is worse than a
+// reset to defaults.
+export const IMMERSIVE_FX_KEY = 'music:setting:immersiveFx';
 // The visitor's own backgrounds: a JSON array of `{ id, type, url }` plus the
 // id of the one on screen. The preset ships with the page and needs no entry.
 export const IMMERSIVE_CUSTOM_KEY = 'music:setting:immersiveCustom';

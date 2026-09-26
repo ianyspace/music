@@ -1,0 +1,19 @@
+/*
+ * The lyric star river's layer: same stacking as the ambient veil (above the
+ * words, below every control), rendered before it so the veil's larger motes
+ * stay on top. It never takes input.
+ */
+
+.root {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 7;
+}
+
+.canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
