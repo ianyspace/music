@@ -1,83 +1,79 @@
 /*
- * The playlist panel: a glass card hugging the left edge. The fold is a
- * translateX (GPU-composited), the rows tilt in 3D under the pointer, and
- * nothing here animates a layout property.
+ * The song cards: a stack of free-floating glass cards on the right, inside
+ * a perspective field. There is no panel — no box, no background behind the
+ * stack; the cards are objects hovering over the nebula, the way the
+ * reference image stacks them: the front card near face-on and large, the
+ * ones behind receding — down, right, and back — each partly hidden by the
+ * card in front of it.
+ *
+ * Everything animated here is a transform or an opacity. The depth-slot
+ * transition lives on the `li` so a wheel step makes the whole column glide
+ * one slot over; the hover lift lives on the inner button so it composes
+ * with the slot instead of fighting it.
  */
 
 $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
-.panel {
+.stage {
     position: absolute;
-    top: 24px;
-    left: 24px;
-    bottom: 104px;
-    width: 340px;
-    display: flex;
-    flex-direction: column;
-    border-radius: 20px;
-    background: rgba(16, 17, 22, 0.55);
-    backdrop-filter: blur(28px) saturate(1.4);
-    -webkit-backdrop-filter: blur(28px) saturate(1.4);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
-    transition: transform 400ms $ease-glass, opacity 400ms $ease-glass;
+    top: 8vh;
+    right: 44px;
+    width: 470px;
+    /* No height constraint and no overflow: `overflow` would flatten the
+        3D. The back cards simply fade out before they can run away. */
     z-index: 20;
     color: #f2f3f7;
+    transition: transform 450ms $ease-glass, opacity 450ms $ease-glass;
 }
 
-.panel-folded {
-    transform: translateX(-130%);
+.stage-folded {
+    transform: translateX(135%);
     opacity: 0;
     pointer-events: none;
 }
 
-/* --- header ----------------------------------------------------------- */
+/* --- the floating control row ------------------------------------------- */
 
-.head {
+.bar {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 16px 14px 8px;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 0 6px 18px 0;
 }
 
 .mark {
-    flex: none;
+    margin-right: auto;
 }
 
-.head-text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1;
-}
-
-.head-title {
-    font-size: 15px;
-    font-weight: 700;
+.count {
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.45);
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(16, 17, 22, 0.42);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.head-sub {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.55);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.head-btn {
-    flex: none;
+.fold {
     width: 30px;
     height: 30px;
-    border: 0;
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(16, 17, 22, 0.42);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    color: rgba(255, 255, 255, 0.75);
     cursor: pointer;
-    transition: background 150ms ease-out;
+    transition: background 150ms ease-out, color 150ms ease-out;
 
     &:hover {
-        background: rgba(255, 255, 255, 0.16);
+        background: rgba(40, 42, 52, 0.6);
+        color: #fff;
     }
 }
 
@@ -86,163 +82,111 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     line-height: 1;
 }
 
-/* --- tools ------------------------------------------------------------ */
-
-.tools {
-    display: flex;
-    gap: 6px;
-    padding: 4px 14px 10px;
-}
-
-.tool {
-    width: 30px;
-    height: 30px;
-    border: 0;
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.75);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 150ms ease-out, color 150ms ease-out;
-
-    &:hover {
-        background: rgba(255, 255, 255, 0.16);
-        color: #fff;
-    }
-}
-
-.tool-on {
-    background: rgba(255, 255, 255, 0.22);
-    color: #fff;
-}
-
-.search-box {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 30px;
-    padding: 0 8px;
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.08);
-
-    input {
-        flex: 1;
-        min-width: 0;
-        border: 0;
-        background: none;
-        color: #f2f3f7;
-        font-size: 13px;
-        outline: none;
-
-        &::placeholder {
-            color: rgba(255, 255, 255, 0.4);
-        }
-    }
-}
-
-.search-icon {
-    color: rgba(255, 255, 255, 0.5);
-    display: inline-flex;
-}
-
-.search-close {
-    border: 0;
-    background: none;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 15px;
-    cursor: pointer;
-    padding: 0 2px;
-
-    &:hover {
-        color: #fff;
-    }
-}
-
-/* --- the list ----------------------------------------------------------- */
-
-.list {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 0 14px 14px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
-
-    &::-webkit-scrollbar {
-        width: 6px;
-    }
-
-    &::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.22);
-        border-radius: 3px;
-    }
-
-    /* The perspective field: the cards sit at varying depths inside it, so
-        the column reads as a stack in space rather than lines on a sheet. */
-    ul {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        perspective: 1100px;
-        transform-style: preserve-3d;
-    }
-
-    /* Depth stagger (PRD v1.2 §5: 卡片远近错落). A repeating four-step
-        pattern gives a deterministic, scroll-safe layout — no JS measuring,
-        no reflow: the depth is a static transform on the `li`, so it
-        composites only. */
-    li {
-        transform-style: preserve-3d;
-        transition: transform 300ms $ease-glass;
-
-        &:nth-child(4n + 1) { transform: translateZ(-30px) translateX(3px); }
-        &:nth-child(4n + 2) { transform: translateZ(-10px); }
-        &:nth-child(4n + 3) { transform: translateZ(-44px) translateX(-3px); }
-        &:nth-child(4n + 4) { transform: translateZ(-18px) translateX(2px); }
-    }
-}
-
 .empty {
     margin: 0;
-    padding: 28px 12px;
+    padding: 18px 22px;
+    border-radius: 16px;
+    background: rgba(16, 17, 22, 0.42);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     text-align: center;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.55);
 }
 
-/* The card: glass, cover-forward, tilt-to-the-pointer on hover. The hover
-    transform lives on the inner button so it *composes* with the li's depth
-    instead of fighting it for the same property. */
+/* --- the depth field ------------------------------------------------------ */
+
+.stack {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    position: relative;
+    perspective: 1400px;
+    /* preserve-3d: the `li` slots must share one 3D space with each other
+        for the browser to depth-sort the overlapping cards. */
+    transform-style: preserve-3d;
+}
+
+/* The five depth slots. Each step: down 70-ish, right 20-ish, back 150-ish,
+    tipped a touch further over — the exact geometry of the reference stack.
+    These are per-slot classes rather than :nth-child so a card *keeps its
+    depth while gliding between slots* (the class is what changes). */
+.slot0 {
+    transform: translate3d(0, 0, 0);
+    z-index: 5;
+}
+
+.slot1 {
+    transform: translate3d(26px, 74px, -150px) rotateX(3deg);
+    z-index: 4;
+}
+
+.slot2 {
+    transform: translate3d(48px, 142px, -300px) rotateX(4.5deg);
+    z-index: 3;
+}
+
+.slot3 {
+    transform: translate3d(67px, 204px, -450px) rotateX(6deg);
+    z-index: 2;
+}
+
+.slot4 {
+    transform: translate3d(83px, 258px, -600px) rotateX(7.5deg);
+    z-index: 1;
+}
+
+.stack li {
+    transition: transform 480ms $ease-glass;
+    transform-style: preserve-3d;
+    /* The slot transforms above need the li's own box to be at the top of
+        the stack area; every li would otherwise stack on the same origin —
+        which is exactly what we want: they all start from the same top-left
+        and the transform moves each into its slot. */
+}
+
+/* A card entering the window (wheel down) arrives from the deepest slot's
+    neighbourhood rather than popping in. */
+.slot4 {
+    animation: card-in 480ms $ease-glass backwards;
+}
+
+@keyframes card-in {
+    from {
+        opacity: 0;
+        transform: translate3d(96px, 300px, -720px) rotateX(8deg);
+    }
+}
+
+/* --- the card ------------------------------------------------------------- */
+
 .card {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
     width: 100%;
-    padding: 10px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 15px;
-    background: rgba(255, 255, 255, 0.055);
+    padding: 14px 18px 14px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    background: rgba(18, 19, 25, 0.58);
+    backdrop-filter: blur(26px) saturate(1.35);
+    -webkit-backdrop-filter: blur(26px) saturate(1.35);
+    box-shadow: 0 22px 55px rgba(0, 0, 0, 0.5);
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transform: perspective(700px) translateZ(0);
     transition:
-        transform 220ms $ease-glass,
+        transform 260ms $ease-glass,
         background 200ms ease-out,
         border-color 200ms ease-out,
-        box-shadow 220ms $ease-glass;
+        box-shadow 260ms $ease-glass;
 
     &:hover {
-        background: rgba(255, 255, 255, 0.1);
-        border-color: rgba(255, 255, 255, 0.16);
-        transform: perspective(700px) translateZ(34px) rotateX(-2.2deg) rotateY(-3.2deg);
-        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+        background: rgba(30, 32, 40, 0.68);
+        border-color: rgba(255, 255, 255, 0.2);
+        transform: translateZ(55px);
+        box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
     }
 
     &:disabled {
@@ -251,23 +195,18 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .card-active {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.22);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-
-    .title {
-        color: #fff;
-    }
+    background: rgba(34, 36, 46, 0.66);
+    border-color: rgba(255, 255, 255, 0.24);
 }
 
 .thumb {
     flex: none;
     position: relative;
-    width: 46px;
-    height: 46px;
-    border-radius: 11px;
+    width: 84px;
+    height: 84px;
+    border-radius: 13px;
     overflow: hidden;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 
     img {
         position: absolute;
@@ -288,33 +227,36 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     background: rgba(0, 0, 0, 0.32);
 }
 
-.status {
-    flex: none;
-    width: 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
 .text {
     display: flex;
     flex-direction: column;
+    gap: 3px;
     min-width: 0;
     flex: 1;
 }
 
-.title {
-    font-size: 13.5px;
+.now-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
     font-weight: 600;
+    letter-spacing: 0.14em;
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.title {
+    font-size: 17px;
+    font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: rgba(255, 255, 255, 0.88);
+    color: #fff;
 }
 
 .artist {
-    font-size: 11.5px;
-    color: rgba(255, 255, 255, 0.5);
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.55);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -324,14 +266,14 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
 .handle {
     position: absolute;
-    left: 0;
+    right: 0;
     top: 50%;
     transform: translateY(-50%);
     width: 26px;
     height: 92px;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-left: 0;
-    border-radius: 0 14px 14px 0;
+    border-right: 0;
+    border-radius: 14px 0 0 14px;
     background: rgba(16, 17, 22, 0.55);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -348,7 +290,7 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .handle-hidden {
-    transform: translateY(-50%) translateX(-130%);
+    transform: translateY(-50%) translateX(130%);
     opacity: 0;
     pointer-events: none;
 }
@@ -372,7 +314,7 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     display: inline-flex;
     align-items: flex-end;
     gap: 2px;
-    height: 12px;
+    height: 11px;
 
     i {
         width: 2.5px;
@@ -405,8 +347,8 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .panel,
-    .handle,
+    .stage,
+    .stack li,
     .card {
         transition-duration: 80ms;
     }

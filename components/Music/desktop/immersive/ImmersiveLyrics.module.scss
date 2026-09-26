@@ -20,7 +20,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 10%;
+    /* The card stack owns the right ~30% of the viewport, so the line
+        centres in what is left of it — a touch left of centre, which is
+        where the reference composition puts the words anyway. */
+    padding: 0 30% 0 6%;
     cursor: pointer;
     user-select: text;
     pointer-events: auto;

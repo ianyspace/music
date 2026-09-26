@@ -168,7 +168,7 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
 .edge {
     position: absolute;
-    left: 0;
+    right: 0;
     top: 20%;
     bottom: 20%;
     width: 8px;
@@ -176,7 +176,7 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     cursor: pointer;
 
     &:hover {
-        background: linear-gradient(to right, rgba(255, 255, 255, 0.14), transparent);
+        background: linear-gradient(to left, rgba(255, 255, 255, 0.14), transparent);
     }
 }
 

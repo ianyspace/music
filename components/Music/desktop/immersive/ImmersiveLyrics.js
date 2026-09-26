@@ -136,7 +136,9 @@ const ImmersiveLyrics = function ({
         }
         const fit = Math.max(24, Math.min(
             window.innerHeight * 0.088,
-            (window.innerWidth * 0.8) / Math.max(units, 1),
+            // The width budget mirrors the lyrics layer's content box: the
+            // card stack takes the right ~34%, so the line fits in ~55%.
+            (window.innerWidth * 0.55) / Math.max(units, 1),
         ));
         root.style.setProperty('--lyr-fit', `${Math.round(fit)}px`);
     }, [activeIndex]);

@@ -93,7 +93,7 @@ const ImmersiveApp = function ({
 }) {
     const meta = current ? parseTrackName(current.track.name) : null;
     const title = meta ? meta.title : '还没有播放中的歌曲';
-    const artist = meta ? meta.artist : '从左侧歌单挑一首开始';
+    const artist = meta ? meta.artist : '从右侧卡片挑一首开始';
     const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
     const coverUrl = current ? coverUrlOf(current.track) : '';
     const currentId = current ? current.track.id : '';
@@ -368,27 +368,22 @@ const ImmersiveApp = function ({
                 what makes them read as inside the scene, not printed on it. */}
             <ForegroundParticles analyser={analyser} isPlaying={isPlaying} />
 
-            {/* --- left: the playlist --------------------------------------- */}
+            {/* --- right: the floating song-card stack ----------------------- */}
             <PlaylistPanel
                 expanded={panelOpen}
                 onExpand={setPanelOpen}
                 onHoverChange={onPanelHoverChange}
                 listLoading={listLoading}
                 visibleTracks={visibleTracks}
-                search={search}
-                onSearch={onSearch}
-                likedOnly={likedOnly}
-                onToggleLikedOnly={onToggleLikedOnly}
                 current={current}
                 loadingId={loadingId}
                 isPlaying={isPlaying}
                 onToggleTrack={onToggleTrack}
-                isLiked={isLiked}
                 qqBound={qqBound}
                 onOpenAccount={onOpenAccount}
             />
 
-            {/* The summon edge: a hairline strip on the viewport's left. The
+            {/* The summon edge: a hairline strip on the viewport's right. The
                 handle does most of the work; this is for the habit of just
                 throwing the pointer at the edge. */}
             {!panelOpen && (
