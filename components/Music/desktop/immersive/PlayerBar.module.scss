@@ -121,11 +121,10 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     border-radius: 50%;
     padding: 2px;
     background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.35));
-    animation: disc-rotate 9s linear infinite;
-}
-
-.disc-paused {
-    animation-play-state: paused;
+    /* The angle is written every frame from visual/vinylSpin.js — the same
+       value the 3D vinyl preset uses, so both discs agree on speed, angle and
+       on stopping dead the moment playback pauses. */
+    will-change: transform;
 }
 
 .disc-cover {
@@ -144,10 +143,6 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
         object-fit: cover;
         border-radius: 50%;
     }
-}
-
-@keyframes disc-rotate {
-    to { transform: rotate(360deg); }
 }
 
 .label {

@@ -31,6 +31,7 @@ import {
     normalizeHexColor,
 } from './presetData';
 import { applyNeutralEdgeCanvas, buildEdgeAndDepth, makeSquareCoverCanvas } from './coverDepth';
+import { advanceVinyl } from './vinylSpin';
 // 官方 3D 歌词系统: 共享运行时 + 入口 + 每帧调度。
 import {
     applyFx as applyLyricFx,
@@ -1285,7 +1286,10 @@ export default class ParticleStage {
 
         const speedMul = isFinite(Number(this.fx.speed)) ? Math.max(0.05, Number(this.fx.speed)) : 1;
         this.uniforms.uTime.value += dt * speedMul;
-        this.uniforms.uVinylSpin.value = (this.uniforms.uVinylSpin.value + dt * (0.4 + this.smoothBass * 0.09) * speedMul) % (Math.PI * 2);
+        // 唱片预设的转角与播放栏唱盘共用同一个角度源 (见 vinylSpin.js):
+        // 匀速一圈 14 秒, 不在播放时原地停住。以前这里还叠了一层低频加速,
+        // 但那样就和播放栏那个匀速唱盘对不上了。
+        this.uniforms.uVinylSpin.value = advanceVinyl(dt, !!audio.playing);
         this.uniforms.uBass.value = bands.bass;
         this.uniforms.uMid.value = bands.mid;
         this.uniforms.uTreble.value = bands.treble;

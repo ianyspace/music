@@ -18,6 +18,7 @@ import {
 import { formatTime } from '../../shared';
 import Cover from '../../Cover';
 import Marquee from '../../Marquee';
+import { advanceVinyl } from './visual/vinylSpin';
 
 import styles from './PlayerBar.module.scss';
 
@@ -69,6 +70,25 @@ const PlayerBar = function ({
     const mode = shuffle ? 'shuffle' : repeat;
     const playback = MODES[mode] || MODES.off;
 
+    /* --- the disc ---------------------------------------------------------
+       The little disc and the 3D vinyl preset read their angle from the same
+       module, so they turn at the same rate, sit at the same angle, and both
+       stop dead when playback pauses (14 s per revolution). */
+    const discRef = useRef(null);
+    useEffect(() => {
+        let raf = 0;
+        let last = performance.now();
+        const tick = (now) => {
+            const dt = (now - last) / 1000;
+            last = now;
+            const angle = advanceVinyl(dt, isPlaying);
+            if (discRef.current) discRef.current.style.transform = `rotate(${angle}rad)`;
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [isPlaying]);
+
     // --- fullscreen -------------------------------------------------------
     const [fullscreen, setFullscreen] = useState(false);
     useEffect(() => {
@@ -102,7 +122,7 @@ const PlayerBar = function ({
 
             <div className={styles.row}>
                 <span className={styles.track}>
-                    <span className={`${styles.disc}${isPlaying ? '' : ` ${styles['disc-paused']}`}`} aria-hidden="true">
+                    <span className={styles.disc} ref={discRef} aria-hidden="true">
                         <span className={styles['disc-cover']} style={{ background: gradient }}>
                             <Cover track={current ? current.track : null} />
                             {current ? null : <IconNote />}
