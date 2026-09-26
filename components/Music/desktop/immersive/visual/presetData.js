@@ -88,9 +88,9 @@ export const presetIcons = [
 /**
  * 不在网格里出现的预设槽位。
  *
- * 按用户要求下线: 两个「音域回响」(7/8), 以及星球(2)、虚空(3)、安魂(6)、
+ * 按用户要求下线: 两个「音域回响」(7/8), 以及星球(2)、安魂(6)、
  * 月蚀圣环(9)、雨幕霓虹(10)、折光蝶群(11)、深海绽放(12)。
- * 现在网格里只剩 emily 专辑封面(0)、唱片(4)、星河(5)、滚筒(1)。
+ * 现在网格里是 emily 专辑封面(0)、唱片(4)、星河(5)、滚筒(1)、虚空(3)。
  *
  * 之所以保留索引而不是把 presetMeta 数组压紧: 着色器里的 uPreset 就是索引
  * 本身, 压缩数组会让后面所有预设的分支号整体前移 —— 那等于要改一遍
@@ -98,10 +98,11 @@ export const presetIcons = [
  * 存的是索引, 压紧会让老用户的预设悄悄错位。
  */
 export const presetRetired = [
-    2, 3, SONIC_PRESET_INDEX, SONIC_WORKSHOP_PRESET_INDEX, 6, 9, 10, 11, 12,
+    2, SONIC_PRESET_INDEX, SONIC_WORKSHOP_PRESET_INDEX, 6, 9, 10, 11, 12,
 ].sort((a, b) => a - b);
 
-export const presetDisplayOrder = [0, 4, 5, 1];
+// 虚空(3) 排在最后: 它是「关掉粒子, 只留自定义背景」的那一档, 不是常规形态。
+export const presetDisplayOrder = [0, 4, 5, 1, 3];
 
 export const lyricColorPresets = [
     { name: '雾蓝', color: '#a9b8c8' },

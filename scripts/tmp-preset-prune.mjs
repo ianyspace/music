@@ -13,7 +13,7 @@ const URL = 'http://localhost:8913/music/desktop/';
 const CACHE_JSON = readFileSync('E:/code/music/shots/tracks.json', 'utf8');
 
 const serveRoot = mkdtempSync(join(tmpdir(), 'presetserve-'));
-symlinkSync(resolve('.next-preset6'), join(serveRoot, 'music'), 'junction');
+symlinkSync(resolve('.next-preset7'), join(serveRoot, 'music'), 'junction');
 const server = spawn(process.execPath, ['scripts/serve-static.js', serveRoot, '8913'], {
     stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -89,15 +89,35 @@ await send('Page.addScriptToEvaluateOnNewDocument', {
                 configurable: true,
                 get: function () { return _renderer; },
                 set: function (Real) {
-                    var Wrapped = function () {
-                        var r = new (Function.prototype.bind.apply(Real, [null].concat([].slice.call(arguments))))();
-                        var orig = r.render.bind(r);
-                        r.render = function (scene, camera) {
-                            window.__scene = scene;
-                            return orig(scene, camera);
+                        var Wrapped = function () {
+                            var r = new (Function.prototype.bind.apply(Real, [null].concat([].slice.call(arguments))))();
+                            var orig = r.render.bind(r);
+                            r.render = function (scene, camera) {
+                                window.__scene = scene;
+                                var out = orig(scene, camera);
+                                // Sample the framebuffer right after the draw:
+                                // share of non-black pixels tells us whether the
+                                // preset actually puts particles on screen.
+                                if (window.__sample) {
+                                    var gl = r.getContext();
+                                    var w = 300, h = 200;
+                                    var px = new Uint8Array(w * h * 4);
+                                    gl.readPixels(
+                                        Math.floor(gl.drawingBufferWidth / 2 - w / 2),
+                                        Math.floor(gl.drawingBufferHeight / 2 - h / 2),
+                                        w, h, gl.RGBA, gl.UNSIGNED_BYTE, px
+                                    );
+                                    var lit = 0;
+                                    for (var i = 0; i < px.length; i += 4) {
+                                        if (px[i] + px[i + 1] + px[i + 2] > 12) lit += 1;
+                                    }
+                                    window.__sampleResult = +(lit / (w * h)).toFixed(4);
+                                    window.__sample = false;
+                                }
+                                return out;
+                            };
+                            return r;
                         };
-                        return r;
-                    };
                     Wrapped.prototype = Real.prototype;
                     _renderer = Wrapped;
                 }
@@ -150,6 +170,39 @@ console.log('click ->', clicked);
 await sleep(1200);
 console.log('after click 唱片 -> uPreset:', await evalJs(readPreset));
 await shot('preset-record-selected');
+
+const clickedVoid = await evalJs(`(() => {
+    const btns = [...document.querySelectorAll('button')].filter((b) => /card/i.test(b.className));
+    const hit = btns.find((b) => b.textContent.includes('虚空'));
+    if (!hit) return 'no-card';
+    hit.click();
+    return 'clicked 虚空';
+})()`);
+console.log('click ->', clickedVoid);
+await sleep(1200);
+console.log('after click 虚空 -> uPreset:', await evalJs(readPreset));
+await shot('preset-void-selected');
+
+// --- pixel proof: emily lights pixels, 虚空 should not ---------------------
+const sample = async (label) => {
+    await evalJs('window.__sampleResult = null; window.__sample = true; "armed"');
+    await sleep(500);
+    console.log(`lit-pixel share (${label}):`, await evalJs('window.__sampleResult'));
+};
+const clickCard = async (name) => {
+    await evalJs(`(() => {
+        const btns = [...document.querySelectorAll('button')].filter((b) => /card/i.test(b.className));
+        const hit = btns.find((b) => b.textContent.includes(${JSON.stringify(name)}));
+        if (hit) hit.click();
+        return !!hit;
+    })()`);
+    await sleep(1400);
+};
+await clickCard('虚空');
+await sample('虚空');
+await clickCard('emily');
+await sample('emily');
+await shot('preset-emily-selected');
 
 console.log('--- console issues ---');
 console.log(logs.filter((l) => /error|shader|GLSL|WebGLProgram/i.test(l)).slice(0, 8).join('\n') || '(none)');
