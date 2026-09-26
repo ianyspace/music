@@ -85,7 +85,17 @@ export const presetIcons = [
     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"><path d="M12 20c-1-5-7-5-7-10 4 0 6 2 7 5 1-3 3-5 7-5 0 5-6 5-7 10Z"/><path d="M12 15c-3-3-2-7 0-11 2 4 3 8 0 11Z"/><circle cx="12" cy="15" r="1.2" fill="currentColor" stroke="none"/></svg>',
 ];
 
-export const presetDisplayOrder = [0, 9, 10, 11, 12, 6, 7, 8, 5, 4, 2, 1, 3];
+/**
+ * 不在网格里出现的预设槽位。
+ *
+ * 这两个是「音域回响」(Sonic-Topography / Wallpaper Engine), 按用户要求下线。
+ * 之所以保留索引而不是把 presetMeta 数组压紧: 着色器里的 uPreset 就是索引
+ * 本身, 压缩数组会让后面所有预设的分支号整体前移 —— 那等于要改一遍
+ * PARTICLE_VERTEX_SHADER 里的每一 comparing。留空槽位成本为零。
+ */
+export const presetHidden = [SONIC_PRESET_INDEX, SONIC_WORKSHOP_PRESET_INDEX];
+
+export const presetDisplayOrder = [0, 9, 10, 11, 12, 6, 5, 4, 2, 1, 3];
 
 export const lyricColorPresets = [
     { name: '雾蓝', color: '#a9b8c8' },
@@ -114,6 +124,8 @@ export const lyricColorPresets = [
  */
 export const fxDefaults = {
     preset: 0,
+    // 官方 3D 歌词(场景内 mesh)总开关。关掉后回退到 DOM 歌词层。
+    particleLyrics: true,
     intensity: 0.85,
     cinemaShake: 0.5,
     depth: 0.2,
@@ -263,6 +275,8 @@ export const normalizeFx = function (raw) {
         out[key] = source[key];
     });
     out.preset = clampRange(Math.round(Number(out.preset) || 0), 0, presetMeta.length - 1);
+    // 已下线的预设如果在旧存档里, 回到默认的那一张, 不要选中看不见的槽位。
+    if (presetHidden.includes(out.preset)) out.preset = fxDefaults.preset;
     out.intensity = clampRange(Number(out.intensity), 0, 2);
     out.cinemaShake = clampRange(Number(out.cinemaShake), 0, 1);
     out.depth = clampRange(Number(out.depth), 0, 2);
@@ -279,62 +293,3 @@ export const normalizeFx = function (raw) {
     out.foregroundFpsMode = normalizeForegroundFpsMode(out.foregroundFpsMode);
     return out;
 };
-
-/** 存档分享用的字段白名单。 */
-export const FX_SHARE_KEYS = [
-    'preset',
-    'intensity',
-    'cinemaShake',
-    'depth',
-    'coverResolution',
-    'point',
-    'speed',
-    'twist',
-    'color',
-    'scatter',
-    'bgFade',
-    'bloomStrength',
-    'lyricGlowStrength',
-    'lyricBackgroundAdapt',
-    'lyricScale',
-    'lyricOffsetX',
-    'lyricOffsetY',
-    'lyricOffsetZ',
-    'lyricTiltX',
-    'lyricTiltY',
-    'lyricCameraLock',
-    'lyricColorMode',
-    'lyricColor',
-    'lyricHighlightMode',
-    'lyricHighlightColor',
-    'lyricGlowLinked',
-    'lyricGlowColor',
-    'lyricDisplayMode',
-    'lyricTranslationMode',
-    'lyricMotionStyle',
-    'lyricCustomLineCount',
-    'lyricGlitchCameraBind',
-    'lyricGlitchIntensity',
-    'lyricGlitchSlice',
-    'lyricGlitchChroma',
-    'lyricGlitchRate',
-    'lyricGlitchJitter',
-    'lyricContextOpacity',
-    'lyricContextSpread',
-    'lyricTranslationGap',
-    'lyricTranslationScale',
-    'lyricTranslationOpacity',
-    'lyricEdgeFade',
-    'lyricMotionSoftness',
-    'lyricFont',
-    'lyricLetterSpacing',
-    'lyricLineHeight',
-    'lyricWeight',
-    'visualTintMode',
-    'visualTintColor',
-    'uiAccentColor',
-    'backgroundColorMode',
-    'backgroundColor',
-    'backgroundOpacity',
-    'backgroundGlassOpacity',
-];

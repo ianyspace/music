@@ -105,6 +105,21 @@ const ImmersiveApp = function ({
         : -1;
     const canToggleLyrics = Boolean(lyrics) || lyricsLoading;
 
+    // 官方 3D 歌词按 audio.currentTime 自己找当前行, 这里给它一份稳定的
+    // 播放进度读取器 (ref 捕获, 不会让舞台重建)。
+    const playbackRef = useRef({ progress, isPlaying, currentId });
+    playbackRef.current = { progress, isPlaying, currentId };
+    const getPlayback = useCallback(function () {
+        const element = audioRef && audioRef.current;
+        const live = playbackRef.current;
+        return {
+            currentTime: element ? element.currentTime : (live.progress ? live.progress.time : 0),
+            duration: element && element.duration ? element.duration : (live.progress ? live.progress.duration : 0),
+            playing: Boolean(live.isPlaying),
+            src: live.currentId || '',
+        };
+    }, [audioRef]);
+
     /* --- the page's stored preferences ---------------------------------- */
 
     const [bgMode, setBgMode] = useState('nebula');
@@ -352,6 +367,8 @@ const ImmersiveApp = function ({
                     fx={fx}
                     palette={activePalette}
                     analyser={analyser}
+                    lyrics={lyrics}
+                    getPlayback={getPlayback}
                 />
             </>
         );
@@ -383,8 +400,10 @@ const ImmersiveApp = function ({
                 </div>
             ))}
 
-            {/* --- centered lyrics ------------------------------------------ */}
-            {lyricsShown && (
+            {/* --- centered lyrics ------------------------------------------
+                官方歌词是 three.js 场景里的 mesh (见 visual/lyrics/), 开启时
+                DOM 歌词层必须让位, 否则会出现两份歌词且位置不一致。 */}
+            {lyricsShown && fx.particleLyrics === false && (
                 <ImmersiveLyrics
                     lyrics={lyrics}
                     lyricsLoading={lyricsLoading}
@@ -404,7 +423,7 @@ const ImmersiveApp = function ({
             {/* The lyric star river: sparks living in the words' own band of
                 the frame. It sits above the lyrics and under the ambient
                 veil, so the words read as lit from inside the scene. */}
-            {lyricsShown && fx.lyricGlow && (
+            {lyricsShown && fx.particleLyrics === false && fx.lyricGlow && (
                 <LyricStarRiver
                     analyser={analyser}
                     isPlaying={isPlaying}
@@ -508,7 +527,6 @@ const ImmersiveApp = function ({
                 onPreset={(value) => setFx((prev) => ({ ...prev, preset: value }))}
                 fx={fx}
                 onFx={(key, value) => setFx((prev) => ({ ...prev, [key]: value }))}
-                onReplaceFx={setFx}
                 palette={activePalette}
             />
 

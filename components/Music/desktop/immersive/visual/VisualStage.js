@@ -38,14 +38,18 @@ const ensureThree = function () {
  * 歌曲来源、播放、音量全部沿用上层现有的逻辑, 这里只接收「封面图」和
  * 「当前频段」两个输入 —— 换可视化引擎不影响任何播放行为。
  */
-const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, className }) {
+const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, lyrics, getPlayback, className }) {
     const hostRef = useRef(null);
     const stageRef = useRef(null);
     const audioRef = useRef({ analyser, isPlaying });
     const fxRef = useRef(fx);
+    const playbackRef = useRef(getPlayback);
+    const lyricsRef = useRef(lyrics);
 
     audioRef.current = { analyser, isPlaying };
     fxRef.current = fx;
+    playbackRef.current = getPlayback;
+    lyricsRef.current = lyrics;
 
     // 每帧读一次频谱, 顺便跑节拍检测。放在这里而不是引擎里, 是为了让
     // 频谱读取和本项目现有的 analyser / beat 模块保持唯一来源。
@@ -56,7 +60,9 @@ const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, clas
         audioSamplerRef.current = () => {
             const live = audioRef.current;
             if (!live.analyser) {
-                return { low: 0, mid: 0, high: 0, level: 0, beat: false, beatAmp: 0, playing: false };
+                // 没接上 Web Audio 图也要把播放状态报上去 —— 歌词系统靠它
+                // 区分「暂停保留」和「空闲退场」, 与频谱是否可用无关。
+                return { low: 0, mid: 0, high: 0, level: 0, beat: false, beatAmp: 0, playing: Boolean(live.isPlaying) };
             }
             if (!reader || reader.analyser !== live.analyser) reader = createBandReader(live.analyser);
             const sample = readBands(reader);
@@ -82,12 +88,15 @@ const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, clas
                 const stage = new ParticleStage(THREE, hostRef.current, {
                     fx: fxRef.current,
                     readAudio: () => audioSamplerRef.current(),
+                    readPlayback: () => (playbackRef.current ? playbackRef.current() : null),
                 });
                 stageRef.current = stage;
                 if (palette) {
                     stage.palette = palette;
+                    stage.applyLyricPalette(palette);
                     stage.syncFxUniforms();
                 }
+                if (lyricsRef.current) stage.setLyrics(lyricsRef.current);
             })
             .catch((err) => {
                 console.warn('[VisualStage] three.js unavailable:', err);
@@ -109,6 +118,14 @@ const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, clas
         if (!stage) return;
         stage.setFx(fx, palette);
     }, [fx, palette]);
+
+    // 换歌时重新灌入歌词。官方歌词是「拉取式」: 只认 runtime 里的行数组
+    // 与 audio.currentTime, 所以这里只负责换数据, 不负责推进。
+    useEffect(() => {
+        const stage = stageRef.current;
+        if (!stage) return;
+        stage.setLyrics(lyrics);
+    }, [lyrics]);
 
     useEffect(() => {
         const stage = stageRef.current;

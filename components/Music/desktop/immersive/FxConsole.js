@@ -1,7 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React from 'react';
 
 import {
-    FX_SHARE_KEYS,
     lyricColorPresets,
     normalizeFx,
     presetDisplayOrder,
@@ -187,40 +186,8 @@ const ColorPick = function ({ label, value, onChange, swatches }) {
     );
 };
 
-const FxConsole = function ({ preset, onPreset, fx, onFx, onReplaceFx, palette }) {
-    const [archiveText, setArchiveText] = useState('');
-    const [notice, setNotice] = useState('');
-    const fileRef = useRef(null);
+const FxConsole = function ({ preset, onPreset, fx, onFx, palette }) {
     const presetOrder = presetDisplayOrder.filter((id) => id >= 0 && id < presetMeta.length);
-
-    const shareCode = () => {
-        const payload = {};
-        FX_SHARE_KEYS.forEach((key) => {
-            if (fx[key] !== undefined) payload[key] = fx[key];
-        });
-        return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-    };
-
-    const exportArchive = () => {
-        const blob = new Blob([JSON.stringify(fx, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'mineradio-fx-archive.json';
-        a.click();
-        URL.revokeObjectURL(url);
-        setNotice('已导出当前参数');
-    };
-
-    const importArchive = (text) => {
-        try {
-            const parsed = normalizeFx(JSON.parse(text));
-            onReplaceFx(parsed);
-            setNotice('已导入参数');
-        } catch (err) {
-            setNotice('导入失败: 不是有效的参数文件');
-        }
-    };
 
     return (
         <>
@@ -394,61 +361,6 @@ const FxConsole = function ({ preset, onPreset, fx, onFx, onReplaceFx, palette }
                 <Seg label="帧率" value={fx.foregroundFpsMode} choices={FPS_CHOICES} onChange={(value) => onFx('foregroundFpsMode', value)} />
             </section>
 
-            <section className={styles.section}>
-                <h3 className={styles.title}>存档</h3>
-                <div className={styles.actions}>
-                    <button type="button" className={styles.btn} onClick={exportArchive}>导出文件</button>
-                    <button type="button" className={styles.btn} onClick={() => fileRef.current && fileRef.current.click()}>导入文件</button>
-                    <button
-                        type="button"
-                        className={styles.btn}
-                        onClick={() => {
-                            const code = shareCode();
-                            if (navigator.clipboard) navigator.clipboard.writeText(code);
-                            setArchiveText(code);
-                            setNotice('分享码已复制');
-                        }}
-                    >
-                        复制分享码
-                    </button>
-                    <button
-                        type="button"
-                        className={styles.btn}
-                        onClick={() => {
-                            try {
-                                const json = atob(archiveText.trim());
-                                importArchive(decodeURIComponent(escape(json)));
-                            } catch (err) {
-                                setNotice('分享码无效');
-                            }
-                        }}
-                    >
-                        导入分享码
-                    </button>
-                </div>
-                <textarea
-                    className={styles.textarea}
-                    value={archiveText}
-                    placeholder="粘贴分享码后点「导入分享码」"
-                    onChange={(event) => setArchiveText(event.target.value)}
-                    rows={3}
-                />
-                <input
-                    ref={fileRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className={styles.hiddenFile}
-                    onChange={(event) => {
-                        const file = event.target.files && event.target.files[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = () => importArchive(String(reader.result || ''));
-                        reader.readAsText(file);
-                        event.target.value = '';
-                    }}
-                />
-                {notice ? <p className={styles.note}>{notice}</p> : null}
-            </section>
         </>
     );
 };

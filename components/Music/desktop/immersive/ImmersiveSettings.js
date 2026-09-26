@@ -51,7 +51,6 @@ const ImmersiveSettings = function ({
     onPreset,
     fx,
     onFx,
-    onReplaceFx,
     palette,
 }) {
     const rootRef = useRef(null);
@@ -206,7 +205,6 @@ const ImmersiveSettings = function ({
                     onPreset={onPreset}
                     fx={fx}
                     onFx={onFx}
-                    onReplaceFx={onReplaceFx}
                     palette={palette}
                 />
 

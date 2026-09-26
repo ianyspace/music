@@ -31,6 +31,29 @@ import {
     normalizeHexColor,
 } from './presetData';
 import { applyNeutralEdgeCanvas, buildEdgeAndDepth, makeSquareCoverCanvas } from './coverDepth';
+// 官方 3D 歌词系统: 共享运行时 + 入口 + 每帧调度。
+import {
+    applyFx as applyLyricFx,
+    bindStage,
+    setAudioFrame,
+    setLyricsPayload,
+    setLyricSunEnergy,
+} from './lyrics/runtime';
+import { stageLyrics as lyricState } from './lyrics/02-state-layout';
+// 命名空间引入: 同步兜底要读 runtime 里的活跃绑定 (歌词行/播放状态)。
+import * as lyricRuntime from './lyrics/runtime';
+import { createLyricsParticles, updateLyricStarRiver } from './lyrics/03-star-river';
+import { setStageLyricPalette } from './lyrics/07-palette-utils';
+import {
+    clearStageLyrics,
+    disposeLyricsParticles,
+    invalidateStageLyricPayloadForNewLyrics,
+    showStageLine,
+    tickLyricsParticles,
+    updateStageLyrics3D,
+    buildStageLyricPlaybackPayload,
+    findStageLyricIndexAtTime,
+} from './lyrics/14-stage-rendering';
 
 const PLANE_SIZE = 4.8;
 const RIPPLE_MAX = 12;
@@ -274,6 +297,14 @@ export default class ParticleStage {
 
         this.buildStarRiver();
         this.bindPointer();
+
+        // 官方 3D 歌词系统的所有模块都从 runtime 里取 scene/camera/renderer/
+        // THREE, 这里把本引擎的这几个对象交给它 —— 歌词因此和粒子在同一个
+        // 场景、同一个相机里, 才有原版那种透视与居中。
+        bindStage(THREE, this.scene, this.camera, this.renderer, this.uniforms);
+        applyLyricFx(this.fx);
+        createLyricsParticles();
+
         this.syncFxUniforms();
         this.setPreset(Number(this.fx.preset) || 0, { silent: true, preserveCamera: true });
 
@@ -584,13 +615,61 @@ export default class ParticleStage {
         const prevResolution = normalizeCoverResolution(this.fx.coverResolution);
         const prevPreset = Number(this.fx.preset) || 0;
         this.fx = fx;
-        if (palette !== undefined) this.palette = palette;
+        // 歌词系统读的是 runtime 里那份 fx 对象, 控制台改参数要同步过去。
+        applyLyricFx(fx);
+        if (palette !== undefined) {
+            this.palette = palette;
+            this.applyLyricPalette(palette);
+        }
         const nextResolution = normalizeCoverResolution(fx.coverResolution);
         if (nextResolution !== prevResolution) this.applyCoverResolution();
         this.applyPixelRatio();
         this.uniforms.uPixel.value = this.renderer.getPixelRatio();
         if ((Number(fx.preset) || 0) !== prevPreset) this.setPreset(fx.preset);
         this.syncFxUniforms();
+    }
+
+    /**
+     * 歌词数据入口。本项目的行是 { time, text }, 上游是 { t, text }, 这里
+     * 换算一次。数组就地改写 —— 移植过来的模块 import 的是同一个引用。
+     */
+    setLyrics(lyrics, fallbackText) {
+        const timed = lyrics && lyrics.timed ? lyrics.timed : false;
+        const raw = (lyrics && lyrics.lines) || [];
+        const lines = raw.map((line) => ({
+            t: Number(line.time) || 0,
+            text: String(line.text || ''),
+            source: 'lrc',
+            charCount: String(line.text || '').length,
+        }));
+        // 无时间轴的歌词 (纯文本) 交给上游的逐行兜底: 让它按时间平铺。
+        if (!timed && lines.length) {
+            const span = Math.max(1, lines.length) * 4;
+            lines.forEach((line, i) => {
+                line.t = (i * span) / lines.length;
+            });
+        }
+        setLyricsPayload(lines, [], false, lines.length > 0, String(fallbackText || ''));
+        invalidateStageLyricPayloadForNewLyrics('track-switch');
+    }
+
+    /** 封面取色同步到歌词。本项目的调色板是 0..1 浮点数组, 上游要 CSS 串。 */
+    applyLyricPalette(palette) {
+        if (!palette) return;
+        const css = (rgb, alpha) => {
+            if (!Array.isArray(rgb)) return null;
+            const c = rgb.map((v) => Math.round(clamp01(Number(v) || 0) * 255));
+            return alpha == null ? `rgb(${c[0]}, ${c[1]}, ${c[2]})` : `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
+        };
+        const primary = css(palette.primary);
+        if (!primary) return;
+        setStageLyricPalette({
+            primary,
+            secondary: css(palette.secondary) || primary,
+            highlight: css(palette.accent) || 'rgb(238, 247, 255)',
+            glow: css(palette.primary, 0.3),
+            shadow: 'rgba(2, 8, 12, 0.42)',
+        }, { durationMs: 520 });
     }
 
     applyCoverResolution() {
@@ -1008,6 +1087,28 @@ export default class ParticleStage {
         const audio = (this.options.readAudio && this.options.readAudio()) || { low: 0, mid: 0, high: 0, level: 0, beat: false, beatAmp: 0, playing: false };
         const bands = this.stepAudio(dt, audio, !!audio.playing);
 
+        // 把这一帧的分析结果交给歌词系统的共享运行时。上游在 11-main-loop.js
+        // 里写的是同一批全局变量 (audio.currentTime / bass / beatPulse ...)。
+        const playback = (this.options.readPlayback && this.options.readPlayback()) || null;
+        setAudioFrame({
+            currentTime: playback ? playback.currentTime : 0,
+            duration: playback ? playback.duration : 0,
+            paused: playback ? !playback.playing : true,
+            ended: false,
+            src: playback ? playback.src : '',
+            playing: !!audio.playing,
+            bass: bands.bass,
+            mid: bands.mid,
+            high: bands.treble,
+            beatPulse: bands.beat,
+            camPunch: this.camPunch,
+            radiusKick: this.beatCam.radiusKick,
+            thetaKick: this.beatCam.thetaKick,
+            phiKick: this.beatCam.phiKick,
+            rollKick: this.beatCam.rollKick,
+        });
+        setLyricSunEnergy(bands.bass * 0.7 + bands.treble * 0.3);
+
         this.cinemaT += dt * 60;
         this.camPunch *= 0.9;
         this.beatCam.thetaKick *= 0.86;
@@ -1041,7 +1142,49 @@ export default class ParticleStage {
         this.applyCamera(dt);
         this.updateStarRiver(dt);
 
+        // 官方歌词: 先按播放时间决定该显示哪一行 (tick), 再跑这一帧的
+        // 进出场/呼吸/glitch 动画 (update)。顺序与上游 main-loop 一致。
+        if (this.fx.particleLyrics !== false) {
+            tickLyricsParticles();
+            updateStageLyrics3D(dt);
+            updateLyricStarRiver(dt);
+            this.tickLyricSyncFallback(dt);
+        }
+
         this.renderer.render(this.scene, this.camera);
+    }
+
+    /**
+     * 同步构建兜底。
+     *
+     * 上游歌词靠「预热 → 协作构建 → 就绪换装」的让位式状态机出字, 它默认
+     * 渲染循环由桌面客户端驱动、预热定时器不会被 playback tick 抢占。本项目
+     * 的 tick 在 rAF 里跑, 空闲让位状态机有概率一直等不到执行窗口 (表现为
+     * 有词但不出字)。这里做保险: 歌词就绪、正在播放、1.5s 仍无当前行 mesh
+     * 时, 直接同步构建并上屏 —— 走的是上游自带的同步路径, 不改它的状态机。
+     */
+    tickLyricSyncFallback(dt) {
+        const st = lyricState;
+        const hasLines = Array.isArray(lyricRuntime.lyricsLines) && lyricRuntime.lyricsLines.length > 0;
+        const busy = Boolean(st.current) || (Array.isArray(st.outgoing) && st.outgoing.length > 0);
+        if (!hasLines || !lyricRuntime.playing || busy) {
+            this.lyricVoidMs = 0;
+            return;
+        }
+        this.lyricVoidMs = (this.lyricVoidMs || 0) + dt;
+        if (this.lyricVoidMs < 1.5) return;
+        this.lyricVoidMs = 0;
+        try {
+            const t = lyricRuntime.audio && isFinite(lyricRuntime.audio.currentTime)
+                ? Math.max(0, Number(lyricRuntime.audio.currentTime))
+                : 0;
+            const idx = findStageLyricIndexAtTime(t);
+            if (idx < 0) return;
+            const payload = buildStageLyricPlaybackPayload(idx);
+            if (payload) showStageLine(payload, true);
+        } catch (e) {
+            /* 兜底失败不致命, 下个周期重试 */
+        }
     }
 
     updateStarRiver(dt) {
@@ -1086,6 +1229,14 @@ export default class ParticleStage {
         window.removeEventListener('mouseup', this.onPointerUp);
         this.canvas.removeEventListener('wheel', this.onWheel);
         this.canvas.removeEventListener('dblclick', this.onDblClick);
+        // 歌词层的纹理/几何不在 scene.traverse 的常规回收里 (有大量自建
+        // canvas 纹理与协作构建队列), 走上游自己的释放入口。
+        try {
+            clearStageLyrics();
+            disposeLyricsParticles();
+        } catch (err) {
+            /* 释放失败不影响卸载 */
+        }
         this.scene.traverse((obj) => {
             if (obj.geometry) obj.geometry.dispose();
             if (obj.material) obj.material.dispose();
