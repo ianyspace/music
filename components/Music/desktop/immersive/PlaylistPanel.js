@@ -82,20 +82,10 @@ const PlaylistPanel = function ({
                 onPointerLeave={() => onHoverChange(false)}
                 aria-label="歌曲列表"
             >
-                {/* The header is just the fold now — no mark, no count. */}
-                <div className={styles.bar}>
-                    <button
-                        type="button"
-                        className={styles.fold}
-                        onClick={() => onExpand(false)}
-                        aria-label="收起歌单"
-                        aria-expanded={expanded}
-                        title="收起"
-                    >
-                        <span className={styles['fold-glyph']} aria-hidden="true">«</span>
-                    </button>
-                </div>
-
+                {/* No header row: the mark, the count and the fold button are
+                    all gone. Folding is time-based — the page's hide timer and
+                    the 自动收起 switch do it, and the edge handle brings the
+                    column back. */}
                 {total === 0 ? (
                     <p className={styles.empty}>
                         {listLoading ? '曲库加载中…' : '还没有歌曲'}

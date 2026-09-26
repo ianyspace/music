@@ -14,8 +14,10 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
 .stage {
     position: absolute;
-    top: 88px;
-    bottom: 124px;
+    /* 40/110: 顶上基本贴着画面上沿(和右上角齿轮大致同一带), 底下只给播放栏
+       留刚好的余量, 让这一列尽量吃满高度。 */
+    top: 40px;
+    bottom: 110px;
     left: 28px;
     width: 316px;
     display: flex;
@@ -35,45 +37,14 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     pointer-events: none;
 }
 
-/* --- the header row ------------------------------------------------------ */
-
-/* The logo and the "N 首" counter both lived here; the mark was also the only
-   way into 账号. Both are gone — 账号 moved into the settings popover under
-   账号, and the count was noise once the panel stopped being a card. What is
-   left is the fold, pushed to the trailing end. */
-.bar {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 4px 6px 12px;
-}
-
-.fold {
-    width: 28px;
-    height: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.75);
-    cursor: pointer;
-    transition: background 150ms ease-out, color 150ms ease-out;
-
-    &:hover {
-        background: rgba(255, 255, 255, 0.14);
-        color: #fff;
-    }
-}
-
-.fold-glyph {
-    font-size: 14px;
-    line-height: 1;
-}
+/* There is no header row any more: the mark, the "N 首" counter and the fold
+   button all lived there and all are gone. Folding is time-based (the page's
+   hide timer plus the 自动收起 switch), and the edge handle brings the column
+   back. */
 
 .empty {
     margin: 0;
-    padding: 26px 10px;
+    padding: 26px 12px;
     text-align: center;
     font-size: 13px;
     color: rgba(255, 255, 255, 0.5);
@@ -84,7 +55,9 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 .list {
     flex: 1;
     margin: 0;
-    padding: 0 2px 4px 0;
+    /* 左右各留 8px: 行的高光要往两侧铺出到这块 padding 里再渐隐, 不预留会
+       被 overflow-y 顺带算出来的 overflow-x:auto 裁掉。 */
+    padding: 0 8px 4px;
     list-style: none;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -108,21 +81,52 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 /* --- the row -------------------------------------------------------------- */
 
 .row {
+    position: relative;
+    /* The wash is a positioned pseudo-element, so without this it would paint
+       *over* the row's own text. Isolating makes z-index:-1 mean "behind my
+       content" instead of "behind my ancestors". */
+    isolation: isolate;
     display: flex;
     align-items: center;
     gap: 12px;
     width: 100%;
     padding: 8px 10px;
     border: 0;
-    border-radius: 13px;
+    /* No radius: the highlight is not a pill with two sealed ends, it is a
+       wash that runs off both edges. */
+    border-radius: 0;
     background: transparent;
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transition: background 160ms ease-out;
 
-    &:hover {
-        background: rgba(255, 255, 255, 0.08);
+    /* The wash itself. It is a layer rather than the row's own background so
+       that (a) it can spill 8px past the row on both sides into the list's
+       padding and (b) only its opacity animates — a gradient swap would snap.
+       Left and right fade to nothing, which is what reads as a mask rather
+       than a card. */
+    &::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -8px;
+        right: -8px;
+        z-index: -1;
+        background: linear-gradient(
+            to right,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.2) 16%,
+            rgba(255, 255, 255, 0.2) 84%,
+            rgba(255, 255, 255, 0) 100%
+        );
+        opacity: 0;
+        transition: opacity 180ms ease-out;
+        pointer-events: none;
+    }
+
+    &:hover::before {
+        opacity: 0.45;
     }
 
     &:disabled {
@@ -130,12 +134,12 @@ $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
     }
 }
 
-.row-active {
-    background: rgba(255, 255, 255, 0.1);
+.row-active::before {
+    opacity: 0.6;
+}
 
-    &:hover {
-        background: rgba(255, 255, 255, 0.13);
-    }
+.row-active:hover::before {
+    opacity: 0.82;
 }
 
 .thumb {

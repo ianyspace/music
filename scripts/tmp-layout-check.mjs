@@ -106,9 +106,48 @@ const column = await evalJs(`(() => {
 })()`);
 console.log('column shell        ->', column, '(expect transparent / 0px none / 0px / none / none)');
 
-// --- 3. no mark, no count ----------------------------------------------------
+// --- 3. no mark, no count, no fold button ------------------------------------
 console.log('mark elements       ->', await evalJs(`document.querySelectorAll('[class*="_mark__"]').length`), '(expect 0)');
 console.log('"N 首" text         ->', await evalJs(`/\\d+\\s*首/.test(document.body.innerText) ? 'present' : 'absent'`), '(expect absent)');
+console.log('fold button         ->', await evalJs(`document.querySelectorAll('button[aria-label="收起歌单"]').length`), '(expect 0)');
+
+// --- 3b. the column's vertical framing --------------------------------------
+console.log('column rect         ->', await evalJs(`(() => {
+    const el = document.querySelector('[aria-label="歌曲列表"]');
+    if (!el) return 'no-column';
+    const r = el.getBoundingClientRect();
+    return JSON.stringify({ top: Math.round(r.top), bottomGap: Math.round(window.innerHeight - r.bottom) });
+})()`), '(expect top 40, bottomGap 110)');
+
+// --- 3c. the row highlight: no closed radius, feathered both ends -----------
+const rowStyle = await evalJs(`(() => {
+    const row = document.querySelector('[aria-label="歌曲列表"] ul button');
+    if (!row) return 'no-row';
+    const s = getComputedStyle(row);
+    const b = getComputedStyle(row, '::before');
+    return JSON.stringify({
+        radius: s.borderTopLeftRadius,
+        washOpacityIdle: b.opacity,
+        washGradient: (b.backgroundImage || '').slice(0, 120),
+        washInset: b.left + ' / ' + b.right,
+    });
+})()`);
+console.log('row idle            ->', rowStyle, '(expect radius 0px, opacity 0, gradient, -8px / -8px)');
+
+const hoverOpacity = await evalJs(`(() => {
+    const row = document.querySelector('[aria-label="歌曲列表"] ul button');
+    if (!row) return 'no-row';
+    const r = row.getBoundingClientRect();
+    return JSON.stringify({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) });
+})()`);
+const hoverAt = JSON.parse(hoverOpacity);
+await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverAt.x, y: hoverAt.y, button: 'none' });
+await sleep(400);
+console.log('row hovered ::before->', await evalJs(`(() => {
+    const row = document.querySelector('[aria-label="歌曲列表"] ul button');
+    return row ? getComputedStyle(row, '::before').opacity : 'no-row';
+})()`), '(expect > 0 — the wash is on)');
+await shot('layout-row-hover');
 
 // --- 4. the play bar: no volume, no gear ------------------------------------
 console.log('volume input        ->', await evalJs(`document.querySelectorAll('input[aria-label="音量"]').length`), '(expect 0)');
