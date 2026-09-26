@@ -225,6 +225,117 @@ const hexToRgb = function (gradient) {
     return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
 };
 
+// --- cover loading: cache, timeout, retry --------------------------------
+//
+// The covers live on an r2.dev bucket whose reachability is *intermittent*
+// (measured: 200 in 2.3 s one minute, dead the next — classic from-here
+// Cloudflare flakiness). The first loader fired exactly one `Image` request;
+// any transient failure stranded the nebula on the tint fallback for the
+// whole session, which read as "the nebula is a coloured ball, not the
+// cover". So now:
+//   1. a successfully sampled cover is downscaled into a dataURL and kept
+//      in localStorage, keyed by URL — after one good load the portrait
+//      survives even a fully dead network;
+//   2. a network load retries with backoff and every attempt is fenced by
+//      a timeout, because an `Image` that neither fires load nor error
+//      would otherwise hang the fallback forever.
+
+const COVER_CACHE_PREFIX = 'music.nebula-cover.';
+const COVER_CACHE_MAX_SIDE = 128;
+
+const coverCacheGet = function (url) {
+    try {
+        return localStorage.getItem(COVER_CACHE_PREFIX + url);
+    } catch (error) {
+        return null;
+    }
+};
+
+const coverCachePut = function (url, image) {
+    let dataUrl = '';
+    try {
+        const side = Math.min(COVER_CACHE_MAX_SIDE, Math.max(image.naturalWidth, image.naturalHeight) || COVER_CACHE_MAX_SIDE);
+        const canvas = document.createElement('canvas');
+        canvas.width = side;
+        canvas.height = side;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(image, 0, 0, side, side);
+        dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+    } catch (error) {
+        return; // tainted or undecodable — nothing worth keeping
+    }
+    try {
+        localStorage.setItem(COVER_CACHE_PREFIX + url, dataUrl);
+    } catch (error) {
+        // Quota: drop one older entry and try once more, else give up —
+        // the cache is an accelerator, never a requirement.
+        try {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i += 1) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(COVER_CACHE_PREFIX)) keys.push(key);
+            }
+            if (keys.length) localStorage.removeItem(keys[0]);
+            localStorage.setItem(COVER_CACHE_PREFIX + url, dataUrl);
+        } catch (ignored) {
+            /* skip */
+        }
+    }
+};
+
+/** One `Image` load, fenced by a timeout. Resolves the image or null. */
+const loadImageFenced = function (url, timeoutMs) {
+    return new Promise((resolve) => {
+        const image = new Image();
+        // Before `src`, or the request goes out without CORS and the canvas
+        // comes back tainted.
+        image.crossOrigin = 'anonymous';
+        let settled = false;
+        const done = (result) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timer);
+            image.onload = null;
+            image.onerror = null;
+            resolve(result);
+        };
+        const timer = window.setTimeout(() => {
+            image.src = ''; // abort an in-flight request
+            done(null);
+        }, timeoutMs);
+        image.onload = () => done(image);
+        image.onerror = () => done(null);
+        image.src = url;
+    });
+};
+
+const sleep = (ms) => new Promise((resolve) => { window.setTimeout(resolve, ms); });
+
+/**
+ * The nebula's cover, by whatever route works. Cache first (instant, works
+ * offline), then up to three network attempts at 0 / 1.5 s / 4 s, each
+ * fenced at 12 s. Resolves an `HTMLImageElement` or null — null means the
+ * caller renders the tint fallback.
+ */
+const loadCoverResilient = async function (url) {
+    const cached = coverCacheGet(url);
+    if (cached) {
+        const cachedImage = await loadImageFenced(cached, 4000);
+        if (cachedImage) return cachedImage;
+    }
+    const backoffs = [0, 1500, 4000];
+    for (let attempt = 0; attempt < backoffs.length; attempt += 1) {
+        if (backoffs[attempt]) await sleep(backoffs[attempt]);
+        const image = await loadImageFenced(url, 12_000);
+        if (image) {
+            coverCachePut(url, image);
+            return image;
+        }
+    }
+    return null;
+};
+
 /** Ambient dust: a wide, deep disc of faint points tinted by the song. */
 const dustField = function (tint) {
     const targets = new Float32Array(DUST_COUNT * 3);
@@ -487,39 +598,36 @@ const NebulaCanvas = function ({
         const dust = dustField(tint);
         upload(dust, dustBuffers);
 
-        let cloudImage = null;
+        const renderFallbackCloud = function () {
+            upload(circleTargets(tint), cloudBuffers);
+            cloudCount = 30_000;
+            startedAt = performance.now();
+        };
+        const renderCoverCloud = function (image) {
+            const data = coverTargets(image);
+            cloudAspect = image.naturalWidth / image.naturalHeight || 1;
+            if (data) {
+                upload(data, cloudBuffers);
+                cloudCount = data.count;
+            } else {
+                renderFallbackCloud();
+            }
+            startedAt = performance.now();
+        };
         const loadCloud = function () {
             cloudCount = 0;
             if (!coverUrl) {
-                upload(circleTargets(tint), cloudBuffers);
-                cloudCount = 30_000;
-                startedAt = performance.now();
+                renderFallbackCloud();
                 return;
             }
-            cloudImage = new Image();
-            // Before `src`, or the request goes out without CORS and the
-            // canvas comes back tainted.
-            cloudImage.crossOrigin = 'anonymous';
-            cloudImage.onload = () => {
+            // Async and guarded by `dead`: a slow cover load resolving after
+            // a song change (the effect re-ran) must not touch the buffers.
+            (async () => {
+                const image = await loadCoverResilient(coverUrl);
                 if (dead) return;
-                const data = coverTargets(cloudImage);
-                cloudAspect = cloudImage.naturalWidth / cloudImage.naturalHeight || 1;
-                if (data) {
-                    upload(data, cloudBuffers);
-                    cloudCount = data.count;
-                } else {
-                    upload(circleTargets(tint), cloudBuffers);
-                    cloudCount = 30_000;
-                }
-                startedAt = performance.now();
-            };
-            cloudImage.onerror = () => {
-                if (dead) return;
-                upload(circleTargets(tint), cloudBuffers);
-                cloudCount = 30_000;
-                startedAt = performance.now();
-            };
-            cloudImage.src = coverUrl;
+                if (image) renderCoverCloud(image);
+                else renderFallbackCloud();
+            })();
         };
         loadCloud();
 
@@ -669,10 +777,6 @@ const NebulaCanvas = function ({
             window.removeEventListener('pointermove', onPointerMove);
             if (observer) observer.disconnect();
             else window.removeEventListener('resize', resize);
-            if (cloudImage) {
-                cloudImage.onload = null;
-                cloudImage.onerror = null;
-            }
             gl.deleteBuffer(dustBuffers.target);
             gl.deleteBuffer(dustBuffers.color);
             gl.deleteBuffer(dustBuffers.seed);
