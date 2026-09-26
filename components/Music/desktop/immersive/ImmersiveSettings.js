@@ -47,6 +47,8 @@ const ImmersiveSettings = function ({
     onAutoCollapse,
     lyricInNebula,
     onLyricInNebula,
+    ambient,
+    onAmbient,
     preset,
     onPreset,
     fx,
@@ -145,6 +147,18 @@ const ImmersiveSettings = function ({
                         </span>
                     </button>
                 </div>
+
+                {/* 氛围底色: 关 = 纯黑底(和上游一致), 开 = 歌曲渐变光晕 +
+                    模糊封面垫在画布下。两种背景模式都受它管。 */}
+                <label className={styles.toggle}>
+                    <span>氛围底色（渐变光晕 + 封面模糊）</span>
+                    <input
+                        type="checkbox"
+                        checked={ambient}
+                        onChange={(event) => onAmbient(event.target.checked)}
+                    />
+                    <span className={styles['toggle-ui']} aria-hidden="true" />
+                </label>
 
                 {bgMode === 'custom' && (
                     <div className={styles.library}>

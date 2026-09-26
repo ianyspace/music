@@ -4,6 +4,8 @@ import {
     IconMusicSpace,
 } from '../../icons';
 import {
+    ART_NEUTRAL_FILL,
+    IMMERSIVE_AMBIENT_KEY,
     IMMERSIVE_BG_KEY,
     IMMERSIVE_BGS,
     IMMERSIVE_CUSTOM_KEY,
@@ -127,6 +129,9 @@ const ImmersiveApp = function ({
     const [filter, setFilter] = useState(40);
     const [autoCollapse, setAutoCollapse] = useState(true);
     const [lyricInNebula, setLyricInNebula] = useState(true);
+    // 氛围底色: 关 (默认) = 纯黑底, 和上游 Mineradio 一致; 开 = 歌曲渐变
+    // 光晕 + 模糊封面垫在画布下。老用户没存过这个键, 于是保持关闭。
+    const [ambient, setAmbient] = useState(false);
     const [volume, setVolume] = useState(100);
     // The visual console's state: which preset is on screen, how much of
     // everything, and which layers ride along.
@@ -154,6 +159,7 @@ const ImmersiveApp = function ({
             if (Number.isFinite(savedFilter) && savedFilter >= 0 && savedFilter <= 100) setFilter(savedFilter);
             if (storageGet(IMMERSIVE_PANEL_KEY) === 'off') setAutoCollapse(false);
             if (storageGet(IMMERSIVE_LYRIC_KEY) === 'off') setLyricInNebula(false);
+            if (storageGet(IMMERSIVE_AMBIENT_KEY) === 'on') setAmbient(true);
             // Guard on the raw string, not the number: `Number('')` is 0, and
             // 0 passes a 0–100 range check — a fresh visit with no stored
             // volume used to restore itself to SILENT.
@@ -171,9 +177,10 @@ const ImmersiveApp = function ({
         storageSet(IMMERSIVE_FILTER_KEY, String(filter));
         storageSet(IMMERSIVE_PANEL_KEY, autoCollapse ? 'on' : 'off');
         storageSet(IMMERSIVE_LYRIC_KEY, lyricInNebula ? 'on' : 'off');
+        storageSet(IMMERSIVE_AMBIENT_KEY, ambient ? 'on' : 'off');
         storageSet(IMMERSIVE_VOLUME_KEY, String(volume));
         storageSet(IMMERSIVE_FX_KEY, JSON.stringify(fx));
-    }, [bgMode, customBg, filter, autoCollapse, lyricInNebula, volume, fx]);
+    }, [bgMode, customBg, filter, autoCollapse, lyricInNebula, ambient, volume, fx]);
 
     // The cover's palette, sampled once per song. It is fetched on its own
     // rather than through the canvas because three layers want it and none of
@@ -231,6 +238,14 @@ const ImmersiveApp = function ({
         if (element) element.volume = captured ? 1 : level;
         setAnalyserVolume(level);
     }, [volume, audioRef, analyser]);
+
+    // 沉浸页独占视口, 但边缘(橡皮筋滚动、窗口高于 100vh)会露出 `body` 的
+    // 主题色。压成黑要靠 class + 全局规则而不是 inline style: `usePlayer`
+    // 的主题 effect 是父组件的, 比这里晚跑, 会把 inline 值覆盖回去。
+    useEffect(() => {
+        document.body.classList.add('immersive-black');
+        return () => document.body.classList.remove('immersive-black');
+    }, []);
 
     /* --- the playlist panel's fold --------------------------------------- */
 
@@ -376,17 +391,21 @@ const ImmersiveApp = function ({
 
     return (
         <div className={styles.root}>
-            {/* The colour field and the blurred cover sit *under* the active
-                layer: they are what the glass surfaces sample, and what a
-                failed custom background falls back to. */}
-            <div className={styles.backdrop} aria-hidden="true" />
-            <div className={styles.glow} style={{ background: gradient }} aria-hidden="true" />
-            {coverUrl && (
-                <div
-                    className={styles['cover-bg']}
-                    style={{ backgroundImage: `url("${coverUrl}")` }}
-                    aria-hidden="true"
-                />
+            {/* 氛围底色: 只在开关打开时铺。three.js 画布是透明的
+                (setClearColor(0x000000, 0)), 这几层会整片透出来 —— 关掉时
+                底色就是 `.root` 的纯黑, 和上游 Mineradio 一致。 */}
+            {ambient && (
+                <>
+                    <div className={styles.backdrop} aria-hidden="true" />
+                    <div className={styles.glow} style={{ background: gradient }} aria-hidden="true" />
+                    {coverUrl && (
+                        <div
+                            className={styles['cover-bg']}
+                            style={{ backgroundImage: `url("${coverUrl}")` }}
+                            aria-hidden="true"
+                        />
+                    )}
+                </>
             )}
 
             {/* --- background layers (cross-fading) ------------------------- */}
@@ -452,6 +471,7 @@ const ImmersiveApp = function ({
                 onToggleTrack={onToggleTrack}
                 qqBound={qqBound}
                 onOpenAccount={onOpenAccount}
+                ambient={ambient}
             />
 
             {/* The summon edge: a hairline strip on the viewport's left. The
@@ -478,7 +498,7 @@ const ImmersiveApp = function ({
                 current={current}
                 title={title}
                 artist={artist}
-                gradient={gradient}
+                gradient={ambient ? gradient : ART_NEUTRAL_FILL}
                 isPlaying={isPlaying}
                 progress={progress}
                 onSeek={onSeek}
@@ -523,6 +543,8 @@ const ImmersiveApp = function ({
                 onAutoCollapse={setAutoCollapse}
                 lyricInNebula={lyricInNebula}
                 onLyricInNebula={setLyricInNebula}
+                ambient={ambient}
+                onAmbient={setAmbient}
                 preset={fx.preset}
                 onPreset={(value) => setFx((prev) => ({ ...prev, preset: value }))}
                 fx={fx}

@@ -90,6 +90,14 @@ export const IMMERSIVE_FILTER_KEY = 'music:setting:immersiveFilter';
 // Whether the lyrics stay visible while the nebula is on. The custom
 // background is *for* the lyrics, so that side has no switch.
 export const IMMERSIVE_LYRIC_KEY = 'music:setting:immersiveLyric';
+// 氛围底色: 歌曲渐变光晕 + 模糊封面, 垫在 three.js 画布之下。默认 **关** ——
+// 上游 Mineradio 的 `html, body { background: #000 }` 是纯黑, 这层是早前
+// canvas 星云时代的遗留; 换成透明的 three.js 舞台后它会整片透出来, 于是
+// "背景不是纯色"。关掉时底色即纯黑。
+export const IMMERSIVE_AMBIENT_KEY = 'music:setting:immersiveAmbient';
+// 氛围底色关闭时, 封面占位块(播放栏唱片、歌单缩略图)用的中性色。这些块
+// 平时用 `trackGradient`, 全站纯黑时若继续用高饱和渐变会显得是唯一的色斑。
+export const ART_NEUTRAL_FILL = '#171a21';
 // Whether the playlist panel folds itself away while music plays.
 export const IMMERSIVE_PANEL_KEY = 'music:setting:immersivePanel';
 // The immersive page's own volume, 0–100 — separate from any other layout.

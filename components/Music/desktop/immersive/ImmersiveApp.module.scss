@@ -5,13 +5,15 @@
 
 $ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
+/* 底色是纯黑, 不是 #0b0c10: 上游 Mineradio 的 `html, body` 就是 #000, 而
+   three.js 画布带 alpha, 这一层会直接透出来。想要氛围渐变就开「氛围底色」。 */
 .root {
     position: relative;
     width: 100%;
     height: 100vh;
     min-height: 560px;
     overflow: hidden;
-    background: #0b0c10;
+    background: #000;
     color: #f2f3f7;
 }
 

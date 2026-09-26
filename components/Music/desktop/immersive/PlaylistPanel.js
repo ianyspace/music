@@ -6,6 +6,7 @@ import {
     IconRefresh,
 } from '../../icons';
 import {
+    ART_NEUTRAL_FILL,
     parseTrackName,
     trackGradient,
 } from '../../shared';
@@ -37,9 +38,16 @@ const PlaylistPanel = function ({
     onToggleTrack,
     qqBound,
     onOpenAccount,
+    ambient = false,
 }) {
     const listRef = useRef(null);
     const activeRef = useRef(null);
+
+    // 封面缩略图的占位色: 氛围底色开着时用歌曲渐变, 关了(纯黑底)时用中性色,
+    // 否则整页只剩这一块高饱和色斑。
+    const thumbFill = function (name) {
+        return ambient ? trackGradient(name) : ART_NEUTRAL_FILL;
+    };
 
     const currentId = current ? current.track.id : '';
     const total = visibleTracks.length;
@@ -118,7 +126,7 @@ const PlaylistPanel = function ({
                                     >
                                         <span
                                             className={styles.thumb}
-                                            style={{ background: trackGradient(track.name) }}
+                                            style={{ background: thumbFill(track.name) }}
                                             aria-hidden="true"
                                         >
                                             <Cover track={track} />

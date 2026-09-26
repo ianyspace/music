@@ -28,6 +28,13 @@ body {
     overscroll-behavior-y: none;
 }
 
+/* 桌面沉浸页: 底色是纯黑(和上游 Mineradio 一致), 但 `usePlayer` 的主题
+   effect 会把 `body` 的 background 写成 inline 的 #f6f6f7 / #08080d, 橡皮筋
+   滚动时那道浅色会从视口边缘露出来。inline 只能用 !important 压过。 */
+body.immersive-black {
+    background: #000 !important;
+}
+
 a {
     color: inherit;
 }
