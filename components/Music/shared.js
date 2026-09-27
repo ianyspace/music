@@ -98,6 +98,10 @@ export const IMMERSIVE_AMBIENT_KEY = 'music:setting:immersiveAmbient';
 // 氛围底色关闭时, 封面占位块(播放栏唱片、歌单缩略图)用的中性色。这些块
 // 平时用 `trackGradient`, 全站纯黑时若继续用高饱和渐变会显得是唯一的色斑。
 export const ART_NEUTRAL_FILL = '#171a21';
+// 没有封面图的歌用的兜底「封面」: 站点图标, 也就是浏览器 tab 上那颗。
+// public 资源不吃 Next 的 basePath 自动前缀, 子路径部署 (GitHub Pages
+// /music/) 下必须手动带上, 与 _document.js 里的图标链接同一套规则。
+export const FALLBACK_COVER = `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/icon-512.png`;
 // Whether the playlist panel folds itself away while music plays.
 export const IMMERSIVE_PANEL_KEY = 'music:setting:immersivePanel';
 // The immersive page's own volume, 0–100 — separate from any other layout.

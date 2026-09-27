@@ -6,6 +6,7 @@ import {
 } from '../../icons';
 import {
     ART_NEUTRAL_FILL,
+    FALLBACK_COVER,
     IMMERSIVE_AMBIENT_KEY,
     IMMERSIVE_BG_KEY,
     IMMERSIVE_BGS,
@@ -100,7 +101,9 @@ const ImmersiveApp = function ({
     const title = meta ? meta.title : '还没有播放中的歌曲';
     const artist = meta ? meta.artist : '从左侧列表挑一首开始';
     const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
-    const coverUrl = current ? coverUrlOf(current.track) : '';
+    // 没有封面图的歌拿站点图标当封面 —— 粒子、配色采样、氛围垫底都按
+    // 「有封面」走, 不会出现一首歌把整场打回无封面雾态。
+    const coverUrl = current ? (coverUrlOf(current.track) || FALLBACK_COVER) : '';
     const currentId = current ? current.track.id : '';
     const liked = current ? isLiked(current.track) : false;
 

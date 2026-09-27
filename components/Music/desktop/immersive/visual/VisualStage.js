@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { createBandReader, readBands } from '../../../core/audioAnalyser';
 import { createBeatDetector } from '../../../core/beat';
 import { loadCoverResilient } from '../../../core/coverImage';
+import { FALLBACK_COVER } from '../../../shared';
 import ParticleStage from './stageEngine';
 import styles from './VisualStage.module.scss';
 
@@ -128,29 +129,51 @@ const VisualStage = function ({ fx, palette, coverUrl, analyser, isPlaying, lyri
     }, [lyrics]);
 
     useEffect(() => {
-        const stage = stageRef.current;
-        if (!stage || !coverUrl) {
-            if (stage) stage.setCoverImage(null);
+        let cancelled = false;
+        let timer = 0;
+        let waits = 0;
+        if (!coverUrl) {
+            if (stageRef.current) stageRef.current.setCoverImage(null);
             return undefined;
         }
-        let cancelled = false;
+        const fetchInto = function (url) {
+            return loadCoverResilient(url).then(function (image) {
+                if (cancelled || !stageRef.current) return;
+                if (image) {
+                    stageRef.current.setCoverImage(image);
+                } else if (url !== FALLBACK_COVER) {
+                    // 封面一路失败 (r2 时常抽风): 落到站点图标, 粒子至少
+                    // 有个形状, 不至于整场散成雾。
+                    return fetchInto(FALLBACK_COVER);
+                } else {
+                    stageRef.current.setCoverImage(null);
+                }
+            });
+        };
         // 换歌先切雾态 (emily 的「散开 → 聚成封面」入场), 封面纹理就绪后
         // setCoverImage 自己把它收回去。
-        stage.showLoading();
-        // 等场景就绪(按需加载 three 会有几十毫秒空窗)
-        const timer = window.setInterval(() => {
-            if (cancelled) return;
-            if (!stageRef.current) return;
-            window.clearInterval(timer);
-            loadCoverResilient(coverUrl).then((image) => {
-                if (cancelled || !stageRef.current) return;
-                stageRef.current.setCoverImage(image);
-            }).catch(() => {
-                // 封面加载失败也要收掉雾态, 否则整场停在雾里。
+        const start = function () {
+            const stage = stageRef.current;
+            if (!stage) return false;
+            stage.showLoading();
+            fetchInto(coverUrl).catch(function () {
                 if (!cancelled && stageRef.current) stageRef.current.setCoverImage(null);
             });
-        }, 120);
-        return () => {
+            return true;
+        };
+        if (!start()) {
+            // three.js 是按需注入的, 挂载瞬间 stage 还不存在。带着「上次
+            // 选的歌」进入页面时 coverUrl 一开始就非空, 这里若直接放弃,
+            // 封面就再也不会灌进场景 (只有换歌才会重跑) —— 首屏粒子空
+            // 封面就是这个竞态。轮询等场景就绪, 封顶约 12s: 注入彻底失败
+            // 时不再空转。
+            timer = window.setInterval(function () {
+                waits += 1;
+                if (cancelled) return;
+                if (start() || waits > 100) window.clearInterval(timer);
+            }, 120);
+        }
+        return function () {
             cancelled = true;
             window.clearInterval(timer);
         };
