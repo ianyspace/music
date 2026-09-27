@@ -13,7 +13,7 @@ import {
     IconRepeatOne,
     IconShuffle,
 } from '../../icons';
-import { formatTime } from '../../shared';
+import { FALLBACK_COVER, formatTime } from '../../shared';
 import Cover from '../../Cover';
 import Marquee from '../../Marquee';
 import { advanceVinyl } from './visual/vinylSpin';
@@ -123,7 +123,7 @@ const PlayerBar = function ({
                 <span className={styles.track}>
                     <span className={styles.disc} ref={discRef} aria-hidden="true">
                         <span className={styles['disc-cover']} style={{ background: gradient }}>
-                            <Cover track={current ? current.track : null} />
+                            <Cover track={current ? current.track : null} fallbackUrl={FALLBACK_COVER} />
                             {current ? null : <IconNote />}
                         </span>
                     </span>

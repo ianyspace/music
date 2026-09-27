@@ -1308,7 +1308,7 @@ export default class ParticleStage {
         const speedMul = isFinite(Number(this.fx.speed)) ? Math.max(0.05, Number(this.fx.speed)) : 1;
         this.uniforms.uTime.value += dt * speedMul;
         // 唱片预设的转角与播放栏唱盘共用同一个角度源 (见 vinylSpin.js):
-        // 匀速一圈 14 秒, 不在播放时原地停住。以前这里还叠了一层低频加速,
+        // 匀速转圈, 不在播放时原地停住。以前这里还叠了一层低频加速,
         // 但那样就和播放栏那个匀速唱盘对不上了。
         this.uniforms.uVinylSpin.value = advanceVinyl(dt, !!audio.playing);
         this.uniforms.uBass.value = bands.bass;

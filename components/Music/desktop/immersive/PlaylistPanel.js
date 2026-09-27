@@ -7,6 +7,7 @@ import {
 } from '../../icons';
 import {
     ART_NEUTRAL_FILL,
+    FALLBACK_COVER,
     parseTrackName,
     trackGradient,
 } from '../../shared';
@@ -111,7 +112,7 @@ const PlaylistPanel = function ({
                                             style={{ background: thumbFill(track.name) }}
                                             aria-hidden="true"
                                         >
-                                            <Cover track={track} />
+                                            <Cover track={track} fallbackUrl={FALLBACK_COVER} />
                                             {active && !loading ? (
                                                 <span className={styles['thumb-overlay']}>
                                                     {isPlaying ? <IconPause size={16} /> : <IconPlay size={16} />}
