@@ -103,7 +103,8 @@ const ImmersiveApp = function ({
     const gradient = current ? trackGradient(current.track.name) : 'linear-gradient(135deg, #fb5c74, #fa233b)';
     // 没有封面图的歌拿站点图标当封面 —— 粒子、配色采样、氛围垫底都按
     // 「有封面」走, 不会出现一首歌把整场打回无封面雾态。
-    const coverUrl = current ? (coverUrlOf(current.track) || FALLBACK_COVER) : '';
+    // 没选歌时也用默认封面, 和无封面歌曲一样, 3D 场景不会空白。
+    const coverUrl = current ? (coverUrlOf(current.track) || FALLBACK_COVER) : FALLBACK_COVER;
     const currentId = current ? current.track.id : '';
     const liked = current ? isLiked(current.track) : false;
 
