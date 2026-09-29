@@ -35,6 +35,20 @@ import {
 export const CLOUD_SOURCE = 'cloud';
 export const DRIVE_SOURCE = 'drive';
 
+// 测试用兜底歌曲: 曲库加载失败且本地缓存也为空时展示, 保证页面不是空白列表。
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+export const FALLBACK_TRACKS = [
+    {
+        id: 'test-beauty-and-a-beat',
+        name: 'Beauty and a Beat-Justin Bieber&Nicki Minaj.mp3',
+        size: 0,
+        source: CLOUD_SOURCE,
+        url: `${BASE_PATH}/beauty-and-a-beat.mp3`,
+        lyricsUrl: `${BASE_PATH}/beauty-and-a-beat.lrc`,
+        coverUrl: '',
+    },
+];
+
 const AUDIO_FILE = /\.(mp3|flac|m4a|wav|ogg|oga|opus|aac|wma|ape)$/i;
 const LIST_CACHE_PREFIX = 'music:trackListCache:v2';
 

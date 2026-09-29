@@ -57,6 +57,7 @@ import {
     clearListCache,
     coverUrlOf,
     downloadTrackBlob,
+    FALLBACK_TRACKS,
     fetchCloudTracks,
     fetchDriveTracks,
     fetchLyricsText,
@@ -1105,7 +1106,10 @@ const usePlayer = function ({ lyricsAutoOpen = false, drive = true } = {}) {
             if (tracksRef.current.length > 0) {
                 setNotice(`曲库暂时无法访问，正在使用本地缓存（${err.message}）`);
             } else {
-                setError(`获取音乐列表失败：${err.message}`);
+                // 列表加载失败且本地缓存也为空: 展示测试歌曲, 列表不空白。
+                setTracks(FALLBACK_TRACKS);
+                setListCacheAvailable(false);
+                setError(`曲库暂时无法访问，已显示测试歌曲（${err.message}）`);
             }
         } finally {
             if (seq === loadSeqRef.current) setListLoading(false);
