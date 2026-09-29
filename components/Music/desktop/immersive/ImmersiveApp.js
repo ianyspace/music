@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
     IconGear,
-    IconMusicSpace,
 } from '../../icons';
 import {
     ART_NEUTRAL_FILL,
@@ -457,13 +456,7 @@ const ImmersiveApp = function ({
                 />
             )}
 
-            {!lyricsShown && current === null && (
-                <div className={styles.idle} aria-hidden="true">
-                    <IconMusicSpace size={40} />
-                    <p>挑一首歌，让页面活起来</p>
-                </div>
-            )}
-
+            
             {/* --- top-right: the one settings entry -------------------------
                 账号(QQ 绑定) 和渲染/视觉设置都从这里进 —— 左侧的 logo 和播放栏
                 的齿轮都去掉了, 整页只剩这一个入口。开着时再点一下不管打开,
