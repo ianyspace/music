@@ -40,9 +40,9 @@ export const three = () => THREE;
  */
 export const fx = {
     particleLyrics: true,
-    preset: 0,
+    preset: 4,
     cinemaShake: 0.5,
-    lyricDisplayMode: 'cinema',
+    lyricDisplayMode: 'single',
     lyricTranslationMode: 'multi',
     lyricMotionStyle: 'float',
     lyricCustomLineCount: 10,

@@ -130,7 +130,7 @@ export const lyricColorPresets = [
  * 未知字段会被忽略、已知字段会被正确识别。
  */
 export const fxDefaults = {
-    preset: 0,
+    preset: 4,
     // 官方 3D 歌词(场景内 mesh)总开关。关掉后回退到 DOM 歌词层。
     particleLyrics: true,
     intensity: 0.85,
@@ -158,7 +158,7 @@ export const fxDefaults = {
     lyricHighlightColor: '#fff0b8',
     lyricGlowLinked: true,
     lyricGlowColor: '#9db8cf',
-    lyricDisplayMode: 'cinema',
+    lyricDisplayMode: 'single',
     lyricTranslationMode: 'multi',
     lyricMotionStyle: 'float',
     lyricCustomLineCount: 10,
