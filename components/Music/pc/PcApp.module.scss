@@ -1,0 +1,445 @@
+/* `/pc` — the folia-visualizer page. The stage is the page; everything else is
+   chrome floating over it, in the same spirit as the immersive desktop layout
+   (`desktop/immersive`) but owned entirely by this route. */
+
+/* --- the scoped preflight ------------------------------------------------ *
+ *
+ * `styles/tailwind.css` deliberately skips `preflight.css`: it is a global
+ * reset and this origin also serves `/h5`, `/desktop` and a blog, none of which
+ * were written against it. The cost of that decision lands here — folia's
+ * panels are Tailwind markup, and Tailwind markup assumes the reset has run.
+ *
+ * Without it a bare `<button>` keeps the user agent's `ButtonFace` background
+ * (light grey) and 2px `outset` border, and a bare `<fieldset>` keeps its
+ * groove border. Diorama's effect rows are exactly that: an unstyled button
+ * carrying `style="color: var(--text-primary)"` — a *light* label on the UA's
+ * light button, i.e. invisible. (Seen in the drawer as solid white bars.)
+ *
+ * Two things make this safe to leave lying around:
+ *
+ * - **`@layer base`.** `styles/tailwind.css` declares
+ *   `@layer theme, base, components, utilities`, so anything here loses to
+ *   every Tailwind utility regardless of specificity — `px-3` still pads,
+ *   `border-t` still draws. Rules left *unlayered* would win instead, because
+ *   layer order is resolved before specificity.
+ * - **`:where()` + `.page`.** Zero specificity and scoped to this route, so
+ *   `/h5`, `/desktop` and the blog never see it, and every class in this module
+ *   still overrides it.
+ *
+ * Only the parts of preflight folia's markup actually depends on are here —
+ * the form-control reset, the box model, the default border. A full preflight
+ * would also flatten headings and lists, which nothing here needs.
+ */
+@layer base {
+    :where(.page, .page *, .page *::before, .page *::after) {
+        box-sizing: border-box;
+        border: 0 solid;
+    }
+
+    :where(.page button,
+        .page input,
+        .page optgroup,
+        .page select,
+        .page textarea,
+        .page legend,
+        .page fieldset) {
+        margin: 0;
+        padding: 0;
+        font: inherit;
+        color: inherit;
+        border-radius: 0;
+        background-color: transparent;
+        background-image: none;
+    }
+
+    /* `<button>` also needs its UA `appearance` and centring dropped, plus the
+       pointer cursor preflight v4 no longer applies. */
+    :where(.page button) {
+        appearance: button;
+        text-align: inherit;
+        cursor: pointer;
+    }
+}
+
+.page {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: #05060a;
+    color: #f2f4f8;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+        'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+}
+
+/* L1 — the WebGL/Pixi stage fills the viewport and is *behind* everything. */
+.stage {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+}
+
+.stage > * {
+    width: 100%;
+    height: 100%;
+}
+
+/* --- the mode rail: folia's lyric modes, top-centre ---------------------- */
+
+.modes {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    z-index: 3;
+    transition: left 200ms ease;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    /* `width: max-content` is what makes `left: 50%` + `translateX(-50%)`
+       actually centre the rail. Without it an absolutely positioned flex
+       container shrink-wraps to the space *left of* its own `left`, so the rail
+       sat in the right half and wrapped onto three rows — it was never centred,
+       it just looked plausible. `max-width` is the escape hatch for a narrow
+       window, where wrapping is the right answer. */
+    width: max-content;
+    /* The right inset leaves the gear its corner on a narrow window. */
+    max-width: min(880px, calc(100vw - 124px));
+    transform: translateX(-50%);
+    padding: 6px;
+    border-radius: 999px;
+    background: rgba(10, 12, 18, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+.mode {
+    padding: 5px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: rgba(242, 244, 248, 0.62);
+    font-size: 12px;
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background 160ms ease, color 160ms ease;
+}
+
+.mode:hover {
+    color: rgba(242, 244, 248, 0.92);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.mode-on {
+    color: #0b0d13;
+    background: rgba(242, 244, 248, 0.92);
+}
+
+/* The drawer is 380px and anchored right, so anything centred on the viewport
+   ends up half under it. Shifting the rail by half that width keeps all fourteen
+   modes clickable while the panel is open; the play bar (680px, so it stops
+   20px short of the drawer) and the title do not need the treatment. */
+.page-drawer .modes {
+    left: calc(50% - 190px);
+}
+
+/* --- the tuning drawer's handle ------------------------------------------ */
+
+.gear {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(10, 12, 18, 0.42);
+    color: rgba(242, 244, 248, 0.72);
+    cursor: pointer;
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    transition: background 160ms ease, color 160ms ease;
+}
+
+.gear:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+.gear-on {
+    background: rgba(242, 244, 248, 0.92);
+    color: #0b0d13;
+}
+
+.gear-on:hover {
+    background: #fff;
+    color: #0b0d13;
+}
+
+/* --- the song, over the stage -------------------------------------------- */
+
+.now {
+    position: absolute;
+    top: 84px;
+    left: 50%;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.72);
+}
+
+.now-title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.now-artist {
+    font-size: 12px;
+    color: rgba(242, 244, 248, 0.62);
+}
+
+/* --- the play bar --------------------------------------------------------- */
+
+.bar {
+    position: absolute;
+    left: 50%;
+    bottom: 22px;
+    z-index: 3;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 6px 18px;
+    width: min(680px, calc(100vw - 48px));
+    padding: 12px 18px;
+    border-radius: 22px;
+    background: rgba(10, 12, 18, 0.46);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    backdrop-filter: blur(22px) saturate(150%);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    transform: translateX(-50%);
+}
+
+.cover {
+    grid-row: 1 / span 2;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background-color: #171a21;
+    background-position: center;
+    background-size: cover;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: rgba(242, 244, 248, 0.78);
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.icon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.icon-on {
+    color: #ff5f7a;
+}
+
+.icon-play {
+    width: 42px;
+    height: 42px;
+    background: rgba(242, 244, 248, 0.92);
+    color: #0b0d13;
+}
+
+.icon-play:hover {
+    background: #fff;
+    color: #0b0d13;
+}
+
+.seek {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.time {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: rgba(242, 244, 248, 0.55);
+}
+
+.range {
+    flex: 1;
+    height: 3px;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    cursor: pointer;
+}
+
+.range::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 11px;
+    height: 11px;
+    border: 0;
+    border-radius: 50%;
+    background: #f2f4f8;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.12);
+}
+
+.range::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border: 0;
+    border-radius: 50%;
+    background: #f2f4f8;
+}
+
+/* --- the track list ------------------------------------------------------- */
+
+.list {
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    width: 264px;
+    max-height: min(58vh, 520px);
+    padding: 14px 10px 10px;
+    border-radius: 20px;
+    background: rgba(10, 12, 18, 0.38);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    transform: translateY(-50%);
+}
+
+.list-title {
+    margin: 0 6px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(242, 244, 248, 0.45);
+}
+
+.list-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 150ms ease;
+}
+
+.row:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.row-on {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.row-cover {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background-color: #171a21;
+    background-position: center;
+    background-size: cover;
+}
+
+.row-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.row-name {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.row-artist {
+    font-size: 11px;
+    color: rgba(242, 244, 248, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.row-busy {
+    margin-left: auto;
+    font-size: 12px;
+    color: rgba(242, 244, 248, 0.5);
+}
+
+/* --- toast ---------------------------------------------------------------- */
+
+.toast {
+    position: absolute;
+    left: 50%;
+    bottom: 104px;
+    z-index: 4;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(10, 12, 18, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 12px;
+    transform: translateX(-50%);
+}
+
+.toast-error {
+    border-color: rgba(255, 95, 122, 0.5);
+    color: #ffb3c0;
+}

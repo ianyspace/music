@@ -1,0 +1,35 @@
+/**
+ * Tailwind, scoped to the vendored folia tree.
+ *
+ * folia's components are written against Tailwind utility classes (`w-full
+ * h-full flex …`), and the lyric stage is a `w-full h-full` box — without these
+ * utilities the stage collapses to zero height and every visualizer draws into
+ * nothing. So the utilities have to exist.
+ *
+ * **Preflight is deliberately not imported.** Upstream folia ships Tailwind
+ * with preflight, which resets margins, headings, lists and form controls
+ * document-wide. This project has its own global stylesheet
+ * (`styles/index.scss`) for `/`, `/h5` and `/desktop`, and a reset arriving
+ * from the `/pc` feature would reach all of them. `tailwindcss/theme.css` +
+ * `tailwindcss/utilities.css` give exactly the design tokens and the utility
+ * classes, and nothing else.
+ *
+ * **The reset folia needs lives in `PcApp.module.scss` instead**, inside
+ * `@layer base` and scoped to `.page` with `:where()`. That is the same reset
+ * minus the parts that would leak — see the block comment there for why a bare
+ * `<button>` without it renders as a light grey slab with invisible text.
+ *
+ * The `@layer` statement below is load-bearing for that: it is what puts those
+ * scoped rules *under* the utilities, so `px-3` and `border-t` keep winning.
+ *
+ * `@source` narrows scanning to the vendored tree. Without it Tailwind v4 would
+ * walk the whole project (including `node_modules`) looking for class names.
+ */
+
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@source '../components/Music/pc/folia/src/**/*.{ts,tsx}';
+@source '../components/Music/pc/**/*.js';

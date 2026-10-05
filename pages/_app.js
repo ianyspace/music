@@ -4,6 +4,9 @@ import Head from 'next/head';
 import { registerServiceWorker } from 'utils/registerServiceWorker';
 
 import 'styles/index.scss';
+// Tailwind utilities for the vendored folia tree on `/pc` — theme + utilities
+// only, no preflight, so nothing here resets the other routes. See the file.
+import 'styles/tailwind.css';
 
 /**
  * The music module has no MDX, no i18n and no shared layout: `/h5` and

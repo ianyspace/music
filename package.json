@@ -9,13 +9,34 @@
         "start": "next start"
     },
     "dependencies": {
+        "@applemusic-like-lyrics/ttml": "^1.0.1",
+        "@chenglou/pretext": "^0.0.9",
+        "@paper-design/shaders-react": "^0.0.80",
+        "@react-three/fiber": "^9.8.1",
+        "@tailwindcss/postcss": "^4.3.3",
+        "fflate": "^0.8.3",
+        "framer-motion": "^13.5.1",
+        "i18next": "^26.4.2",
+        "i18next-browser-languagedetector": "^8.2.1",
+        "lucide-react": "^1.52.0",
         "next": "^15.5.4",
+        "pixi.js": "^8.22.0",
+        "postcss": "^8.5.29",
         "prop-types": "^15.8.1",
         "react": "^19.1.1",
-        "react-dom": "^19.1.1"
+        "react-colorful": "^5.8.1",
+        "react-dom": "^19.1.1",
+        "react-i18next": "^17.0.15",
+        "tailwindcss": "^4.3.3",
+        "three": "^0.185.1",
+        "twgl.js": "^7.0.0",
+        "zustand": "^5.0.15"
     },
     "devDependencies": {
+        "@types/node": "20.17.6",
+        "@types/react": "19.3.0",
         "patch-package": "^8.0.1",
-        "sass": "^1.104.0"
+        "sass": "^1.104.0",
+        "typescript": "5.8.2"
     }
 }
