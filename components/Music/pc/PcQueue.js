@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef } from 'react';
-import { Heart, LayoutGrid, List as ListIcon, Pin } from 'lucide-react';
+import { Heart, LayoutGrid, List as ListIcon, PanelsTopLeft, Pin } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import Carousel3D from './folia/src/components/Carousel3D';
@@ -47,6 +47,13 @@ import styles from './PcQueue.module.scss';
  * takes it through its `headerActions` slot, and the carousel branch renders a
  * header row with the *same* class string, so the two read as one control that
  * happens to swap the body underneath it.
+ *
+ * A second header button opens the **queue collage** (folia's Lattice). It is
+ * not a third view of this column: the collage is a whole-page surface — an
+ * infinitely pannable wall of covers — so it takes over the viewport instead of
+ * replacing the panel body. It sits next to the view switch because it is the
+ * same kind of thing to the visitor ("show me the queue a different way"), and
+ * it keeps the same class string so the two read as one control strip.
  */
 const PcQueue = function ({
     tracks,
@@ -58,6 +65,7 @@ const PcQueue = function ({
     toggleLike,
     view,
     onViewChange,
+    onOpenLattice,
 }) {
     const { t } = useTranslation();
     const queueScrollRef = useRef(null);
@@ -162,14 +170,29 @@ const PcQueue = function ({
         </button>
     );
 
+    // folia's own icon for the wall (`PanelsTopLeft`, the one its 歌曲墙 player
+    // slot uses), at the same 14px as the view switch. No `aria-pressed`: it
+    // navigates, it does not toggle a state that stays on screen.
+    const latticeButton = (
+        <button
+            type="button"
+            className="p-1.5 rounded-md hover:bg-white/10 transition-colors opacity-60 hover:opacity-100"
+            title="队列拼贴"
+            aria-label="打开队列拼贴"
+            onClick={onOpenLattice}
+        >
+            <PanelsTopLeft size={14} />
+        </button>
+    );
+
     // Byte-for-byte the header row `QueueTab` renders, so switching views does
-    // not move the title or the button.
+    // not move the title or the buttons.
     const header = (
         <div className="flex items-center justify-between px-2 pb-2 shrink-0">
             <span className="text-xs font-medium opacity-60">
                 {t('queue.title')} ({tracks.length})
             </span>
-            <div className="flex items-center gap-1">{toggle}</div>
+            <div className="flex items-center gap-1">{toggle}{latticeButton}</div>
         </div>
     );
 
@@ -227,7 +250,7 @@ const PcQueue = function ({
                 // open, which is the same condition seen from the other side.
                 shouldScrollToCurrent
                 actions={actions}
-                headerActions={toggle}
+                headerActions={<>{toggle}{latticeButton}</>}
                 // Fills the sidebar. Folia's own 250px / max-h-[300px] pair is for
                 // a panel that sits under a header inside a 300px box.
                 listHeight="100%"

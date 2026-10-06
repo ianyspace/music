@@ -21,6 +21,7 @@ import {
 } from '../icons';
 import { restoreFoliaAssets } from './foliaAssets';
 import buildFoliaTheme from './foliaTheme';
+import PcLattice from './foliaLattice';
 import PcQueue from './PcQueue';
 import PcSettings from './PcSettings';
 import PcStage from './PcStage';
@@ -90,6 +91,7 @@ const PcApp = function () {
         playPrev,
         playNext,
         cycleRepeat,
+        cyclePlaybackMode,
         seek,
         lyrics,
         isPinned,
@@ -165,6 +167,31 @@ const PcApp = function () {
 
     const [settingsOpen, setSettingsOpen] = useState(false);
 
+    /* --- the queue collage ------------------------------------------------ */
+
+    // folia's Lattice is a whole-page surface, not a third body for the left
+    // column: it is an infinitely pannable wall of covers, and it renders its
+    // own back button, its own focus-current-song pill and its own keyboard
+    // handling. So this flag swaps the page's *content* rather than any part of
+    // it — see the render below.
+    //
+    // It is deliberately not persisted. The wall is a place you go to look at
+    // the queue, and reopening `/pc` on a wall instead of on the player would
+    // make the page's default state depend on the last thing you did.
+    const [latticeOpen, setLatticeOpen] = useState(false);
+
+    const openLattice = useCallback(function () {
+        // The tuning drawer is a 380px panel anchored top-right; leaving it open
+        // behind the wall would put it back on top of the page the moment the
+        // wall is dismissed.
+        setSettingsOpen(false);
+        setLatticeOpen(true);
+    }, []);
+
+    const closeLattice = useCallback(function () {
+        setLatticeOpen(false);
+    }, []);
+
     /* --- the cover's own colours, sampled once per song ------------------ */
 
     const [palette, setPalette] = useState(null);
@@ -229,6 +256,59 @@ const PcApp = function () {
         settingsOpen ? styles['page-drawer'] : null,
         listView === 'carousel' ? styles['page-carousel'] : null,
     ].filter(Boolean).join(' ');
+
+    /* --- the queue collage takes the whole page --------------------------- *
+     *
+     * An early return rather than a branch inside the tree below, and the
+     * reason is not style: the wall is a full-viewport surface with its own
+     * chrome, and `PcStage` is a Pixi renderer that would otherwise keep
+     * drawing behind it — 60 frames a second of work nobody can see, while the
+     * visitor drags the wall around. Unmounting it also means exactly one rAF
+     * clock is running: the wall's own (`foliaLattice.js`).
+     *
+     * `PageHead` and `PlayerAudio` are the two things that belong to the page
+     * rather than to either view, so both branches carry them. `PlayerAudio` in
+     * particular must stay mounted: it owns the `<audio>` element, and
+     * unmounting it would stop the music the wall is there to browse.
+     */
+    if (latticeOpen) {
+        return (
+            <div className={pageClass}>
+                <PageHead gsi={false} />
+
+                <PcLattice
+                    tracks={visibleTracks}
+                    current={current}
+                    isPlaying={isPlaying}
+                    progress={progress}
+                    shuffle={shuffle}
+                    repeat={repeat}
+                    lyrics={lyrics}
+                    theme={theme}
+                    audioRef={audioRef}
+                    onPrev={playPrev}
+                    onNext={playNext}
+                    onCyclePlaybackMode={cyclePlaybackMode}
+                    onSeek={seek}
+                    onTogglePlay={togglePlay}
+                    onPick={toggleTrack}
+                    isLiked={isLiked}
+                    onToggleLike={toggleLike}
+                    onExit={closeLattice}
+                />
+
+                <PlayerAudio
+                    audioRef={audioRef}
+                    crossOrigin="anonymous"
+                    onEnded={onEnded}
+                    onPlay={onPlay}
+                    onPause={onPause}
+                    onTimeUpdate={onTimeUpdate}
+                    onMetadata={onMetadata}
+                />
+            </div>
+        );
+    }
 
     return (
         <div className={pageClass}>
@@ -377,6 +457,7 @@ const PcApp = function () {
                         toggleLike={toggleLike}
                         view={listView}
                         onViewChange={setListView}
+                        onOpenLattice={openLattice}
                     />
                 )}
             </aside>

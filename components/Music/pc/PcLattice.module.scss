@@ -1,0 +1,66 @@
+/**
+ * The queue collage's four stylesheets, and why they enter the bundle from here.
+ *
+ * folia keeps its wall styles in four plain `.css` files, each imported by the
+ * component that owns it (`Lattice.tsx` → `Lattice.css`, and so on). Next's
+ * pages router refuses that: a non-module `.css` may only be imported from
+ * `pages/_app.js`, and the build dies with
+ * 「Global CSS cannot be imported from files other than your Custom <App>」.
+ * The four `import './X.css'` lines are therefore gone from the vendored TSX,
+ * and the files are pulled in below instead. The `.css` files themselves are
+ * untouched and still sit next to the components that use them, so they stay
+ * diffable against upstream.
+ *
+ * Two routes were available and the second is the one taken:
+ *
+ * 1. **Import all four from `pages/_app.js`** — what the error message suggests.
+ *    It works, but `_app` is the entry for `/`, `/h5` and `/desktop` as well, so
+ *    24 KB (6 KB gzipped) of poster-wall CSS would be downloaded by every
+ *    visitor to every page, for a surface they may never open.
+ * 2. **Load them through a CSS Module**, which any component may import. That is
+ *    this file. `/pc` is the only route that pulls it in.
+ *
+ * Two constraints shape the rest of it, and both are non-obvious:
+ *
+ * - **Everything is `:global`.** The class names are folia's own, and the
+ *   vendored TSX names them as string literals (`className="lattice-poster"`). A
+ *   module that hashed them would rename every class out from under that markup.
+ *
+ * - **The `:global` block sits *inside* `.scope`, it is not the whole file.**
+ *   Next compiles CSS Modules in `pure` mode, which requires every selector to
+ *   carry at least one local class or id — so a file of bare `:global .foo`
+ *   selectors is a hard error («Selector ":global .lattice-chrome" is not pure»).
+ *   Putting the block inside one local class satisfies it and costs exactly one
+ *   hashed ancestor: `.lattice-chrome` comes out as `.PcLattice_scope__xxx
+ *   .lattice-chrome`, with the class itself still global and still named
+ *   `lattice-chrome`. `foliaLattice.js` renders that ancestor.
+ *
+ *   The ancestor adds one class to every selector in the wall, uniformly, so
+ *   the cascade *between* these rules is unchanged. It also gives the wall a
+ *   positioned box to fill: `.lattice-root` is `position: absolute; inset: 0`,
+ *   and `.scope` is the nearest positioned ancestor.
+ *
+ * **The import order is upstream's, not this file's convenience.** Sass
+ * evaluates an ES module's imports depth-first in source order, and in
+ * `Lattice.tsx` `import './Lattice.css'` is the *last* import — so upstream
+ * `Lattice.css` lands after the other three and wins their ties. It has to: its
+ * `.lattice-root *:not(…)` rule zeroes every border radius in the wall with
+ * `!important`, and its poster rules are what the expanded card's chrome is
+ * built on top of. Listing it last reproduces that.
+ *
+ * `@import` rather than `@use`: these are plain stylesheets with no members to
+ * namespace. Dart Sass deprecates `@import`, so the build prints one warning per
+ * file — expected, and the price of pulling a `.css` file into a `.scss` one.
+ */
+
+.scope {
+    position: absolute;
+    inset: 0;
+
+    :global {
+        @import './folia/src/components/app/lattice/LatticeChrome';
+        @import './folia/src/components/app/lattice/lyrics/LatticeLyrics';
+        @import './folia/src/components/app/lattice/LatticeFocusButton';
+        @import './folia/src/components/app/lattice/Lattice';
+    }
+}
