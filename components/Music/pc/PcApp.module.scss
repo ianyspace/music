@@ -69,6 +69,31 @@
     color: #f2f4f8;
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
         'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+
+    /* --- folia's shell variables ------------------------------------------ *
+     *
+     * None of these three is defined anywhere in the vendored tree. folia's own
+     * `App.tsx` — the shell div the app is mounted into — is what carries them,
+     * and `App.tsx` is not vendored. `.page` is `/pc`'s equivalent shell, so
+     * this is where they belong.
+     *
+     * Around forty call sites read them as inline styles
+     * (`style={{ color: 'var(--text-primary)' }}`), which is why leaving them
+     * undefined is not a harmless omission: a `var()` with no fallback and no
+     * value makes the *whole declaration* invalid at computed-value time, and
+     * for `color` that resolves to `unset` → `inherit`. Every panel row label
+     * then painted itself with whatever colour the panel happened to set, and
+     * folia's primary/secondary hierarchy collapsed into a single tone.
+     *
+     * `tempera/temperaDialogTokens.ts` re-declares the same three inside its
+     * portal for exactly this reason and documents the fallback; its night
+     * values (`#fafafa` / `#a1a1aa`) are the reference for these. The literals
+     * below are `/pc`'s own, so the stage chrome, the panels and the cover flow
+     * all sit on the two tones this file already uses.
+     */
+    --text-primary: #f2f4f8;
+    --text-secondary: rgba(242, 244, 248, 0.62);
+    --text-accent: #f2f4f8;
 }
 
 /* L1 — the WebGL/Pixi stage fills the viewport and is *behind* everything. */
@@ -371,6 +396,42 @@
     margin: 0;
     font-size: 12px;
     color: rgba(242, 244, 248, 0.5);
+}
+
+/* --- carousel mode -------------------------------------------------------- */
+
+/*
+ * The panel widens to hold folia's cover flow.
+ *
+ * `Carousel3D` is a full-bleed component with its own layout ladder, and the
+ * focus ring it draws behind the active cover is a fixed 340px — against the
+ * list view's 300px column that ring would hang out over the stage. So the
+ * column has to grow, and `min()` keeps it from swallowing the stage on a
+ * tablet, where a flat 560px would be most of the screen.
+ *
+ * **Nothing else has to move, and that is worth writing down.** The obvious
+ * worry is that a 560px panel pushes the 14-mode rail off-centre or under the
+ * gear. It does not: the rail sits at `top: 18px` and is 41px tall, while
+ * `.list` is vertically centred at `height: min(72vh, 640px)` — on an 810px
+ * viewport that starts at y=113, so the two never share a band. The title
+ * (`.now`, y=84) clears the panel's right edge for the same reason. The rail
+ * therefore stays exactly where folia puts it, which also means it does not
+ * jump sideways when the view is toggled.
+ */
+.page-carousel {
+    --pc-panel-w: min(560px, 46vw);
+}
+
+.page-carousel .list {
+    width: var(--pc-panel-w);
+    /* The list view's 10px is not enough here. `Carousel3D` ends with a title
+       block that it deliberately lets hang below its flex line (`pb-0 -mb-4
+       md:-mb-6` when `hasFloatingPlayer`), so at 10px the artist line lands
+       *on* the panel's bottom edge — measured, its box ended at y=698 against a
+       panel bottom of 697. `overflow-y` is `visible` (see `.carousel`), so it is
+       not clipped, just sitting on the border. Sixteen more pixels of glass
+       moves the whole block up by the same amount and leaves it breathing. */
+    padding-bottom: 26px;
 }
 
 /* --- toast ---------------------------------------------------------------- */

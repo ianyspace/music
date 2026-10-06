@@ -62,6 +62,21 @@ interface QueueTabProps {
      * they appear in `className` — appending could not reliably win.
      */
     maxHeightClass?: string;
+    /**
+     * Extra buttons for the header's right-hand group, rendered *before* the
+     * optional lattice / save / shuffle buttons.
+     *
+     * Added for `/pc`, which needs a 列表 ↔ 轮播 switch in the panel header. The
+     * alternative — an absolutely positioned button floating over the header —
+     * would have to re-derive the header's padding and would drift the moment
+     * folia changed it. Slotted in here it inherits the same row, the same
+     * `gap-1`, and the same alignment as the buttons folia already renders.
+     *
+     * The host owns the button's own classes; folia's header buttons use
+     * `p-1.5 rounded-md hover:bg-white/10 transition-colors opacity-60
+     * hover:opacity-100` with a 14px icon, and that is what `/pc` matches.
+     */
+    headerActions?: React.ReactNode;
 }
 
 /** One button in a row's hover strip. */
@@ -187,6 +202,7 @@ const QueueTab: React.FC<QueueTabProps> = ({
     actions,
     listHeight,
     maxHeightClass,
+    headerActions,
     isDaylight = false,
 }) => {
     const { t } = useTranslation();
@@ -303,6 +319,7 @@ const QueueTab: React.FC<QueueTabProps> = ({
                         {t('queue.title')} ({playQueue.length})
                     </span>
                     <div className="flex items-center gap-1">
+                        {headerActions}
                         {onOpenLattice && (
                             <button
                                 onClick={onOpenLattice}

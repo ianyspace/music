@@ -62,6 +62,15 @@ const isKnownMode = function (mode) {
     return Boolean(mode) && VISUALIZER_REGISTRY.some((entry) => entry.mode === mode);
 };
 
+/* Which of `PcQueue`'s two bodies the left column shows. `LIST_VIEWS` is a
+   whitelist rather than a pair of equality checks for the same reason
+   `isKnownMode` is one: it is the whole migration plan if a view is ever
+   dropped, and it is the only thing between a stored value and a view name with
+   no branch behind it. */
+const LIST_VIEW_STORAGE_KEY = 'music:setting:pcListView';
+const DEFAULT_LIST_VIEW = 'list';
+const LIST_VIEWS = ['list', 'carousel'];
+
 const PcApp = function () {
     // folia's dictionaries, not ours: every mode name and every label inside the
     // tuning drawer comes from `folia/src/i18n`. `PcSettings` imports the config
@@ -136,6 +145,24 @@ const PcApp = function () {
         if (modeSynced) storageSet(MODE_STORAGE_KEY, mode);
     }, [mode, modeSynced]);
 
+    /* --- the left column's body, remembered across visits ----------------- */
+
+    // Same two-effect shape as the mode above: read once on mount, write on
+    // every change *after* the read, so the first render's default cannot
+    // overwrite a stored value before it has been read.
+    const [listView, setListView] = useState(DEFAULT_LIST_VIEW);
+    const [listViewSynced, setListViewSynced] = useState(false);
+
+    useEffect(() => {
+        const saved = storageGet(LIST_VIEW_STORAGE_KEY);
+        if (LIST_VIEWS.includes(saved)) setListView(saved);
+        setListViewSynced(true);
+    }, []);
+
+    useEffect(() => {
+        if (listViewSynced) storageSet(LIST_VIEW_STORAGE_KEY, listView);
+    }, [listView, listViewSynced]);
+
     const [settingsOpen, setSettingsOpen] = useState(false);
 
     /* --- the cover's own colours, sampled once per song ------------------ */
@@ -194,8 +221,17 @@ const PcApp = function () {
         return getVisualizerModeLabel(entry.mode, t);
     };
 
+    // The two route-level modifiers. Both can be on at once — the tuning drawer
+    // opens over the cover flow — and `PcApp.module.scss` carries a compound
+    // rule for that case, so the order here does not matter.
+    const pageClass = [
+        styles.page,
+        settingsOpen ? styles['page-drawer'] : null,
+        listView === 'carousel' ? styles['page-carousel'] : null,
+    ].filter(Boolean).join(' ');
+
     return (
-        <div className={`${styles.page}${settingsOpen ? ` ${styles['page-drawer']}` : ''}`}>
+        <div className={pageClass}>
             <PageHead gsi={false} />
 
             <div className={styles.stage}>
@@ -308,22 +344,25 @@ const PcApp = function () {
 
             {/* --- the track list ------------------------------------------- */}
             {/*
-              * folia's `QueueTab`, unmodified, fed by our library. `visibleTracks`
-              * is this site's queue — `playNext`/`playPrev` walk it and the
-              * search/只看喜欢 filters narrow it — so it maps onto `playQueue`
-              * directly. `PcQueue` owns the adaptation and the two row actions
-              * this app actually has (置顶 / 喜欢); see its header for why
-              * folia's three did not carry over.
+              * folia's two library views, unmodified, fed by our library.
+              * `visibleTracks` is this site's queue — `playNext`/`playPrev` walk
+              * it and the search/只看喜欢 filters narrow it — so it maps onto
+              * `playQueue` directly. `PcQueue` owns the adaptation, the two row
+              * actions this app actually has (置顶 / 喜欢) and the 列表/轮播
+              * switch; see its header for why folia's three did not carry over.
               */}
             <aside className={styles.list}>
                 {/*
                   * folia's `QueueTab` renders 「播放列表为空」 for an empty queue,
                   * and an empty queue is exactly what this page has for the first
                   * few hundred milliseconds while the library loads. So the
-                  * loading state is ours and it short-circuits the queue rather
+                  * loading state is ours and it short-circuits the panel rather
                   * than letting that message flash — the same guard the previous
                   * list had, kept because it is a fact about *this* app's data,
                   * not a design choice borrowed from folia.
+                  *
+                  * It also means `PcQueue` is never mounted while loading, which
+                  * is why it passes `isLoading={false}` down to `Carousel3D`.
                   */}
                 {listLoading && visibleTracks.length === 0 ? (
                     <p className={styles['list-loading']}>正在载入曲库…</p>
@@ -336,6 +375,8 @@ const PcApp = function () {
                         togglePin={togglePin}
                         isLiked={isLiked}
                         toggleLike={toggleLike}
+                        view={listView}
+                        onViewChange={setListView}
                     />
                 )}
             </aside>

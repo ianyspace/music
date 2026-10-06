@@ -39,8 +39,11 @@
 - **样式**：全局样式**只能**由 `pages/_app.js` 导入（Next pages router 限制）；
   组件样式与组件同目录 `Foo.module.scss` + `import styles from './Foo.module.scss'`；
   kebab-case 类名必须写 `styles['foo-bar']`。
-  CSS Modules 生成的类名是 `[文件名]__[类名]__[hash]`，**目录不进名字** ——
+  CSS Modules 生成的类名是 `[文件名]_[类名]__[hash]`（**文件名和类名之间只有一个下划线**，
+  类名和 hash 之间是两个 —— 实测 `components/Music/pc/PcQueue.module.scss` 的 `.carousel`
+  在产物里是 `PcQueue_carousel__ZgSBl`），**目录不进名字** ——
   所以把文件挪进子目录不会改类名（这次拆分正是靠这一点）。
+  写选择器或调试时按单下划线去 `grep` 产物 CSS，用 `__` 会一条都搜不到。
 - **两棵树不许互相 import**：`components/Music/h5/**` 里不许出现 `desktop`，其余同理。
   共用的东西只能落在 `components/Music/core/` 或 `components/Music/` 根下
   （根下的 `icons.js` 是共享图标集）。

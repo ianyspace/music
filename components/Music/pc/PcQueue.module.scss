@@ -18,3 +18,42 @@
        panel past its fixed height instead of scrolling inside it. */
     min-height: 0;
 }
+
+/**
+ * The same job, for the cover flow.
+ *
+ * `Carousel3D` measures its own box with a `ResizeObserver` and renders
+ * `h-full`, so it needs the identical guarantee `.queue` gives the list: a
+ * definite height that comes from the flex line, not from its content. Without
+ * `min-height: 0` the canvas would grow to its intrinsic size and push the
+ * panel taller than `.list`; with it, the box is exactly the leftover space.
+ *
+ * `position: relative` is for the carousel's own absolutely-positioned layers
+ * (the focus ring, the meta line, the "all albums" overlay) — they anchor to
+ * this box rather than to `.list`, so they cannot escape the panel.
+ *
+ * `overflow-x: clip` is the part folia never needed. Its cover flow is the page,
+ * so the neighbours it draws past the edge simply fade into the background; here
+ * the flow lives inside a glass panel, and without this the 2nd and 3rd covers —
+ * still at 0.45 and 0.3 opacity — float up to 350px out over the stage past the
+ * glass edge. Clipping is also what folia itself looks like on a phone, where
+ * the viewport is narrower than the flow: the active cover and the two beside
+ * it, and the rest off the edge. At this panel's width (538px inside the
+ * padding, against a 210px step and 224px covers) the near neighbour stays 82%
+ * visible, measured, and the far ones are gone.
+ *
+ * **`clip`, not `hidden`.** `Carousel3D` deliberately lets its title block hang
+ * below the flex line — `hasFloatingPlayer` gives it `pb-0 -mb-4 md:-mb-6` — so
+ * the artist line's box ends at y=698 while the flex line ends at 686. `hidden`
+ * would slice those last 12px off, and `hidden` on one axis forces the other to
+ * `auto`, so there is no way to clip horizontally only. `clip` is the value that
+ * permits it: `overflow-y` stays `visible` and the title block hangs out exactly
+ * as folia drew it. Browsers without `clip` ignore the declaration and fall back
+ * to the spill, which is the old behaviour rather than a broken one.
+ */
+.carousel {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-x: clip;
+}
