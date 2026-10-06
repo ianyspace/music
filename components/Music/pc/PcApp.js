@@ -21,6 +21,7 @@ import {
 } from '../icons';
 import { restoreFoliaAssets } from './foliaAssets';
 import buildFoliaTheme from './foliaTheme';
+import PcQueue from './PcQueue';
 import PcSettings from './PcSettings';
 import PcStage from './PcStage';
 import {
@@ -71,7 +72,6 @@ const PcApp = function () {
         visibleTracks,
         listLoading,
         current,
-        loadingId,
         isPlaying,
         progress,
         shuffle,
@@ -83,6 +83,8 @@ const PcApp = function () {
         cycleRepeat,
         seek,
         lyrics,
+        isPinned,
+        togglePin,
         isLiked,
         toggleLike,
         error,
@@ -305,35 +307,37 @@ const PcApp = function () {
             </div>
 
             {/* --- the track list ------------------------------------------- */}
+            {/*
+              * folia's `QueueTab`, unmodified, fed by our library. `visibleTracks`
+              * is this site's queue — `playNext`/`playPrev` walk it and the
+              * search/只看喜欢 filters narrow it — so it maps onto `playQueue`
+              * directly. `PcQueue` owns the adaptation and the two row actions
+              * this app actually has (置顶 / 喜欢); see its header for why
+              * folia's three did not carry over.
+              */}
             <aside className={styles.list}>
-                <h2 className={styles['list-title']}>
-                    {listLoading ? '正在载入曲库…' : `${visibleTracks.length} 首`}
-                </h2>
-                <div className={styles['list-body']}>
-                    {visibleTracks.map((track) => {
-                        const rowMeta = parseTrackName(track.name);
-                        const active = Boolean(current && current.track.id === track.id);
-                        return (
-                            <button
-                                key={track.id}
-                                type="button"
-                                className={`${styles.row}${active ? ` ${styles['row-on']}` : ''}`}
-                                onClick={() => toggleTrack(track)}
-                            >
-                                <span
-                                    className={styles['row-cover']}
-                                    style={{ backgroundImage: `url("${coverUrlOf(track) || FALLBACK_COVER}")` }}
-                                    aria-hidden="true"
-                                />
-                                <span className={styles['row-text']}>
-                                    <span className={styles['row-name']}>{rowMeta.title}</span>
-                                    <span className={styles['row-artist']}>{rowMeta.artist}</span>
-                                </span>
-                                {loadingId === track.id && <span className={styles['row-busy']}>…</span>}
-                            </button>
-                        );
-                    })}
-                </div>
+                {/*
+                  * folia's `QueueTab` renders 「播放列表为空」 for an empty queue,
+                  * and an empty queue is exactly what this page has for the first
+                  * few hundred milliseconds while the library loads. So the
+                  * loading state is ours and it short-circuits the queue rather
+                  * than letting that message flash — the same guard the previous
+                  * list had, kept because it is a fact about *this* app's data,
+                  * not a design choice borrowed from folia.
+                  */}
+                {listLoading && visibleTracks.length === 0 ? (
+                    <p className={styles['list-loading']}>正在载入曲库…</p>
+                ) : (
+                    <PcQueue
+                        tracks={visibleTracks}
+                        current={current}
+                        onPick={toggleTrack}
+                        isPinned={isPinned}
+                        togglePin={togglePin}
+                        isLiked={isLiked}
+                        toggleLike={toggleLike}
+                    />
+                )}
             </aside>
 
             {/* --- folia's tuning drawer, one panel per mode --------------- */}

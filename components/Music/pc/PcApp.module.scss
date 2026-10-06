@@ -329,6 +329,17 @@
 
 /* --- the track list ------------------------------------------------------- */
 
+/*
+ * The panel is the same glass slab it always was; what changed is that its
+ * contents are now folia's `QueueTab`, so the panel has to hand it a *definite*
+ * height instead of a cap. `QueueTab`'s root is `h-full`, its list is
+ * `listHeight="100%"`, and a percentage resolves against a definite box only —
+ * with `max-height` the height stays `auto` and the list collapses to nothing.
+ *
+ * The width grew from 264px because folia's row carries a 50px line height and a
+ * marker column where ours carried a 34px thumbnail; at 264px the title column
+ * was left with about 150px and truncated most names.
+ */
 .list {
     position: absolute;
     top: 50%;
@@ -336,9 +347,9 @@
     z-index: 3;
     display: flex;
     flex-direction: column;
-    width: 264px;
-    max-height: min(58vh, 520px);
-    padding: 14px 10px 10px;
+    width: 300px;
+    height: min(72vh, 640px);
+    padding: 12px 10px 10px;
     border-radius: 20px;
     background: rgba(10, 12, 18, 0.38);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -347,79 +358,17 @@
     transform: translateY(-50%);
 }
 
-.list-title {
-    margin: 0 6px 10px;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(242, 244, 248, 0.45);
-}
-
-.list-body {
+/*
+ * Shown instead of the queue while the library is still loading, because
+ * folia's empty state is 「播放列表为空」 and that is not what is happening.
+ * Centred in the panel so it lands where the list will be.
+ */
+.list-loading {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-}
-
-.row {
-    display: flex;
+    flex: 1;
     align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 7px 8px;
-    border: 0;
-    border-radius: 12px;
-    background: transparent;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-    transition: background 150ms ease;
-}
-
-.row:hover {
-    background: rgba(255, 255, 255, 0.06);
-}
-
-.row-on {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.row-cover {
-    flex: none;
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
-    background-color: #171a21;
-    background-position: center;
-    background-size: cover;
-}
-
-.row-text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.row-name {
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.row-artist {
-    font-size: 11px;
-    color: rgba(242, 244, 248, 0.5);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.row-busy {
-    margin-left: auto;
+    justify-content: center;
+    margin: 0;
     font-size: 12px;
     color: rgba(242, 244, 248, 0.5);
 }

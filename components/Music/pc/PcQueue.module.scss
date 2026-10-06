@@ -1,0 +1,20 @@
+/**
+ * The left column's wrapper around folia's `QueueTab`.
+ *
+ * It exists for one reason: `QueueTab`'s root is `h-full`, and `height: 100%`
+ * needs a parent with a *definite* height to resolve against. `.list` is a
+ * fixed-height flex column, so `flex: 1` here hands the queue exactly the space
+ * left over — and `listHeight="100%"` inside then resolves against this box.
+ *
+ * Everything else the panel needs (the glass, the radius, the padding) stays on
+ * `.list` in `PcApp.module.scss`; this file owns no visual decisions.
+ */
+.queue {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    /* Without this a flex item refuses to shrink below its content, and the
+       virtualised list — whose content is the full track count — would push the
+       panel past its fixed height instead of scrolling inside it. */
+    min-height: 0;
+}
